@@ -25,6 +25,7 @@ import type { CandidatePair, NormalizedMarket, PairClassification } from "./type
 const NOMINAL_BUDGET = 50; // near-touch pricing probe size (USD)
 const MAX_HYPOTHESIS = 8; // cap rejected legs shown (transparency), per relation-family dedup
 const MAX_EXCLUSIVE = 12; // cap priced exclusive-rival legs (bounds book fetches); optimizer picks the best
+const INFERRED_REL_EDGE = 0.4; // max ASSUMED relative edge of an inferred mechanism leg (at confidence 1)
 const CREDIBLE_LEVEL = 0.95;
 const MIN_SAMPLES = 20;
 
@@ -164,11 +165,29 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
       });
     }
     if (foundCalibrated) continue;
-    // HYPOTHESIS (capped for transparency): priced at the displayed mid; the optimizer rejects it.
     if (preferredSide && hypothesisCount < MAX_HYPOTHESIS) {
       hypothesisCount++;
       const side = preferredSide;
       const key = relationKey(anchorFamily, candidateFamily, predicate, role, side, mechanism);
+      // A coherent cross-event/cross-domain MECHANISM graph ⇒ admit as an INFERRED low-confidence leg
+      // (priced off the REAL book; the edge over the market price is ASSUMED ∝ the LLM's confidence,
+      // capped relative to price so a cheap leg can't game it). The optimizer admits it only below
+      // balanced conservatism and labels it inferred. Without a graph it stays a display-only HYPOTHESIS.
+      const confidence = graph ? Math.min(1, Math.max(0, cls.hypothesis?.confidence ?? 0)) : 0;
+      if (graph && confidence > 0) {
+        const priced = await priceSide(m, side);
+        if (priced && priced.price > 0 && priced.price < 1) {
+          out.push({
+            id: `inf:${key}:${m.id}`, label: `${side === "no" ? "NOT " : ""}${m.title} · ${m.venue}`,
+            venue: m.venue, side, price: priced.price, maxSpendUsd: priced.capacityUsd,
+            provenance: "HYPOTHESIS",
+            inferredPayoff: { payGivenFail: Math.min(0.95, priced.price * (1 + confidence * INFERRED_REL_EDGE)), payGivenWin: priced.price, confidence },
+            associationGroup: `soft-market:${m.id}`,
+          });
+          continue;
+        }
+      }
+      // display-only hypothesis (no mechanism graph, or unpriced): the optimizer rejects it.
       const mid = side === "no" ? 1 - m.probYes : m.probYes;
       if (mid > 0 && mid < 1) out.push({ id: `hyp:${key}:${m.id}`, label: `${side === "no" ? "NOT " : ""}${m.title} · ${m.venue}`, venue: m.venue, side, price: Number(mid.toFixed(4)), provenance: "HYPOTHESIS" });
     }

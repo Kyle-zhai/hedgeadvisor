@@ -102,6 +102,12 @@ export interface OptimizerCandidate {
    *  calibration. The premium still increases strict worst-case loss (it can pay 0 in a fail state),
    *  but the MODELED conditional payoff is certain. */
   structuralPayoff?: { payGivenFail: number; payGivenWin: number };
+  /** INFERRED conditional payoff for a cross-event/cross-domain mechanism leg that has a coherent Qwen
+   *  mechanism graph but NO settlement calibration. The edge is ASSUMED (scaled by the LLM's stated
+   *  confidence), not proven — so it is admitted ONLY at lower conservatism, ranks below structural/
+   *  calibrated legs, is capped in count, and is always labeled "inferred / low-confidence". Honest
+   *  about its basis, never presented as guaranteed or calibrated. */
+  inferredPayoff?: { payGivenFail: number; payGivenWin: number; confidence: number };
 }
 
 export interface RobustOptimizerInput {

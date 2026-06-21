@@ -7,6 +7,8 @@ import type {
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const round = (x: number) => Number(x.toFixed(4));
+const INFERRED_MAX_CONSERVATISM = 0.6; // inferred cross-event legs admitted only below this (进取/低平衡)
+const MAX_INFERRED_LEGS = 2; // cap correlated inferred legs (no joint model proves their independence)
 
 interface RankedCandidate {
   candidate: OptimizerCandidate;
@@ -61,6 +63,17 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
       }
       pFail = clamp01(candidate.structuralPayoff.payGivenFail);
       pWin = clamp01(candidate.structuralPayoff.payGivenWin);
+    } else if (candidate.provenance === "HYPOTHESIS" && candidate.inferredPayoff) {
+      // Cross-event/cross-domain mechanism leg with a coherent graph but NO calibration: the edge is
+      // ASSUMED (scaled by the LLM's confidence), not proven. Admit only below balanced conservatism;
+      // a large uncertainty penalty keeps it ranked under structural/calibrated legs. Labeled inferred.
+      if (c >= INFERRED_MAX_CONSERVATISM) {
+        rejected.push({ candidateId: candidate.id, reason: "inferred cross-event leg excluded at/above balanced conservatism (no settlement calibration)" });
+        continue;
+      }
+      pFail = clamp01(candidate.inferredPayoff.payGivenFail);
+      pWin = clamp01(candidate.inferredPayoff.payGivenWin);
+      uncertainty = (1 - clamp01(candidate.inferredPayoff.confidence)) + 0.5; // inference penalty
     } else if (candidate.provenance === "CALIBRATED" && candidate.calibration) {
       if (c >= 0.98) {
         rejected.push({ candidateId: candidate.id, reason: "strictest posture accepts verified structural coverage only" });
@@ -106,14 +119,20 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
   let remainingModeledLoss = stake;
   let strictWorstLoss = stake;
   let calibratedSoftLegs = 0;
+  let inferredLegs = 0;
   const usedGroups = new Set<string>();
 
   for (const r of ranked) {
     if (allocations.length >= maxLegs) break;
     if (remainingBudget <= 1e-9 || remainingModeledLoss <= 1e-9) break;
     const isSoft = r.candidate.provenance === "CALIBRATED";
+    const isInferred = r.candidate.provenance === "HYPOTHESIS" && Boolean(r.candidate.inferredPayoff);
     if (isSoft && calibratedSoftLegs >= maxSoftLegs) {
       rejected.push({ candidateId: r.candidate.id, reason: "joint soft-leg model unavailable; only the best calibrated soft leg is admitted" });
+      continue;
+    }
+    if (isInferred && inferredLegs >= MAX_INFERRED_LEGS) {
+      rejected.push({ candidateId: r.candidate.id, reason: "inferred cross-event legs capped (correlated, uncalibrated)" });
       continue;
     }
     if (r.candidate.associationGroup && usedGroups.has(r.candidate.associationGroup)) {
@@ -147,6 +166,7 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
       provenance: r.candidate.provenance,
     });
     if (isSoft) calibratedSoftLegs++;
+    if (isInferred) inferredLegs++;
     if (r.candidate.associationGroup) usedGroups.add(r.candidate.associationGroup);
   }
 
