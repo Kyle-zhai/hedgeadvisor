@@ -4,10 +4,8 @@ import {
   ChartLineUp,
   ClockCounterClockwise,
   GearSix,
-  Graph,
   LinkSimple,
   List,
-  Notebook,
   ShieldCheck,
   Stack,
   X,
@@ -18,11 +16,9 @@ import { useState, type ComponentType, type ReactNode } from "react";
 type Icon = ComponentType<{ size?: number; weight?: "regular" | "fill"; "aria-hidden"?: boolean }>;
 
 const NAV: { href: string; label: string; icon: Icon }[] = [
-  { href: "/protect", label: "Protect", icon: ShieldCheck },
-  { href: "/plan", label: "Plan", icon: Notebook },
+  { href: "/hedge", label: "Hedge", icon: ShieldCheck },
   { href: "/combo", label: "Combo", icon: Stack },
   { href: "/link", label: "Cross-venue", icon: LinkSimple },
-  { href: "/discover", label: "Discover", icon: Graph },
   { href: "/markets", label: "Markets", icon: ChartLineUp },
   { href: "/history", label: "History", icon: ClockCounterClockwise },
   { href: "/settings", label: "Settings", icon: GearSix },
@@ -31,7 +27,7 @@ const NAV: { href: string; label: string; icon: Icon }[] = [
 export default function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
-  const isActive = (href: string) => path.startsWith(href) || (href === "/protect" && path === "/hedge");
+  const isActive = (href: string) => path.startsWith(href);
 
   return (
     <div className="app">
@@ -40,7 +36,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </button>
       {open && <button className="sidebar-scrim" type="button" aria-label="Close navigation" onClick={() => setOpen(false)} />}
       <aside className={`sidebar${open ? " is-open" : ""}`}>
-        <a className="logo" href="/protect" onClick={() => setOpen(false)}>
+        <a className="logo" href="/hedge" onClick={() => setOpen(false)}>
           <span className="mark"><ShieldCheck size={16} weight="fill" aria-hidden /></span>
           HedgeAdvisor
         </a>

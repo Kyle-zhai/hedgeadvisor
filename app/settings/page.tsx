@@ -36,9 +36,9 @@ export default function SettingsPage() {
     } catch { /* keep defaults */ }
     const start = performance.now();
     fetch("/api/markets?limit=12", { cache: "no-store" }).then((response) => setService({ ok: response.ok, latency: Math.round(performance.now() - start) })).catch(() => setService({ ok: false, latency: Math.round(performance.now() - start) }));
-    fetch("/api/protect", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: "Spain wins the 2026 World Cup", stakeUsd: 100 }) })
+    fetch("/api/discover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: "Spain to win the World Cup" }) })
       .then((response) => response.json())
-      .then((data: { bet?: { price?: number } }) => { if (data.bet?.price) setLivePrice(data.bet.price); })
+      .then((data: { anchor?: { probYes?: number } }) => { if (data.anchor?.probYes) setLivePrice(data.anchor.probYes); })
       .catch(() => {});
   }, []);
 

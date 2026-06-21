@@ -1,412 +1,327 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowSquareOut } from "@phosphor-icons/react";
+import { ArrowSquareOut, ShieldCheck, MagnifyingGlass } from "@phosphor-icons/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VenueTag from "@/components/VenueTag";
-import MarketSearch, { type Suggestion } from "@/components/MarketSearch";
-import { PayoffChart } from "@/components/SignalCharts";
-import { writeAnalysisHistory } from "@/lib/client-history";
 
-type Verdict = "GO" | "PARTIAL" | "NO_GO";
+// The single hedge surface (merged from the former /protect + /discover, 2026-06-21). A hedge here is
+// POSITIVE-SUM, never a short of your own bet: each leg is a standalone positive bet on a DIFFERENT
+// event that tends to PAY WHEN YOUR BET FAILS, so ideally both win and at worst one wins. Powered by
+// discoverRelations (lib/relate + lib/association). Positively-correlated markets (which fail together
+// with your bet) are kept OUT of the companion layer; they amplify, they do not hedge.
 
-interface PlacementCard {
-  side: string;
-  outcomeTitle: string;
+type Venue = "polymarket" | "kalshi";
+type RelationType = "same" | "related" | "mutually_exclusive" | "independent";
+interface EventRelation {
+  relation: RelationType;
+  correlation: number;
+  pAB: number;
+  frechet: [number, number];
+  frechetViolated: boolean;
+  hedgeSignal: "same_exposure" | "hedge" | "diversify";
+  hedgeRatio: number;
+  effectiveness: number;
+  confidence: "high" | "medium" | "low";
+  reasoning: string;
+  method: string;
+}
+interface DiscoveredRelation {
+  market: { id: string; venue: Venue; title: string; marketTitle: string; probYes: number; url: string };
+  recall: "structural" | "semantic" | "lexical";
+  similarity: number;
+  classifyMethod: "rule" | "llm" | "heuristic";
+  relation: EventRelation;
+  mechanismGraph?: { mechanismType: string; scope: string; timeOrder: string; portability: string };
+}
+interface RobustAllocation {
+  candidateId: string;
+  label: string;
+  venue: Venue;
+  side: "yes" | "no";
+  spendUsd: number;
   shares: number;
-  limitPrice: number;
-  estPayUsd: number;
-  deepLink: string;
-  steps: string[];
+  effectivePayGivenFail: number;
+  modeledLossReductionUsd: number;
+  provenance: "ANALYTIC" | "CALIBRATED" | "HYPOTHESIS";
 }
-interface Decision {
-  verdict: Verdict;
+interface RobustHedge {
+  status: "RECOMMEND" | "NO_ACTION";
   reason: string;
-  totalHedgeCostUsd: number;
-  riskBefore: { stdDev: number; maxLoss: number; cvar: number; pLoss: number };
-  riskAfter: { stdDev: number; maxLoss: number; cvar: number; pLoss: number };
-  eta: number;
-  facts: Record<string, string>;
+  conservatism: number;
+  budgetUsd: number;
+  spendUsd: number;
+  keepIfPrimaryWinsFloorUsd: number;
+  modeledLossIfPrimaryFailsUsd: number;
+  strictWorstLossIfPrimaryFailsUsd: number;
+  allocations: RobustAllocation[];
+  rejected: Array<{ candidateId: string; reason: string }>;
 }
-interface HedgeOption {
-  decision: Decision;
-  explanation: string;
-  placementCards: PlacementCard[];
-}
-interface HedgeResponse {
+interface DiscoverResult {
   status: "ok" | "ambiguous" | "not_found";
-  eventTitle?: string;
-  positionTitle?: string;
+  anchor?: { venue: Venue; title: string; marketTitle: string; probYes: number; url: string };
+  relations?: DiscoveredRelation[];
+  robustHedge?: RobustHedge;
+  universeSize?: number;
+  semanticRecall?: boolean;
   candidates?: { title: string; score: number }[];
   suggestions?: string[];
-  options?: HedgeOption[];
-  explanation?: { text: string; source: "llm" | "template" };
-  rivals?: { title: string; q: number }[];
-  meta?: {
-    outcomes: number;
-    overroundPct: number;
-    noBookDepthShares: number;
-    pricesSource: "live" | "snapshot";
-    pricedAt: string;
-    bankrollUsd: number;
-    bankrollAssumed: boolean;
-    deVig?: string;
-  };
   error?: string;
 }
 
-const usd = (x: number) => `$${Math.round(x).toLocaleString("en-US")}`;
+const cents = (v: number) => `${Math.round(v * 100)}¢`;
+const REL_LABEL: Record<RelationType, string> = { same: "Same", related: "Related", mutually_exclusive: "Exclusive", independent: "Independent" };
+const REL_BADGE: Record<RelationType, string> = { same: "PARTIAL", related: "PARTIAL", mutually_exclusive: "GO", independent: "" };
 
-function OptionCard({
-  option,
-  rank,
-  topExplanation,
-}: {
-  option: HedgeOption;
-  rank: number;
-  topExplanation?: string;
-}) {
-  const d = option.decision;
-  const f = d.facts;
-  const text = rank === 0 && topExplanation ? topExplanation : option.explanation;
+function RelationRow({ r }: { r: DiscoveredRelation }) {
+  const rel = r.relation;
+  const badge = REL_BADGE[rel.relation];
   return (
-    <div className="card result-card">
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span className={`badge ${d.verdict}`}>{d.verdict.replace("_", "-")}</span>
-        <strong>{f.strategyLabel}</strong>
-        {rank === 0 && d.verdict !== "NO_GO" && <span className="chip" style={{ cursor: "default" }}>Recommended</span>}
-        <span className="muted" style={{ marginLeft: "auto" }}>
-          η {d.eta}×
-        </span>
-      </div>
-      <div className="headline">{f.headline}</div>
-      <div className="explain">{text}</div>
-
-      {d.verdict !== "NO_GO" && (
-        <div className="grid">
-          <div className="stat">
-            <div className="k">Max loss</div>
-            <div className="v">
-              <span className="before">{f.maxLossBefore}</span> to <span className="after">{f.maxLossAfter}</span>
-            </div>
-          </div>
-          <div className="stat">
-            <div className="k">P&amp;L volatility</div>
-            <div className="v">
-              <span className="before">{f.stdDevBefore}</span> to <span className="after">{f.stdDevAfter}</span>
-            </div>
-          </div>
-          <div className="stat">
-            <div className="k">Execution cost</div>
-            <div className="v">{f.execCostUsd}</div>
-          </div>
-          <div className="stat">
-            <div className="k">Expected cost (incl. vig)</div>
-            <div className="v">{f.expectedCostUsd}</div>
-          </div>
-        </div>
-      )}
-
-      {option.placementCards.length > 0 && (
-        <div style={{ marginTop: 6 }}>
-          <div className="muted">Place it on Polymarket (you confirm there; we never touch your funds/keys):</div>
-          {option.placementCards.map((c, i) => (
-            <div className="leg" key={i}>
-              <div className="legtop">
-                <strong>
-                  {c.side} · {c.outcomeTitle}
-                </strong>
-                <span className="muted">est. {usd(c.estPayUsd)}</span>
-              </div>
-              <div className="muted">
-                ~{c.shares.toLocaleString()} shares · limit {c.limitPrice}
-              </div>
-              <a className="pmlink" href={c.deepLink} target="_blank" rel="noopener noreferrer">
-                Open Polymarket <ArrowSquareOut size={13} />
-              </a>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <tr>
+      <td>
+        <strong>{r.market.title}</strong> <VenueTag venue={r.market.venue} short />
+        <div className="muted">{r.market.marketTitle} · {cents(r.market.probYes)}</div>
+      </td>
+      <td><span className={`badge ${badge}`} style={badge === "" ? { background: "var(--surface-2,#f4f4f3)", color: "var(--muted)" } : undefined}>{REL_LABEL[rel.relation]}</span></td>
+      <td style={{ textAlign: "right", color: rel.correlation < 0 ? "var(--go)" : rel.correlation > 0 ? "var(--warn)" : "var(--ink)" }}>{rel.correlation >= 0 ? "+" : ""}{rel.correlation.toFixed(2)}</td>
+      <td style={{ textAlign: "right" }}>{Math.round(rel.effectiveness * 100)}%</td>
+      <td style={{ textAlign: "right" }}>{rel.hedgeRatio.toFixed(2)}</td>
+      <td>{rel.confidence === "high" ? "High" : rel.confidence === "medium" ? "Med" : "Low"}</td>
+      <td className="muted">{r.classifyMethod === "rule" ? "Structural rule" : r.classifyMethod === "llm" ? `LLM · ${r.mechanismGraph?.mechanismType ?? "mechanism"}/${r.mechanismGraph?.scope ?? "unknown scope"}` : "Heuristic"}</td>
+      <td style={{ textAlign: "right" }}><a className="ghostbtn" target="_blank" rel="noreferrer" href={r.market.url}><ArrowSquareOut size={13} /></a></td>
+    </tr>
   );
 }
 
-export default function Home() {
-  const [query, setQuery] = useState("Spain wins the World Cup");
-  const [stake, setStake] = useState("1000");
-  const [avg, setAvg] = useState("");
-  const [bankroll, setBankroll] = useState("");
+export default function HedgePage() {
+  const [query, setQuery] = useState("France to win the World Cup");
+  // Conservatism s∈[0,1]: 0 = pursue payoff (posterior mean, looser evidence); 1 = control max loss
+  // (credible lower bound, strictest evidence, structural-only). Drives the robust optimizer.
+  const [conservatism, setConservatism] = useState(0.5);
+  const [data, setData] = useState<DiscoverResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [res, setRes] = useState<HedgeResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // Step 2 of discovery: after picking a multi-outcome event, list its real outcomes.
-  const [outcomes, setOutcomes] = useState<Suggestion[] | null>(null);
-  const [outcomesFor, setOutcomesFor] = useState<string>("");
-  const [outLoading, setOutLoading] = useState(false);
+  const requestRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.get("position");
-    const initial = fromUrl || query;
-    if (fromUrl) setQuery(fromUrl);
-    window.setTimeout(() => analyze(initial), 0);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function selectEvent(s: Suggestion) {
-    setRes(null);
-    setErr(null);
-    setOutcomesFor(s.label);
-    setOutcomes([]);
-    setOutLoading(true);
-    try {
-      const r = await fetch(`/api/search?scope=outcomes&slug=${encodeURIComponent(s.slug)}`);
-      const data: { suggestions?: Suggestion[] } = await r.json();
-      setOutcomes(data.suggestions ?? []);
-    } catch {
-      setOutcomes([]);
-    } finally {
-      setOutLoading(false);
-    }
-  }
-
-  async function analyze(q?: string, eventSlug?: string) {
+  const run = useCallback(async (q: string, s: number) => {
+    if (!q.trim()) return;
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setLoading(true);
     setErr(null);
-    setRes(null);
-    setOutcomes(null);
     try {
-      const body: Record<string, unknown> = { query: q ?? query };
-      if (eventSlug) body.eventSlug = eventSlug; // hedge within the chosen event, not cross-domain re-search
-      if (stake) body.stakeUsd = Number(stake);
-      if (avg) body.avgPrice = Number(avg);
-      if (bankroll) body.bankrollUsd = Number(bankroll);
-      const r = await fetch("/api/hedge", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data: HedgeResponse = await r.json();
-      if (!r.ok) throw new Error(data.error ?? "request failed");
-      setRes(data);
+      const res = await fetch("/api/discover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: q.trim(), topK: 16, conservatism: s }), signal: controller.signal });
+      const json: DiscoverResult = await res.json();
+      if (!res.ok) throw new Error(json.error || "Hedge search failed");
+      if (requestRef.current !== controller) return;
+      setData(json);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "something went wrong");
+      if (controller.signal.aborted || requestRef.current !== controller) return;
+      setErr(e instanceof Error ? e.message : "Hedge search failed");
+      setData(null);
     } finally {
-      setLoading(false);
+      if (requestRef.current === controller) setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    const best = res?.status === "ok" ? res.options?.[0] : undefined;
-    if (!best) return;
-    writeAnalysisHistory({
-      id: `hedge-${res?.positionTitle || query}-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      type: "Protect",
-      market: res?.eventTitle || "Live market",
-      position: res?.positionTitle || query,
-      stakeUsd: Number(stake) || 0,
-      recommendation: best.decision.facts.strategyLabel || "Ranked hedge",
-      maxLossBeforeUsd: best.decision.riskBefore.maxLoss,
-      maxLossAfterUsd: best.decision.riskAfter.maxLoss,
-      estimatedCostUsd: best.decision.totalHedgeCostUsd,
-      status: "Analyzed",
-      href: `/hedge?position=${encodeURIComponent(res?.positionTitle || query)}`,
-    });
-  }, [res, query, stake]);
+    run(query, conservatism);
+    return () => requestRef.current?.abort();
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+
+  const anchor = data?.anchor;
+  // Two-layer split: trustworthy legs (logically certain or settlement-proven) vs exploratory
+  // cross-event mechanisms (model-inferred, never calibrated). Honesty separation is the point.
+  const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED"), [data]);
+  const inferredLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "HYPOTHESIS"), [data]);
+  // A companion hedge must PAY WHEN YOUR BET FAILS, i.e. it must be negatively correlated. Positively
+  // correlated markets (same-nation player props, the anchor's own progression) fail TOGETHER with
+  // your bet, so they amplify rather than hedge. Gate them OUT of the companion layer (eval fix).
+  const llmRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod === "llm"), [data]);
+  const crossEvent = useMemo(() => llmRels.filter((r) => r.relation.correlation < 0), [llmRels]);
+  const amplifierCount = useMemo(() => llmRels.filter((r) => r.relation.correlation >= 0).length, [llmRels]);
+  const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
+  const inferredSpend = inferredLegs.reduce((s, a) => s + a.spendUsd, 0);
 
   return (
-    <>
+    <div className="page">
       <div className="topbar">
-        <div className="tabs">
-          <a className="tab" href="/protect">Protect</a>
-          <span className="tab active">Hedge</span>
-          <span className="badge PARTIAL" style={{ marginBottom: 12 }}>Advanced</span>
-        </div>
-        <div className="right">
-          <span className="livebadge"><span className="livedot" /> Priced from live CLOB</span>
-        </div>
+        <div><div className="section-kicker">Hedge</div><h1 style={{ margin: 0 }}>Hedge a bet</h1></div>
+        <div className="right"><span className="livebadge"><span className="livedot" /> Live Polymarket + Kalshi</span></div>
       </div>
-      <p className="sub">
-        Enter a position you hold or like. We rank correlated hedges, price each at the{" "}
-        <strong>real executable cost</strong> (not the midpoint), and tell you honestly which is worth it, including when
-        the answer is &ldquo;don&apos;t bother.&rdquo;
-      </p>
 
-      <form
-        className="card"
-        onSubmit={(e) => {
-          e.preventDefault();
-          analyze();
-        }}
-      >
-        <div className="row">
-          <MarketSearch
-            scope="events"
-            flex={2}
-            label="Your position"
-            placeholder="Search real markets, e.g. World Cup, election, Bitcoin"
-            value={query}
-            onChange={setQuery}
-            onSelect={selectEvent}
-            hint="Pick a real Polymarket market below, then choose the outcome you hold."
-          />
-          <label>
-            Stake (USD)
-            <input value={stake} onChange={(e) => setStake(e.target.value)} inputMode="decimal" placeholder="1000" />
-          </label>
-          <label>
-            Avg price (optional)
-            <input value={avg} onChange={(e) => setAvg(e.target.value)} inputMode="decimal" placeholder="market" />
-          </label>
-          <label>
-            Bankroll (optional)
-            <input value={bankroll} onChange={(e) => setBankroll(e.target.value)} inputMode="decimal" placeholder="for exact size" />
-          </label>
-        </div>
-        <button disabled={loading} type="submit">
-          {loading ? "Analyzing…" : "Rank my hedges"}
-        </button>
-        <div className="chips">
-          {["Spain wins the World Cup", "France wins the World Cup", "Brazil wins the World Cup", "Argentina wins the World Cup"].map(
-            (s) => (
-              <span
-                key={s}
-                className="chip"
-                onClick={() => {
-                  setQuery(s);
-                  analyze(s);
-                }}
-              >
-                {s}
-              </span>
-            ),
-          )}
-        </div>
-      </form>
-
-      {outcomes && (
-        <div className="card result-card">
-          <div className="headline">Which outcome do you hold in &ldquo;{outcomesFor}&rdquo;?</div>
-          {outLoading ? (
-            <div className="muted">Loading real outcomes…</div>
-          ) : outcomes.length === 0 ? (
-            <div className="muted">
-              Couldn&apos;t list outcomes for this market. Type your exact position above and press Rank my hedges.
+      <div className="card">
+        <p className="sub" style={{ marginTop: 0 }}>
+          Enter a bet you hold or are about to place. The engine builds a live cross-venue market universe and looks for
+          positive-sum companion bets: standalone bets on a DIFFERENT event that tend to pay when your bet does not, so ideally
+          both win and at worst one wins. We never hedge by shorting your own bet, and we keep positively-correlated markets
+          (which would fail together with it) out of the companion layer.
+        </p>
+        <form className="formrow" onSubmit={(e) => { e.preventDefault(); run(query, conservatism); }} style={{ alignItems: "flex-start", gap: 12 }}>
+          <label className="combo-label" style={{ flex: 3, minWidth: 280 }}>Bet
+            <div className="inputwrap"><span className="pre"><MagnifyingGlass size={15} /></span>
+              <input className="has-pre" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. France to win the World Cup" />
             </div>
-          ) : (
-            <>
-              <div className="muted">Real outcomes on this market, most likely first. Pick the one you hold:</div>
-              <div className="chips">
-                {outcomes.map((o) => (
-                  <span
-                    key={o.value}
-                    className="chip"
-                    onClick={() => {
-                      setQuery(o.value);
-                      analyze(o.value, o.slug);
-                    }}
-                  >
-                    {o.label} · {o.sub}
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
+            <span className="combo-hint">A real outcome on Polymarket or Kalshi.</span>
+          </label>
+          <label className="combo-label" style={{ flex: 1.8, minWidth: 220 }}>
+            Evidence conservatism {conservatism <= 0.33 ? "· aggressive" : conservatism >= 0.8 ? "· conservative" : "· balanced"}
+            <div className="range-control"><input type="range" min={0} max={1} step={0.05} value={conservatism} onChange={(e) => { const s = Number(e.target.value); setConservatism(s); run(query, s); }} /></div>
+            <span className="combo-hint">{conservatism <= 0.33 ? "posterior mean · admits strong-calibrated soft legs" : conservatism >= 0.98 ? "strict posture · structural cover only" : conservatism >= 0.8 ? "credible lower bound · soft legs require separated intervals" : "95% interval · evidence-gated soft legs"} · (does not change the hedge budget)</span>
+          </label>
+          <label className="combo-label" style={{ flex: 0 }}>&nbsp;
+            <button className="primarybtn" type="submit" disabled={loading}><ShieldCheck size={15} /> Hedge</button>
+            <span className="combo-hint" aria-hidden>&nbsp;</span>
+          </label>
+        </form>
+      </div>
 
-      {err && (
-        <div className="card err">
-          Couldn&apos;t analyze: {err}
-          <div className="muted" style={{ marginTop: 6 }}>
-            This MVP reads live Polymarket data; if you&apos;re offline or the event isn&apos;t live, try again.
-          </div>
-        </div>
+      {err && <div className="card err">Could not search for hedges: {err}</div>}
+      {loading && <div className="card"><span className="muted">Building the cross-venue universe and ranking companion bets…</span></div>}
+      {data?.status === "ambiguous" && (
+        <div className="card"><div className="headline">Which exact market?</div>{data.candidates?.map((c) => <button key={c.title} className="chip" type="button" onClick={() => { setQuery(c.title); run(c.title, conservatism); }}>{c.title}</button>)}</div>
       )}
+      {data?.status === "not_found" && <div className="card err"><div className="headline">No live market matched</div><div className="muted">Try {(data.suggestions ?? ["France", "Spain"]).slice(0, 4).join(", ")}.</div></div>}
 
-      {res?.status === "not_found" && (
-        <div className="card">
-          <div className="headline">No matching market found.</div>
-          {res.suggestions && res.suggestions.length > 0 && (
-            <>
-              <div className="muted">Did you mean:</div>
-              <div className="chips">
-                {res.suggestions.map((s) => (
-                  <span key={s} className="chip" onClick={() => analyze(`${s} wins`)}>
-                    {s}
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {res?.status === "ambiguous" && res.candidates && (
-        <div className="card">
-          <div className="headline">Which outcome did you mean?</div>
-          <div className="chips">
-            {res.candidates.map((c) => (
-              <span key={c.title} className="chip" onClick={() => analyze(`${c.title} wins`)}>
-                {c.title}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {res?.status === "ok" && (!res.options || res.options.length === 0) && (
-        <div className="card">
-          <div className="headline">Couldn&apos;t price any hedge right now.</div>
-          <div className="muted">The order books are empty or degenerate. Try again shortly.</div>
-        </div>
-      )}
-
-      {res?.status === "ok" && res.options && res.options.length > 0 && (
+      {anchor && (
         <>
-          <div className="section-head">
-            <div><div className="section-kicker">Advanced hedge analysis</div><h1 style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>{res.positionTitle || query} <VenueTag venue="polymarket" /></h1><p className="sub" style={{ marginTop: 6, marginBottom: 0 }}>{res.eventTitle}</p></div>
-            <span className="badge GO">{res.options[0].decision.verdict.replace("_", "-")}</span>
+          <div className="section-head" style={{ marginTop: 4 }}>
+            <div>
+              <div className="section-kicker">Your bet</div>
+              <h2 style={{ margin: "2px 0 0", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>{anchor.title} <VenueTag venue={anchor.venue} /></h2>
+              <p className="sub" style={{ marginTop: 6, marginBottom: 0 }}>{anchor.marketTitle} · YES {cents(anchor.probYes)}</p>
+            </div>
+            <a className="ghostbtn" target="_blank" rel="noreferrer" href={anchor.url}>Open <ArrowSquareOut size={14} /></a>
           </div>
+
           <div className="metric-strip">
-            <div className="metric"><div className="label">Current max loss</div><div className="value pnl-neg">{usd(res.options[0].decision.riskBefore.maxLoss)}</div><div className="detail">Before hedge execution</div></div>
-            <div className="metric"><div className="label">Protected max loss</div><div className="value pnl-pos">{usd(res.options[0].decision.riskAfter.maxLoss)}</div><div className="detail">Recommended strategy</div></div>
-            <div className="metric"><div className="label">Hedge cost</div><div className="value">{usd(res.options[0].decision.totalHedgeCostUsd)}</div><div className="detail">Estimated executable cost</div></div>
-            <div className="metric"><div className="label">Volatility after</div><div className="value">{usd(res.options[0].decision.riskAfter.stdDev)}</div><div className="detail">P&amp;L standard deviation</div></div>
-            <div className="metric"><div className="label">Efficiency</div><div className="value">{res.options[0].decision.eta.toFixed(2)}×</div><div className="detail">Risk reduction per dollar</div></div>
+            <div className="metric"><div className="label">Universe</div><div className="value">{data?.universeSize}</div><div className="detail">live markets, both venues</div></div>
+            <div className="metric"><div className="label">Relations</div><div className="value">{data?.relations?.length ?? 0}</div><div className="detail">classified pairs</div></div>
+            <div className="metric"><div className="label">Recall</div><div className="value" style={{ fontSize: 18 }}>{data?.semanticRecall ? "Semantic" : "Lexical"}</div><div className="detail">{data?.semanticRecall ? "embeddings on" : "set an AI key for embeddings"}</div></div>
           </div>
-          <div className="dash2">
-            <div className="card"><div className="cardtitle">Payoff distribution <span className="hint">unhedged vs recommended</span></div><PayoffChart data={[0,20,40,60,80,100].map((probability) => ({ probability: `${probability}%`, unprotected: -res.options![0].decision.riskBefore.maxLoss + probability / 100 * (res.options![0].decision.riskBefore.maxLoss + Number(stake || 0)), protected: -res.options![0].decision.riskAfter.maxLoss + probability / 100 * (res.options![0].decision.riskAfter.maxLoss + Math.max(0, Number(stake || 0) - res.options![0].decision.totalHedgeCostUsd)) }))} primaryLabel="Recommended hedge" comparisonLabel="Unhedged" /></div>
-            <div className="card"><div className="cardtitle">Market summary</div><div className="kv"><span className="k">Outcomes</span><span className="v">{res.meta?.outcomes}</span></div><div className="kv"><span className="k">Book overround</span><span className="v">{res.meta ? `${(res.meta.overroundPct * 100).toFixed(1)}%` : "—"}</span></div><div className="kv"><span className="k">Prices</span><span className="v">{res.meta?.pricesSource}</span></div><div className="kv"><span className="k">Ranked options</span><span className="v">{res.options.length}</span></div><div className="note-box" style={{ marginTop: 10 }}>Every option is priced from executable order-book depth, including spread, fee, slippage, and vig.</div></div>
-          </div>
-          <div className="card"><div className="section-head"><h2>Best hedge strategies</h2><span className="muted">Ranked by protected max loss and efficiency</span></div><div className="table-wrap"><table style={{ minWidth: 920 }}><thead><tr><th>Rank</th><th>Verdict</th><th>Strategy</th><th style={{ textAlign: "right" }}>Shares</th><th style={{ textAlign: "right" }}>Est. cost</th><th style={{ textAlign: "right" }}>Max loss before</th><th style={{ textAlign: "right" }}>Max loss after</th><th style={{ textAlign: "right" }}>P&amp;L volatility</th><th style={{ textAlign: "right" }}>Efficiency</th></tr></thead><tbody>{res.options.map((option, index) => <tr key={index}><td>{index + 1}</td><td><span className={`badge ${option.decision.verdict}`}>{option.decision.verdict.replace("_", "-")}</span></td><td><strong>{option.decision.facts.strategyLabel}</strong><div className="muted">{option.decision.facts.headline}</div></td><td style={{ textAlign: "right" }}>{option.placementCards.reduce((sum, card) => sum + card.shares, 0).toFixed(0)}</td><td style={{ textAlign: "right" }}>{usd(option.decision.totalHedgeCostUsd)}</td><td style={{ textAlign: "right" }} className="pnl-neg">{usd(option.decision.riskBefore.maxLoss)}</td><td style={{ textAlign: "right" }} className="pnl-pos">{usd(option.decision.riskAfter.maxLoss)}</td><td style={{ textAlign: "right" }}>{usd(option.decision.riskAfter.stdDev)}</td><td style={{ textAlign: "right" }}>{option.decision.eta.toFixed(2)}×</td></tr>)}</tbody></table></div></div>
-          <div className="muted" style={{ margin: "4px 2px 4px" }}>
-            {res.positionTitle ? `${res.positionTitle} · ${res.eventTitle}` : res.eventTitle} ·{" "}
-            {res.meta?.outcomes} outcomes · book overround {res.meta ? `${(res.meta.overroundPct * 100).toFixed(1)}%` : "n/a"} ·{" "}
-            {res.options.length} hedge option{res.options.length === 1 ? "" : "s"}, ranked
-          </div>
-          {res.meta && (
-            <div className="muted" style={{ margin: "0 2px 14px", fontSize: 12 }}>
-              {res.meta.pricesSource === "live" ? "Priced from live order books" : "Priced from cached snapshot"}
-              {" at "}
-              {new Date(res.meta.pricedAt).toLocaleTimeString()} ·{" "}
-              {res.meta.bankrollAssumed
-                ? `size assumes your position is ~20% of bankroll (≈$${res.meta.bankrollUsd.toLocaleString()}); enter your bankroll above for an exact size`
-                : `size based on your $${res.meta.bankrollUsd.toLocaleString()} bankroll`}
-              {res.meta.deVig ? ` · de-vig: ${res.meta.deVig}` : ""}
+
+          {/* Layer 1 — the trustworthy, actionable hedge: logically certain or settlement-calibrated only. */}
+          {data?.robustHedge && (
+            <div className="card" style={{ borderColor: data.robustHedge.status === "RECOMMEND" && optimalLegs.length ? "var(--go)" : "var(--border-strong)" }}>
+              <div className="cardtitle">
+                Optimal hedge <span className="hint">settlement-calibrated cross-event legs only · trustworthy</span>
+              </div>
+              <p className="sub" style={{ marginTop: 6 }}>{data.robustHedge.reason}</p>
+              {optimalLegs.length > 0 ? (
+                <>
+                  <div className="metric-strip" style={{ marginTop: 4 }}>
+                    <div className="metric"><div className="label">Spend</div><div className="value">${data.robustHedge.spendUsd.toFixed(2)}</div><div className="detail">budget ${data.robustHedge.budgetUsd.toFixed(2)}{inferredSpend > 0 ? ` · incl. $${inferredSpend.toFixed(2)} exploratory` : ""}</div></div>
+                    <div className="metric"><div className="label">Modeled loss if fails</div><div className="value pnl-pos">${data.robustHedge.modeledLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">after the hedge</div></div>
+                    <div className="metric"><div className="label">Strict worst loss</div><div className="value pnl-neg">${data.robustHedge.strictWorstLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">the true floor; soft/inferred legs can pay $0</div></div>
+                    <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${data.robustHedge.keepIfPrimaryWinsFloorUsd.toFixed(2)}</div></div>
+                  </div>
+                  <div className="table-wrap" style={{ marginTop: 8 }}>
+                    <table style={{ minWidth: 560 }}>
+                      <thead><tr><th>Leg</th><th>Provenance</th><th style={{ textAlign: "right" }}>Spend</th><th style={{ textAlign: "right" }}>Pay if fail</th><th style={{ textAlign: "right" }}>Loss ↓</th></tr></thead>
+                      <tbody>{optimalLegs.map((a) => (
+                        <tr key={a.candidateId}>
+                          <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /></td>
+                          <td><span className={`badge ${a.provenance === "ANALYTIC" ? "GO" : "PARTIAL"}`}>{a.provenance}</span></td>
+                          <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
+                          <td style={{ textAlign: "right" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
+                          <td style={{ textAlign: "right" }} className="pnl-pos">${a.modeledLossReductionUsd.toFixed(2)}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <p className="sub" style={{ margin: "8px 0 0" }}>No settlement-calibrated cross-event hedge yet. The honest answer is to hold the bet as is, or weigh the exploratory layer below at your own risk.</p>
+              )}
+              {data.robustHedge.rejected.length > 0 && (
+                <details style={{ marginTop: 8 }}>
+                  <summary className="muted">Rejected candidates ({data.robustHedge.rejected.length}) · why they are not recommended</summary>
+                  <div style={{ marginTop: 6 }}>{data.robustHedge.rejected.slice(0, 8).map((r) => <div key={r.candidateId} className="muted" style={{ fontSize: 12 }}>· {r.candidateId}: {r.reason}</div>)}</div>
+                </details>
+              )}
             </div>
           )}
-          {res.options.map((opt, i) => (
-            <OptionCard key={i} option={opt} rank={i} topExplanation={i === 0 ? res.explanation?.text : undefined} />
-          ))}
 
-          <div className="disclaimer">
-            Not financial advice. Prediction-market trading involves substantial risk, including total loss. Within-book
-            hedging is EV-negative after spread, fee and vig; it reduces variance, it is not expected to be profitable.
-            HedgeAdvisor is an independent interface, not affiliated with Polymarket, and never holds your funds or keys.
-          </div>
+          {/* Layer 2 — exploratory cross-event mechanisms: model-inferred, never calibrated. Subordinate by design.
+              Only negatively-correlated (pay-when-you-fail) markets appear here; positively-correlated ones are excluded. */}
+          {(inferredLegs.length > 0 || crossEvent.length > 0 || amplifierCount > 0) && (
+            <div className="card" style={{ background: "var(--bg-subtle)" }}>
+              <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                Exploratory · inferred <span className="badge PARTIAL">LOW CONFIDENCE</span>
+              </div>
+              <p className="sub" style={{ marginTop: 6, color: "var(--ink-2)" }}>
+                Cross-event and cross-domain mechanisms the model surfaced that tend to pay when your bet fails. Not settlement-proven,
+                not guaranteed, and not part of the optimal hedge above. For exploration only, not a hedge recommendation.
+              </p>
+
+              {inferredLegs.length > 0 && (
+                <div className="table-wrap" style={{ marginTop: 4 }}>
+                  <table style={{ minWidth: 520 }}>
+                    <thead><tr><th>Inferred leg in the combo</th><th style={{ textAlign: "right" }}>Spend</th><th style={{ textAlign: "right" }}>Assumed pay if fail</th></tr></thead>
+                    <tbody>{inferredLegs.map((a) => (
+                      <tr key={a.candidateId}>
+                        <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /> <span className="badge PARTIAL">INFERRED</span></td>
+                        <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
+                        <td style={{ textAlign: "right", color: "var(--ink-2)" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+
+              {crossEvent.length > 0 && (
+                <div className="table-wrap" style={{ marginTop: inferredLegs.length > 0 ? 10 : 4 }}>
+                  <table style={{ minWidth: 640 }}>
+                    <thead><tr><th>Cross-event market</th><th>Mechanism</th><th style={{ textAlign: "right" }}>φ est.</th><th>Conf.</th><th></th></tr></thead>
+                    <tbody>{crossEvent.map((r) => (
+                      <tr key={r.market.id}>
+                        <td><strong>{r.market.title}</strong> <VenueTag venue={r.market.venue} short /><div style={{ color: "var(--ink-2)", fontSize: 12 }}>{r.market.marketTitle} · {cents(r.market.probYes)}</div></td>
+                        <td style={{ color: "var(--ink-2)" }}>{r.mechanismGraph?.mechanismType ?? "mechanism"}{r.mechanismGraph?.scope ? ` · ${r.mechanismGraph.scope}` : ""}</td>
+                        <td style={{ textAlign: "right", color: "var(--go)" }}>{r.relation.correlation.toFixed(2)}</td>
+                        <td style={{ color: "var(--ink-2)" }}>{r.relation.confidence === "high" ? "High" : r.relation.confidence === "medium" ? "Med" : "Low"}</td>
+                        <td style={{ textAlign: "right" }}><a className="ghostbtn" target="_blank" rel="noreferrer" href={r.market.url}><ArrowSquareOut size={13} /></a></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+
+              {amplifierCount > 0 && (
+                <div className="note-box" style={{ marginTop: crossEvent.length > 0 || inferredLegs.length > 0 ? 10 : 4 }}>
+                  {amplifierCount} positively-correlated market{amplifierCount === 1 ? "" : "s"} (e.g. same-nation player props) were hidden: they pay when your bet wins, so they amplify your exposure rather than hedge it. See the descriptive map below.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Descriptive reference: the full structural φ map (not actionable on its own). */}
+          {structuralRels.length > 0 && (
+            <div className="card">
+              <div className="section-head"><h2 style={{ margin: 0 }}>Related markets</h2><span className="muted">descriptive map · structural relations ranked by |φ| · negative φ pays when you fail</span></div>
+              <div className="table-wrap" style={{ marginTop: 8 }}>
+                <table style={{ minWidth: 720 }}>
+                  <thead><tr><th>Market</th><th>Relation</th><th style={{ textAlign: "right" }}>φ</th><th style={{ textAlign: "right" }}>Effect.</th><th style={{ textAlign: "right" }}>Hedge ×</th><th>Conf.</th><th>Method</th><th></th></tr></thead>
+                  <tbody>{structuralRels.map((r) => <RelationRow key={r.market.id} r={r} />)}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
-    </>
+
+      <div className="disclaimer">
+        Not financial advice. Every hedge here is positive-sum, never a short of your own bet: each leg is a standalone
+        positive bet on a different event that tends to pay when your bet does not, so ideally both win and at worst one wins.
+        A companion must be negatively correlated to qualify; positively-correlated markets are excluded because they fail
+        together with your bet. Two layers, read them differently. The OPTIMAL hedge is the trustworthy output: legs priced off
+        the real book (cost), capped by depth (capacity), admitted only when settled-outcome calibration proves the leg pays more
+        often when your bet fails (uncertainty via credible bounds). The EXPLORATORY layer is low confidence by design: cross-event
+        and cross-domain mechanisms are model-inferred, their edge is assumed (not settlement-proven), and they are shown for
+        exploration, never as a guarantee. Every leg adds to the strict worst loss because it can pay $0 in a possible state. The
+        Related-markets table is a DESCRIPTIVE map: φ is the binary correlation from the joint P(A and B), exact for structural
+        relations and a Fréchet-clamped estimate otherwise; price co-movement is never used as φ.
+      </div>
+    </div>
   );
 }
