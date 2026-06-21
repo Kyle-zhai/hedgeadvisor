@@ -1,0 +1,68 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "HedgeAdvisor" [ref=e4] [cursor=pointer]:
+        - /url: /protect
+        - img [ref=e6]
+        - text: HedgeAdvisor
+      - navigation "Primary navigation" [ref=e8]:
+        - link "Protect" [ref=e9] [cursor=pointer]:
+          - /url: /protect
+          - img [ref=e10]
+          - text: Protect
+        - link "Plan" [ref=e12] [cursor=pointer]:
+          - /url: /plan
+          - img [ref=e13]
+          - text: Plan
+        - link "Combo" [ref=e15] [cursor=pointer]:
+          - /url: /combo
+          - img [ref=e16]
+          - text: Combo
+        - link "Cross-venue" [ref=e18] [cursor=pointer]:
+          - /url: /link
+          - img [ref=e19]
+          - text: Cross-venue
+        - link "Markets" [ref=e21] [cursor=pointer]:
+          - /url: /markets
+          - img [ref=e22]
+          - text: Markets
+        - link "History" [ref=e24] [cursor=pointer]:
+          - /url: /history
+          - img [ref=e25]
+          - text: History
+        - link "Settings" [ref=e27] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e28]
+          - text: Settings
+      - generic [ref=e31]:
+        - generic [ref=e32]: Live Polymarket + Kalshi data
+        - generic [ref=e34]: We never hold funds or keys.
+    - main [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - generic [ref=e38]:
+            - generic [ref=e39]: Cross-venue
+            - heading "Polymarket ↔ Kalshi links" [level=1] [ref=e40]
+          - generic [ref=e42]: Live Polymarket + Kalshi
+        - generic [ref=e44]:
+          - paragraph [ref=e45]: Enter a Polymarket bet. We find the live Kalshi markets logically tied to it and label how each one relates — a real cross-venue hedge, an amplifier, or just related colour. Structural links are exact; thematic and narrative links are clearly marked speculative.
+          - generic [ref=e46]:
+            - generic [ref=e47]:
+              - text: Polymarket bet
+              - generic [ref=e48]:
+                - img [ref=e50]
+                - textbox "Polymarket bet Try “Spain wins next match” or “Spain to win the World Cup”." [ref=e52]:
+                  - /placeholder: e.g. Spain wins next match
+                  - text: Spain wins next match
+              - generic [ref=e53]: Try “Spain wins next match” or “Spain to win the World Cup”.
+            - generic [ref=e54]:
+              - text: Stake
+              - generic [ref=e55]:
+                - generic [ref=e56]: $
+                - textbox "Stake $" [ref=e57]: "20"
+            - button [disabled] [ref=e60]:
+              - img [ref=e61]
+              - text: Link
+        - generic [ref=e64]: Resolving your bet and scanning live Kalshi markets…
+        - generic [ref=e65]: Not financial advice. Prices are live market-implied mids, not forecasts. Only structural links (same-bet, mutually exclusive, containment) guarantee a payoff relationship; thematic and narrative links are correlated context and may move independently of your bet. Execution stays on each venue — HedgeAdvisor never holds funds or keys.
+  - alert [ref=e66]

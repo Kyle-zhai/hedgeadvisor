@@ -1,0 +1,38 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - heading "HedgeAdvisor" [level=1] [ref=e4]
+      - generic [ref=e5]: honest hedges for Polymarket
+    - 'link "→ New: pick a bet and get a full plan (express ←→ protect)" [ref=e7] [cursor=pointer]':
+      - /url: /plan
+    - paragraph [ref=e8]:
+      - text: Enter a position you hold or like. We rank several correlated hedges, price each at the
+      - strong [ref=e9]: real executable cost
+      - text: (not the displayed midpoint), and tell you honestly which is worth it — including when the answer is “don't bother.”
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - text: Your position
+          - textbox "Your position" [ref=e13]:
+            - /placeholder: e.g. Spain wins the World Cup
+            - text: Spain wins the World Cup
+        - generic [ref=e14]:
+          - text: Stake (USD)
+          - textbox "Stake (USD)" [ref=e15]:
+            - /placeholder: "1000"
+            - text: "1000"
+        - generic [ref=e16]:
+          - text: Avg price (optional)
+          - textbox "Avg price (optional)" [ref=e17]:
+            - /placeholder: market
+        - generic [ref=e18]:
+          - text: Bankroll (optional)
+          - textbox "Bankroll (optional)" [ref=e19]:
+            - /placeholder: for exact size
+      - button "Rank my hedges" [ref=e20] [cursor=pointer]
+      - generic [ref=e21]:
+        - generic [ref=e22] [cursor=pointer]: Spain wins the World Cup
+        - generic [ref=e23] [cursor=pointer]: France wins the World Cup
+        - generic [ref=e24] [cursor=pointer]: Brazil wins the World Cup
+        - generic [ref=e25] [cursor=pointer]: Argentina wins the World Cup
+  - alert [ref=e26]

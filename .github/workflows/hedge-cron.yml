@@ -1,0 +1,86 @@
+# Closed-loop scheduler WITHOUT Vercel: GitHub Actions is both the scheduler and the compute.
+# Each run checks out the repo, builds + starts the Next app inside the runner, and curls the three
+# cron routes with the Bearer header. The only external dependency is a persistent Postgres
+# (DATABASE_URL) — a free Neon/Supabase instance is enough. Nothing is deployed anywhere.
+#
+# Required repo config (Settings -> Secrets and variables -> Actions):
+#   Secrets:  DATABASE_URL, CRON_SECRET, DASHSCOPE_API_KEY (or QWEN_API_KEY), AI_GATEWAY_API_KEY (optional)
+#   Variables: HEDGE_RELATION_SNAPSHOT_JOBS_JSON  (required, else /relations freezes nothing)
+#              plus any HEDGE_*/QWEN_* config you keep in .env.local (all optional, sane defaults exist)
+#
+# NOTE: GitHub may delay scheduled runs under load, and it auto-DISABLES schedules after 60 days with
+# no repo commits — push occasionally (or run "Run workflow" manually) to keep it alive.
+name: hedge-closed-loop
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # every 6h UTC: freeze candidates, resolve settled pairs, snapshot prices
+  workflow_dispatch: {} # manual "Run workflow" button (use this to test the setup immediately)
+
+concurrency:
+  group: hedge-closed-loop
+  cancel-in-progress: false # never interrupt an in-flight settlement write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # secrets (keys + DB)
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+      QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+      AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+      # non-secret config (mirror what you keep in .env.local)
+      HEDGE_RELATION_SNAPSHOT_JOBS_JSON: ${{ vars.HEDGE_RELATION_SNAPSHOT_JOBS_JSON }}
+      HEDGE_SETTLE_JOBS_JSON: ${{ vars.HEDGE_SETTLE_JOBS_JSON }}
+      QWEN_BASE_URL: ${{ vars.QWEN_BASE_URL }}
+      QWEN_RELATION_MODEL: ${{ vars.QWEN_RELATION_MODEL }}
+      HEDGE_ENABLE_SEMANTIC_EMBEDDINGS: ${{ vars.HEDGE_ENABLE_SEMANTIC_EMBEDDINGS }}
+      PORT: "3000"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Build (no secrets needed — routes are force-dynamic)
+        run: npm run build
+
+      - name: Start server
+        run: |
+          npm run start > server.log 2>&1 &
+          echo $! > server.pid
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null "http://localhost:3000/discover" && { echo "ready"; break; }
+            sleep 2
+          done
+
+      - name: Trigger closed-loop crons (relations -> settle -> snapshot)
+        run: |
+          set -uo pipefail
+          fail=0
+          for path in relations settle snapshot; do
+            echo "::group::/api/cron/$path"
+            code=$(curl -s -o /tmp/out.json -w '%{http_code}' --max-time 150 \
+              -H "authorization: Bearer ${CRON_SECRET}" \
+              "http://localhost:3000/api/cron/${path}")
+            cat /tmp/out.json 2>/dev/null; echo
+            echo "HTTP ${code}"
+            [ "$code" = "200" ] || { echo "::error::/api/cron/${path} returned ${code}"; fail=1; }
+            echo "::endgroup::"
+          done
+          exit $fail
+
+      - name: Server log on failure
+        if: failure()
+        run: cat server.log || true
+
+      - name: Stop server
+        if: always()
+        run: kill "$(cat server.pid)" 2>/dev/null || true

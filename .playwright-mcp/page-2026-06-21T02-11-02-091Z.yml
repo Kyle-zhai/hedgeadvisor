@@ -1,0 +1,1282 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "HedgeAdvisor" [ref=e4] [cursor=pointer]:
+        - /url: /protect
+        - img [ref=e6]
+        - text: HedgeAdvisor
+      - navigation "Primary navigation" [ref=e8]:
+        - link "Protect" [ref=e9] [cursor=pointer]:
+          - /url: /protect
+          - img [ref=e10]
+          - text: Protect
+        - link "Plan" [ref=e12] [cursor=pointer]:
+          - /url: /plan
+          - img [ref=e13]
+          - text: Plan
+        - link "Combo" [ref=e15] [cursor=pointer]:
+          - /url: /combo
+          - img [ref=e16]
+          - text: Combo
+        - link "Cross-venue" [ref=e18] [cursor=pointer]:
+          - /url: /link
+          - img [ref=e19]
+          - text: Cross-venue
+        - link "Discover" [ref=e21] [cursor=pointer]:
+          - /url: /discover
+          - img [ref=e22]
+          - text: Discover
+        - link "Markets" [ref=e24] [cursor=pointer]:
+          - /url: /markets
+          - img [ref=e25]
+          - text: Markets
+        - link "History" [ref=e27] [cursor=pointer]:
+          - /url: /history
+          - img [ref=e28]
+          - text: History
+        - link "Settings" [ref=e30] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e31]
+          - text: Settings
+      - generic [ref=e34]:
+        - generic [ref=e35]: Live Polymarket + Kalshi data
+        - generic [ref=e37]: We never hold funds or keys.
+    - main [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e41]:
+            - generic [ref=e42]: Relation engine
+            - heading "Discover relations" [level=1] [ref=e43]
+          - generic [ref=e45]: Live Polymarket + Kalshi
+        - generic [ref=e47]:
+          - paragraph [ref=e48]: Enter a bet. The engine builds a live cross-venue market universe, then runs the 5-stage pipeline — candidate generation → relation classification → φ correlation, optimal hedge ratio, effectiveness, and confidence — and ranks every related market. Structural relations are exact; cross-entity links need embeddings (set an AI key).
+          - generic [ref=e49]:
+            - generic [ref=e50]:
+              - text: Bet
+              - generic [ref=e51]:
+                - img [ref=e53]
+                - textbox "Bet Try “Spain to win the World Cup” or “Mbappe golden boot”." [ref=e55]:
+                  - /placeholder: e.g. France to win the World Cup
+                  - text: France to win the World Cup
+              - generic [ref=e56]: Try “Spain to win the World Cup” or “Mbappe golden boot”.
+            - button [ref=e58] [cursor=pointer]:
+              - img [ref=e59]
+              - text: Discover
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e67]: Anchor
+            - heading "France Polymarket" [level=2] [ref=e68]:
+              - text: France
+              - 'generic "Source: Polymarket" [ref=e69]': Polymarket
+            - paragraph [ref=e71]: World Cup Winner · YES 20¢
+          - link "Open" [ref=e72] [cursor=pointer]:
+            - /url: https://polymarket.com/event/world-cup-winner
+            - text: Open
+            - img [ref=e73]
+        - generic [ref=e75]:
+          - generic [ref=e76]:
+            - generic [ref=e77]: Universe
+            - generic [ref=e78]: "255"
+            - generic [ref=e79]: live markets, both venues
+          - generic [ref=e80]:
+            - generic [ref=e81]: Relations
+            - generic [ref=e82]: "71"
+            - generic [ref=e83]: classified pairs
+          - generic [ref=e84]:
+            - generic [ref=e85]: Recall
+            - generic [ref=e86]: Lexical
+            - generic [ref=e87]: set an AI key for embeddings
+        - generic [ref=e88]:
+          - generic [ref=e89]: Robust hedge · 成本/容量/不确定性约束优化 settlement-calibrated; cost = book all-in price, capacity = depth, uncertainty = credible bounds
+          - paragraph [ref=e90]: Selected by conservative conditional-payoff benefit after executable cost; strict worst-case is kept separate.
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - generic [ref=e93]: Spend
+              - generic [ref=e94]: $41.05
+              - generic [ref=e95]: budget $41.05
+            - generic [ref=e96]:
+              - generic [ref=e97]: Modeled loss if fails
+              - generic [ref=e98]: $10.17
+              - generic [ref=e99]: after the hedge
+            - generic [ref=e100]:
+              - generic [ref=e101]: Strict worst loss
+              - generic [ref=e102]: $10.17
+              - generic [ref=e103]: soft legs can pay $0 — the true floor
+            - generic [ref=e104]:
+              - generic [ref=e105]: Kept if you win
+              - generic [ref=e106]: $41.05
+          - table [ref=e108]:
+            - rowgroup [ref=e109]:
+              - row "Leg Provenance Spend Pay if fail Loss ↓" [ref=e110]:
+                - columnheader "Leg" [ref=e111]
+                - columnheader "Provenance" [ref=e112]
+                - columnheader "Spend" [ref=e113]
+                - columnheader "Pay if fail" [ref=e114]
+                - columnheader "Loss ↓" [ref=e115]
+            - rowgroup [ref=e116]:
+              - row "NO France does NOT win · polymarket PM ANALYTIC $41.05 100% $9.83" [ref=e117]:
+                - cell "NO France does NOT win · polymarket PM" [ref=e118]:
+                  - strong [ref=e119]: "NO"
+                  - text: France does NOT win · polymarket
+                  - 'generic "Source: Polymarket" [ref=e120]': PM
+                - cell "ANALYTIC" [ref=e122]:
+                  - generic [ref=e123]: ANALYTIC
+                - cell "$41.05" [ref=e124]
+                - cell "100%" [ref=e125]
+                - cell "$9.83" [ref=e126]
+          - group [ref=e127]:
+            - generic "Rejected candidates (48) · why they’re not recommended" [ref=e128]
+        - generic [ref=e129]:
+          - generic [ref=e130]:
+            - heading "Related markets" [level=2] [ref=e131]
+            - generic [ref=e132]: descriptive map · ranked by |φ| · 7 candidate hedges
+          - table [ref=e134]:
+            - rowgroup [ref=e135]:
+              - row "Market Relation φ Effect. Hedge × Conf. Method" [ref=e136]:
+                - columnheader "Market" [ref=e137]
+                - columnheader "Relation" [ref=e138]
+                - columnheader "φ" [ref=e139]
+                - columnheader "Effect." [ref=e140]
+                - columnheader "Hedge ×" [ref=e141]
+                - columnheader "Conf." [ref=e142]
+                - columnheader "Method" [ref=e143]
+                - columnheader [ref=e144]
+            - rowgroup [ref=e145]:
+              - row "France KS 2026 World Soccer Cup Winner · 19¢ 同一 +0.97 94% -0.98 中 结构规则" [ref=e146]:
+                - cell "France KS 2026 World Soccer Cup Winner · 19¢" [ref=e147]:
+                  - strong [ref=e148]: France
+                  - 'generic "Source: Kalshi" [ref=e149]': KS
+                  - generic [ref=e151]: 2026 World Soccer Cup Winner · 19¢
+                - cell "同一" [ref=e152]:
+                  - generic [ref=e153]: 同一
+                - cell "+0.97" [ref=e154]
+                - cell "94%" [ref=e155]
+                - cell "-0.98" [ref=e156]
+                - cell "中" [ref=e157]
+                - cell "结构规则" [ref=e158]
+                - cell [ref=e159]:
+                  - link [ref=e160] [cursor=pointer]:
+                    - /url: https://kalshi.com/markets/kxmenworldcup
+                    - img [ref=e161]
+              - 'row "France PM World Cup: Nation to Reach Final · 13¢ 相关 +0.50 25% -0.59 中 结构规则" [ref=e163]':
+                - 'cell "France PM World Cup: Nation to Reach Final · 13¢" [ref=e164]':
+                  - strong [ref=e165]: France
+                  - 'generic "Source: Polymarket" [ref=e166]': PM
+                  - generic [ref=e168]: "World Cup: Nation to Reach Final · 13¢"
+                - cell "相关" [ref=e169]:
+                  - generic [ref=e170]: 相关
+                - cell "+0.50" [ref=e171]
+                - cell "25%" [ref=e172]
+                - cell "-0.59" [ref=e173]
+                - cell "中" [ref=e174]
+                - cell "结构规则" [ref=e175]
+                - cell [ref=e176]:
+                  - link [ref=e177] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-nation-to-reach-final
+                    - img [ref=e178]
+              - row "Spain PM World Cup Winner · 14¢ 互斥 -0.20 4% 0.23 高 结构规则" [ref=e180]:
+                - cell "Spain PM World Cup Winner · 14¢" [ref=e181]:
+                  - strong [ref=e182]: Spain
+                  - 'generic "Source: Polymarket" [ref=e183]': PM
+                  - generic [ref=e185]: World Cup Winner · 14¢
+                - cell "互斥" [ref=e186]:
+                  - generic [ref=e187]: 互斥
+                - cell "-0.20" [ref=e188]
+                - cell "4%" [ref=e189]
+                - cell "0.23" [ref=e190]
+                - cell "高" [ref=e191]
+                - cell "结构规则" [ref=e192]
+                - cell [ref=e193]:
+                  - link [ref=e194] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e195]
+              - row "England PM World Cup Winner · 12¢ 互斥 -0.19 3% 0.22 高 结构规则" [ref=e197]:
+                - cell "England PM World Cup Winner · 12¢" [ref=e198]:
+                  - strong [ref=e199]: England
+                  - 'generic "Source: Polymarket" [ref=e200]': PM
+                  - generic [ref=e202]: World Cup Winner · 12¢
+                - cell "互斥" [ref=e203]:
+                  - generic [ref=e204]: 互斥
+                - cell "-0.19" [ref=e205]
+                - cell "3%" [ref=e206]
+                - cell "0.22" [ref=e207]
+                - cell "高" [ref=e208]
+                - cell "结构规则" [ref=e209]
+                - cell [ref=e210]:
+                  - link [ref=e211] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e212]
+              - row "Germany PM World Cup Winner · 12¢ 互斥 -0.18 3% 0.22 高 结构规则" [ref=e214]:
+                - cell "Germany PM World Cup Winner · 12¢" [ref=e215]:
+                  - strong [ref=e216]: Germany
+                  - 'generic "Source: Polymarket" [ref=e217]': PM
+                  - generic [ref=e219]: World Cup Winner · 12¢
+                - cell "互斥" [ref=e220]:
+                  - generic [ref=e221]: 互斥
+                - cell "-0.18" [ref=e222]
+                - cell "3%" [ref=e223]
+                - cell "0.22" [ref=e224]
+                - cell "高" [ref=e225]
+                - cell "结构规则" [ref=e226]
+                - cell [ref=e227]:
+                  - link [ref=e228] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e229]
+              - row "Ghana PM World Cup Winner · 7¢ 互斥 -0.14 2% 0.21 高 结构规则" [ref=e231]:
+                - cell "Ghana PM World Cup Winner · 7¢" [ref=e232]:
+                  - strong [ref=e233]: Ghana
+                  - 'generic "Source: Polymarket" [ref=e234]': PM
+                  - generic [ref=e236]: World Cup Winner · 7¢
+                - cell "互斥" [ref=e237]:
+                  - generic [ref=e238]: 互斥
+                - cell "-0.14" [ref=e239]
+                - cell "2%" [ref=e240]
+                - cell "0.21" [ref=e241]
+                - cell "高" [ref=e242]
+                - cell "结构规则" [ref=e243]
+                - cell [ref=e244]:
+                  - link [ref=e245] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e246]
+              - row "Jordan PM World Cup Winner · 6¢ 互斥 -0.12 2% 0.21 高 结构规则" [ref=e248]:
+                - cell "Jordan PM World Cup Winner · 6¢" [ref=e249]:
+                  - strong [ref=e250]: Jordan
+                  - 'generic "Source: Polymarket" [ref=e251]': PM
+                  - generic [ref=e253]: World Cup Winner · 6¢
+                - cell "互斥" [ref=e254]:
+                  - generic [ref=e255]: 互斥
+                - cell "-0.12" [ref=e256]
+                - cell "2%" [ref=e257]
+                - cell "0.21" [ref=e258]
+                - cell "高" [ref=e259]
+                - cell "结构规则" [ref=e260]
+                - cell [ref=e261]:
+                  - link [ref=e262] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e263]
+              - row "Algeria PM World Cup Winner · 5¢ 互斥 -0.12 1% 0.21 高 结构规则" [ref=e265]:
+                - cell "Algeria PM World Cup Winner · 5¢" [ref=e266]:
+                  - strong [ref=e267]: Algeria
+                  - 'generic "Source: Polymarket" [ref=e268]': PM
+                  - generic [ref=e270]: World Cup Winner · 5¢
+                - cell "互斥" [ref=e271]:
+                  - generic [ref=e272]: 互斥
+                - cell "-0.12" [ref=e273]
+                - cell "1%" [ref=e274]
+                - cell "0.21" [ref=e275]
+                - cell "高" [ref=e276]
+                - cell "结构规则" [ref=e277]
+                - cell [ref=e278]:
+                  - link [ref=e279] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e280]
+              - row "Colombia PM World Cup Winner · 5¢ 互斥 -0.12 1% 0.21 高 结构规则" [ref=e282]:
+                - cell "Colombia PM World Cup Winner · 5¢" [ref=e283]:
+                  - strong [ref=e284]: Colombia
+                  - 'generic "Source: Polymarket" [ref=e285]': PM
+                  - generic [ref=e287]: World Cup Winner · 5¢
+                - cell "互斥" [ref=e288]:
+                  - generic [ref=e289]: 互斥
+                - cell "-0.12" [ref=e290]
+                - cell "1%" [ref=e291]
+                - cell "0.21" [ref=e292]
+                - cell "高" [ref=e293]
+                - cell "结构规则" [ref=e294]
+                - cell [ref=e295]:
+                  - link [ref=e296] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e297]
+              - row "Uruguay PM World Cup Winner · 3¢ 互斥 -0.09 1% 0.20 高 结构规则" [ref=e299]:
+                - cell "Uruguay PM World Cup Winner · 3¢" [ref=e300]:
+                  - strong [ref=e301]: Uruguay
+                  - 'generic "Source: Polymarket" [ref=e302]': PM
+                  - generic [ref=e304]: World Cup Winner · 3¢
+                - cell "互斥" [ref=e305]:
+                  - generic [ref=e306]: 互斥
+                - cell "-0.09" [ref=e307]
+                - cell "1%" [ref=e308]
+                - cell "0.20" [ref=e309]
+                - cell "高" [ref=e310]
+                - cell "结构规则" [ref=e311]
+                - cell [ref=e312]:
+                  - link [ref=e313] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e314]
+              - row "Team AH PM World Cup Winner · 2¢ 互斥 -0.08 1% 0.20 高 结构规则" [ref=e316]:
+                - cell "Team AH PM World Cup Winner · 2¢" [ref=e317]:
+                  - strong [ref=e318]: Team AH
+                  - 'generic "Source: Polymarket" [ref=e319]': PM
+                  - generic [ref=e321]: World Cup Winner · 2¢
+                - cell "互斥" [ref=e322]:
+                  - generic [ref=e323]: 互斥
+                - cell "-0.08" [ref=e324]
+                - cell "1%" [ref=e325]
+                - cell "0.20" [ref=e326]
+                - cell "高" [ref=e327]
+                - cell "结构规则" [ref=e328]
+                - cell [ref=e329]:
+                  - link [ref=e330] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e331]
+              - 'row "Pedri PM World Cup: Golden Boot Winner · 0¢ 相关 +0.08 1% -0.81 低 启发" [ref=e333]':
+                - 'cell "Pedri PM World Cup: Golden Boot Winner · 0¢" [ref=e334]':
+                  - strong [ref=e335]: Pedri
+                  - 'generic "Source: Polymarket" [ref=e336]': PM
+                  - generic [ref=e338]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "相关" [ref=e339]:
+                  - generic [ref=e340]: 相关
+                - cell "+0.08" [ref=e341]
+                - cell "1%" [ref=e342]
+                - cell "-0.81" [ref=e343]
+                - cell "低" [ref=e344]
+                - cell "启发" [ref=e345]
+                - cell [ref=e346]:
+                  - link [ref=e347] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e348]
+              - row "Senegal PM World Cup Winner · 2¢ 互斥 -0.07 1% 0.20 高 结构规则" [ref=e350]:
+                - cell "Senegal PM World Cup Winner · 2¢" [ref=e351]:
+                  - strong [ref=e352]: Senegal
+                  - 'generic "Source: Polymarket" [ref=e353]': PM
+                  - generic [ref=e355]: World Cup Winner · 2¢
+                - cell "互斥" [ref=e356]:
+                  - generic [ref=e357]: 互斥
+                - cell "-0.07" [ref=e358]
+                - cell "1%" [ref=e359]
+                - cell "0.20" [ref=e360]
+                - cell "高" [ref=e361]
+                - cell "结构规则" [ref=e362]
+                - cell [ref=e363]:
+                  - link [ref=e364] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e365]
+              - row "Austria PM World Cup Winner · 2¢ 互斥 -0.06 0% 0.20 中 结构规则" [ref=e367]:
+                - cell "Austria PM World Cup Winner · 2¢" [ref=e368]:
+                  - strong [ref=e369]: Austria
+                  - 'generic "Source: Polymarket" [ref=e370]': PM
+                  - generic [ref=e372]: World Cup Winner · 2¢
+                - cell "互斥" [ref=e373]:
+                  - generic [ref=e374]: 互斥
+                - cell "-0.06" [ref=e375]
+                - cell "0%" [ref=e376]
+                - cell "0.20" [ref=e377]
+                - cell "中" [ref=e378]
+                - cell "结构规则" [ref=e379]
+                - cell [ref=e380]:
+                  - link [ref=e381] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e382]
+              - row "Iran PM World Cup Winner · 1¢ 互斥 -0.06 0% 0.20 中 结构规则" [ref=e384]:
+                - cell "Iran PM World Cup Winner · 1¢" [ref=e385]:
+                  - strong [ref=e386]: Iran
+                  - 'generic "Source: Polymarket" [ref=e387]': PM
+                  - generic [ref=e389]: World Cup Winner · 1¢
+                - cell "互斥" [ref=e390]:
+                  - generic [ref=e391]: 互斥
+                - cell "-0.06" [ref=e392]
+                - cell "0%" [ref=e393]
+                - cell "0.20" [ref=e394]
+                - cell "中" [ref=e395]
+                - cell "结构规则" [ref=e396]
+                - cell [ref=e397]:
+                  - link [ref=e398] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e399]
+              - row "Tunisia PM World Cup Winner · 1¢ 互斥 -0.06 0% 0.20 中 结构规则" [ref=e401]:
+                - cell "Tunisia PM World Cup Winner · 1¢" [ref=e402]:
+                  - strong [ref=e403]: Tunisia
+                  - 'generic "Source: Polymarket" [ref=e404]': PM
+                  - generic [ref=e406]: World Cup Winner · 1¢
+                - cell "互斥" [ref=e407]:
+                  - generic [ref=e408]: 互斥
+                - cell "-0.06" [ref=e409]
+                - cell "0%" [ref=e410]
+                - cell "0.20" [ref=e411]
+                - cell "中" [ref=e412]
+                - cell "结构规则" [ref=e413]
+                - cell [ref=e414]:
+                  - link [ref=e415] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e416]
+              - row "Japan PM World Cup Winner · 1¢ 互斥 -0.05 0% 0.20 中 结构规则" [ref=e418]:
+                - cell "Japan PM World Cup Winner · 1¢" [ref=e419]:
+                  - strong [ref=e420]: Japan
+                  - 'generic "Source: Polymarket" [ref=e421]': PM
+                  - generic [ref=e423]: World Cup Winner · 1¢
+                - cell "互斥" [ref=e424]:
+                  - generic [ref=e425]: 互斥
+                - cell "-0.05" [ref=e426]
+                - cell "0%" [ref=e427]
+                - cell "0.20" [ref=e428]
+                - cell "中" [ref=e429]
+                - cell "结构规则" [ref=e430]
+                - cell [ref=e431]:
+                  - link [ref=e432] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e433]
+              - row "Switzerland PM World Cup Winner · 1¢ 互斥 -0.04 0% 0.20 中 结构规则" [ref=e435]:
+                - cell "Switzerland PM World Cup Winner · 1¢" [ref=e436]:
+                  - strong [ref=e437]: Switzerland
+                  - 'generic "Source: Polymarket" [ref=e438]': PM
+                  - generic [ref=e440]: World Cup Winner · 1¢
+                - cell "互斥" [ref=e441]:
+                  - generic [ref=e442]: 互斥
+                - cell "-0.04" [ref=e443]
+                - cell "0%" [ref=e444]
+                - cell "0.20" [ref=e445]
+                - cell "中" [ref=e446]
+                - cell "结构规则" [ref=e447]
+                - cell [ref=e448]:
+                  - link [ref=e449] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e450]
+              - row "Team AJ PM World Cup Winner · 1¢ 互斥 -0.04 0% 0.20 中 结构规则" [ref=e452]:
+                - cell "Team AJ PM World Cup Winner · 1¢" [ref=e453]:
+                  - strong [ref=e454]: Team AJ
+                  - 'generic "Source: Polymarket" [ref=e455]': PM
+                  - generic [ref=e457]: World Cup Winner · 1¢
+                - cell "互斥" [ref=e458]:
+                  - generic [ref=e459]: 互斥
+                - cell "-0.04" [ref=e460]
+                - cell "0%" [ref=e461]
+                - cell "0.20" [ref=e462]
+                - cell "中" [ref=e463]
+                - cell "结构规则" [ref=e464]
+                - cell [ref=e465]:
+                  - link [ref=e466] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e467]
+              - row "Paraguay PM World Cup Winner · 1¢ 互斥 -0.04 0% 0.20 中 结构规则" [ref=e469]:
+                - cell "Paraguay PM World Cup Winner · 1¢" [ref=e470]:
+                  - strong [ref=e471]: Paraguay
+                  - 'generic "Source: Polymarket" [ref=e472]': PM
+                  - generic [ref=e474]: World Cup Winner · 1¢
+                - cell "互斥" [ref=e475]:
+                  - generic [ref=e476]: 互斥
+                - cell "-0.04" [ref=e477]
+                - cell "0%" [ref=e478]
+                - cell "0.20" [ref=e479]
+                - cell "中" [ref=e480]
+                - cell "结构规则" [ref=e481]
+                - cell [ref=e482]:
+                  - link [ref=e483] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e484]
+              - row "Czechia PM World Cup Winner · 1¢ 互斥 -0.04 0% 0.20 中 结构规则" [ref=e486]:
+                - cell "Czechia PM World Cup Winner · 1¢" [ref=e487]:
+                  - strong [ref=e488]: Czechia
+                  - 'generic "Source: Polymarket" [ref=e489]': PM
+                  - generic [ref=e491]: World Cup Winner · 1¢
+                - cell "互斥" [ref=e492]:
+                  - generic [ref=e493]: 互斥
+                - cell "-0.04" [ref=e494]
+                - cell "0%" [ref=e495]
+                - cell "0.20" [ref=e496]
+                - cell "中" [ref=e497]
+                - cell "结构规则" [ref=e498]
+                - cell [ref=e499]:
+                  - link [ref=e500] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e501]
+              - row "Qatar PM World Cup Winner · 1¢ 互斥 -0.04 0% 0.20 中 结构规则" [ref=e503]:
+                - cell "Qatar PM World Cup Winner · 1¢" [ref=e504]:
+                  - strong [ref=e505]: Qatar
+                  - 'generic "Source: Polymarket" [ref=e506]': PM
+                  - generic [ref=e508]: World Cup Winner · 1¢
+                - cell "互斥" [ref=e509]:
+                  - generic [ref=e510]: 互斥
+                - cell "-0.04" [ref=e511]
+                - cell "0%" [ref=e512]
+                - cell "0.20" [ref=e513]
+                - cell "中" [ref=e514]
+                - cell "结构规则" [ref=e515]
+                - cell [ref=e516]:
+                  - link [ref=e517] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e518]
+              - row "South Korea PM World Cup Winner · 0¢ 互斥 -0.03 0% 0.20 中 结构规则" [ref=e520]:
+                - cell "South Korea PM World Cup Winner · 0¢" [ref=e521]:
+                  - strong [ref=e522]: South Korea
+                  - 'generic "Source: Polymarket" [ref=e523]': PM
+                  - generic [ref=e525]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e526]:
+                  - generic [ref=e527]: 互斥
+                - cell "-0.03" [ref=e528]
+                - cell "0%" [ref=e529]
+                - cell "0.20" [ref=e530]
+                - cell "中" [ref=e531]
+                - cell "结构规则" [ref=e532]
+                - cell [ref=e533]:
+                  - link [ref=e534] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e535]
+              - row "Team AI PM World Cup Winner · 0¢ 互斥 -0.03 0% 0.20 中 结构规则" [ref=e537]:
+                - cell "Team AI PM World Cup Winner · 0¢" [ref=e538]:
+                  - strong [ref=e539]: Team AI
+                  - 'generic "Source: Polymarket" [ref=e540]': PM
+                  - generic [ref=e542]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e543]:
+                  - generic [ref=e544]: 互斥
+                - cell "-0.03" [ref=e545]
+                - cell "0%" [ref=e546]
+                - cell "0.20" [ref=e547]
+                - cell "中" [ref=e548]
+                - cell "结构规则" [ref=e549]
+                - cell [ref=e550]:
+                  - link [ref=e551] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e552]
+              - row "Sweden PM World Cup Winner · 0¢ 互斥 -0.03 0% 0.20 中 结构规则" [ref=e554]:
+                - cell "Sweden PM World Cup Winner · 0¢" [ref=e555]:
+                  - strong [ref=e556]: Sweden
+                  - 'generic "Source: Polymarket" [ref=e557]': PM
+                  - generic [ref=e559]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e560]:
+                  - generic [ref=e561]: 互斥
+                - cell "-0.03" [ref=e562]
+                - cell "0%" [ref=e563]
+                - cell "0.20" [ref=e564]
+                - cell "中" [ref=e565]
+                - cell "结构规则" [ref=e566]
+                - cell [ref=e567]:
+                  - link [ref=e568] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e569]
+              - row "Croatia PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.20 中 结构规则" [ref=e571]:
+                - cell "Croatia PM World Cup Winner · 0¢" [ref=e572]:
+                  - strong [ref=e573]: Croatia
+                  - 'generic "Source: Polymarket" [ref=e574]': PM
+                  - generic [ref=e576]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e577]:
+                  - generic [ref=e578]: 互斥
+                - cell "-0.02" [ref=e579]
+                - cell "0%" [ref=e580]
+                - cell "0.20" [ref=e581]
+                - cell "中" [ref=e582]
+                - cell "结构规则" [ref=e583]
+                - cell [ref=e584]:
+                  - link [ref=e585] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e586]
+              - row "Team AO PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.20 中 结构规则" [ref=e588]:
+                - cell "Team AO PM World Cup Winner · 0¢" [ref=e589]:
+                  - strong [ref=e590]: Team AO
+                  - 'generic "Source: Polymarket" [ref=e591]': PM
+                  - generic [ref=e593]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e594]:
+                  - generic [ref=e595]: 互斥
+                - cell "-0.02" [ref=e596]
+                - cell "0%" [ref=e597]
+                - cell "0.20" [ref=e598]
+                - cell "中" [ref=e599]
+                - cell "结构规则" [ref=e600]
+                - cell [ref=e601]:
+                  - link [ref=e602] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e603]
+              - row "Norway PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.20 中 结构规则" [ref=e605]:
+                - cell "Norway PM World Cup Winner · 0¢" [ref=e606]:
+                  - strong [ref=e607]: Norway
+                  - 'generic "Source: Polymarket" [ref=e608]': PM
+                  - generic [ref=e610]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e611]:
+                  - generic [ref=e612]: 互斥
+                - cell "-0.02" [ref=e613]
+                - cell "0%" [ref=e614]
+                - cell "0.20" [ref=e615]
+                - cell "中" [ref=e616]
+                - cell "结构规则" [ref=e617]
+                - cell [ref=e618]:
+                  - link [ref=e619] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e620]
+              - row "Other PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.20 中 结构规则" [ref=e622]:
+                - cell "Other PM World Cup Winner · 0¢" [ref=e623]:
+                  - strong [ref=e624]: Other
+                  - 'generic "Source: Polymarket" [ref=e625]': PM
+                  - generic [ref=e627]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e628]:
+                  - generic [ref=e629]: 互斥
+                - cell "-0.02" [ref=e630]
+                - cell "0%" [ref=e631]
+                - cell "0.20" [ref=e632]
+                - cell "中" [ref=e633]
+                - cell "结构规则" [ref=e634]
+                - cell [ref=e635]:
+                  - link [ref=e636] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e637]
+              - row "Iraq PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.20 中 结构规则" [ref=e639]:
+                - cell "Iraq PM World Cup Winner · 0¢" [ref=e640]:
+                  - strong [ref=e641]: Iraq
+                  - 'generic "Source: Polymarket" [ref=e642]': PM
+                  - generic [ref=e644]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e645]:
+                  - generic [ref=e646]: 互斥
+                - cell "-0.02" [ref=e647]
+                - cell "0%" [ref=e648]
+                - cell "0.20" [ref=e649]
+                - cell "中" [ref=e650]
+                - cell "结构规则" [ref=e651]
+                - cell [ref=e652]:
+                  - link [ref=e653] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e654]
+              - row "Belgium PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.20 中 结构规则" [ref=e656]:
+                - cell "Belgium PM World Cup Winner · 0¢" [ref=e657]:
+                  - strong [ref=e658]: Belgium
+                  - 'generic "Source: Polymarket" [ref=e659]': PM
+                  - generic [ref=e661]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e662]:
+                  - generic [ref=e663]: 互斥
+                - cell "-0.02" [ref=e664]
+                - cell "0%" [ref=e665]
+                - cell "0.20" [ref=e666]
+                - cell "中" [ref=e667]
+                - cell "结构规则" [ref=e668]
+                - cell [ref=e669]:
+                  - link [ref=e670] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e671]
+              - 'row "Raphinha PM World Cup: Golden Boot Winner · 0¢ 独立 +0.02 0% -0.31 低 启发" [ref=e673]':
+                - 'cell "Raphinha PM World Cup: Golden Boot Winner · 0¢" [ref=e674]':
+                  - strong [ref=e675]: Raphinha
+                  - 'generic "Source: Polymarket" [ref=e676]': PM
+                  - generic [ref=e678]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "独立" [ref=e679]:
+                  - generic [ref=e680]: 独立
+                - cell "+0.02" [ref=e681]
+                - cell "0%" [ref=e682]
+                - cell "-0.31" [ref=e683]
+                - cell "低" [ref=e684]
+                - cell "启发" [ref=e685]
+                - cell [ref=e686]:
+                  - link [ref=e687] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e688]
+              - 'row "Rodrygo PM World Cup: Golden Boot Winner · 0¢ 独立 +0.02 0% -0.31 低 启发" [ref=e690]':
+                - 'cell "Rodrygo PM World Cup: Golden Boot Winner · 0¢" [ref=e691]':
+                  - strong [ref=e692]: Rodrygo
+                  - 'generic "Source: Polymarket" [ref=e693]': PM
+                  - generic [ref=e695]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "独立" [ref=e696]:
+                  - generic [ref=e697]: 独立
+                - cell "+0.02" [ref=e698]
+                - cell "0%" [ref=e699]
+                - cell "-0.31" [ref=e700]
+                - cell "低" [ref=e701]
+                - cell "启发" [ref=e702]
+                - cell [ref=e703]:
+                  - link [ref=e704] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e705]
+              - row "New Zealand PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e707]:
+                - cell "New Zealand PM World Cup Winner · 0¢" [ref=e708]:
+                  - strong [ref=e709]: New Zealand
+                  - 'generic "Source: Polymarket" [ref=e710]': PM
+                  - generic [ref=e712]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e713]:
+                  - generic [ref=e714]: 互斥
+                - cell "-0.02" [ref=e715]
+                - cell "0%" [ref=e716]
+                - cell "0.33" [ref=e717]
+                - cell "中" [ref=e718]
+                - cell "结构规则" [ref=e719]
+                - cell [ref=e720]:
+                  - link [ref=e721] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e722]
+              - row "Team AM PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e724]:
+                - cell "Team AM PM World Cup Winner · 0¢" [ref=e725]:
+                  - strong [ref=e726]: Team AM
+                  - 'generic "Source: Polymarket" [ref=e727]': PM
+                  - generic [ref=e729]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e730]:
+                  - generic [ref=e731]: 互斥
+                - cell "-0.02" [ref=e732]
+                - cell "0%" [ref=e733]
+                - cell "0.00" [ref=e734]
+                - cell "中" [ref=e735]
+                - cell "结构规则" [ref=e736]
+                - cell [ref=e737]:
+                  - link [ref=e738] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e739]
+              - row "Brazil PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e741]:
+                - cell "Brazil PM World Cup Winner · 0¢" [ref=e742]:
+                  - strong [ref=e743]: Brazil
+                  - 'generic "Source: Polymarket" [ref=e744]': PM
+                  - generic [ref=e746]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e747]:
+                  - generic [ref=e748]: 互斥
+                - cell "-0.02" [ref=e749]
+                - cell "0%" [ref=e750]
+                - cell "0.00" [ref=e751]
+                - cell "中" [ref=e752]
+                - cell "结构规则" [ref=e753]
+                - cell [ref=e754]:
+                  - link [ref=e755] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e756]
+              - row "Curaçao PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e758]:
+                - cell "Curaçao PM World Cup Winner · 0¢" [ref=e759]:
+                  - strong [ref=e760]: Curaçao
+                  - 'generic "Source: Polymarket" [ref=e761]': PM
+                  - generic [ref=e763]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e764]:
+                  - generic [ref=e765]: 互斥
+                - cell "-0.02" [ref=e766]
+                - cell "0%" [ref=e767]
+                - cell "0.33" [ref=e768]
+                - cell "中" [ref=e769]
+                - cell "结构规则" [ref=e770]
+                - cell [ref=e771]:
+                  - link [ref=e772] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e773]
+              - row "Argentina PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e775]:
+                - cell "Argentina PM World Cup Winner · 0¢" [ref=e776]:
+                  - strong [ref=e777]: Argentina
+                  - 'generic "Source: Polymarket" [ref=e778]': PM
+                  - generic [ref=e780]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e781]:
+                  - generic [ref=e782]: 互斥
+                - cell "-0.02" [ref=e783]
+                - cell "0%" [ref=e784]
+                - cell "0.33" [ref=e785]
+                - cell "中" [ref=e786]
+                - cell "结构规则" [ref=e787]
+                - cell [ref=e788]:
+                  - link [ref=e789] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e790]
+              - row "Portugal PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e792]:
+                - cell "Portugal PM World Cup Winner · 0¢" [ref=e793]:
+                  - strong [ref=e794]: Portugal
+                  - 'generic "Source: Polymarket" [ref=e795]': PM
+                  - generic [ref=e797]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e798]:
+                  - generic [ref=e799]: 互斥
+                - cell "-0.02" [ref=e800]
+                - cell "0%" [ref=e801]
+                - cell "0.33" [ref=e802]
+                - cell "中" [ref=e803]
+                - cell "结构规则" [ref=e804]
+                - cell [ref=e805]:
+                  - link [ref=e806] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e807]
+              - row "Netherlands PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e809]:
+                - cell "Netherlands PM World Cup Winner · 0¢" [ref=e810]:
+                  - strong [ref=e811]: Netherlands
+                  - 'generic "Source: Polymarket" [ref=e812]': PM
+                  - generic [ref=e814]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e815]:
+                  - generic [ref=e816]: 互斥
+                - cell "-0.02" [ref=e817]
+                - cell "0%" [ref=e818]
+                - cell "0.33" [ref=e819]
+                - cell "中" [ref=e820]
+                - cell "结构规则" [ref=e821]
+                - cell [ref=e822]:
+                  - link [ref=e823] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e824]
+              - row "Bosnia-Herzegovina PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e826]:
+                - cell "Bosnia-Herzegovina PM World Cup Winner · 0¢" [ref=e827]:
+                  - strong [ref=e828]: Bosnia-Herzegovina
+                  - 'generic "Source: Polymarket" [ref=e829]': PM
+                  - generic [ref=e831]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e832]:
+                  - generic [ref=e833]: 互斥
+                - cell "-0.02" [ref=e834]
+                - cell "0%" [ref=e835]
+                - cell "0.33" [ref=e836]
+                - cell "中" [ref=e837]
+                - cell "结构规则" [ref=e838]
+                - cell [ref=e839]:
+                  - link [ref=e840] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e841]
+              - row "USA PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e843]:
+                - cell "USA PM World Cup Winner · 0¢" [ref=e844]:
+                  - strong [ref=e845]: USA
+                  - 'generic "Source: Polymarket" [ref=e846]': PM
+                  - generic [ref=e848]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e849]:
+                  - generic [ref=e850]: 互斥
+                - cell "-0.02" [ref=e851]
+                - cell "0%" [ref=e852]
+                - cell "0.33" [ref=e853]
+                - cell "中" [ref=e854]
+                - cell "结构规则" [ref=e855]
+                - cell [ref=e856]:
+                  - link [ref=e857] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e858]
+              - row "Canada PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e860]:
+                - cell "Canada PM World Cup Winner · 0¢" [ref=e861]:
+                  - strong [ref=e862]: Canada
+                  - 'generic "Source: Polymarket" [ref=e863]': PM
+                  - generic [ref=e865]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e866]:
+                  - generic [ref=e867]: 互斥
+                - cell "-0.02" [ref=e868]
+                - cell "0%" [ref=e869]
+                - cell "0.00" [ref=e870]
+                - cell "中" [ref=e871]
+                - cell "结构规则" [ref=e872]
+                - cell [ref=e873]:
+                  - link [ref=e874] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e875]
+              - row "Mexico PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e877]:
+                - cell "Mexico PM World Cup Winner · 0¢" [ref=e878]:
+                  - strong [ref=e879]: Mexico
+                  - 'generic "Source: Polymarket" [ref=e880]': PM
+                  - generic [ref=e882]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e883]:
+                  - generic [ref=e884]: 互斥
+                - cell "-0.02" [ref=e885]
+                - cell "0%" [ref=e886]
+                - cell "0.00" [ref=e887]
+                - cell "中" [ref=e888]
+                - cell "结构规则" [ref=e889]
+                - cell [ref=e890]:
+                  - link [ref=e891] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e892]
+              - row "Scotland PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e894]:
+                - cell "Scotland PM World Cup Winner · 0¢" [ref=e895]:
+                  - strong [ref=e896]: Scotland
+                  - 'generic "Source: Polymarket" [ref=e897]': PM
+                  - generic [ref=e899]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e900]:
+                  - generic [ref=e901]: 互斥
+                - cell "-0.02" [ref=e902]
+                - cell "0%" [ref=e903]
+                - cell "0.00" [ref=e904]
+                - cell "中" [ref=e905]
+                - cell "结构规则" [ref=e906]
+                - cell [ref=e907]:
+                  - link [ref=e908] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e909]
+              - row "Team AG PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e911]:
+                - cell "Team AG PM World Cup Winner · 0¢" [ref=e912]:
+                  - strong [ref=e913]: Team AG
+                  - 'generic "Source: Polymarket" [ref=e914]': PM
+                  - generic [ref=e916]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e917]:
+                  - generic [ref=e918]: 互斥
+                - cell "-0.02" [ref=e919]
+                - cell "0%" [ref=e920]
+                - cell "0.00" [ref=e921]
+                - cell "中" [ref=e922]
+                - cell "结构规则" [ref=e923]
+                - cell [ref=e924]:
+                  - link [ref=e925] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e926]
+              - row "Ecuador PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e928]:
+                - cell "Ecuador PM World Cup Winner · 0¢" [ref=e929]:
+                  - strong [ref=e930]: Ecuador
+                  - 'generic "Source: Polymarket" [ref=e931]': PM
+                  - generic [ref=e933]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e934]:
+                  - generic [ref=e935]: 互斥
+                - cell "-0.02" [ref=e936]
+                - cell "0%" [ref=e937]
+                - cell "0.00" [ref=e938]
+                - cell "中" [ref=e939]
+                - cell "结构规则" [ref=e940]
+                - cell [ref=e941]:
+                  - link [ref=e942] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e943]
+              - row "Uzbekistan PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e945]:
+                - cell "Uzbekistan PM World Cup Winner · 0¢" [ref=e946]:
+                  - strong [ref=e947]: Uzbekistan
+                  - 'generic "Source: Polymarket" [ref=e948]': PM
+                  - generic [ref=e950]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e951]:
+                  - generic [ref=e952]: 互斥
+                - cell "-0.02" [ref=e953]
+                - cell "0%" [ref=e954]
+                - cell "0.00" [ref=e955]
+                - cell "中" [ref=e956]
+                - cell "结构规则" [ref=e957]
+                - cell [ref=e958]:
+                  - link [ref=e959] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e960]
+              - row "Morocco PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e962]:
+                - cell "Morocco PM World Cup Winner · 0¢" [ref=e963]:
+                  - strong [ref=e964]: Morocco
+                  - 'generic "Source: Polymarket" [ref=e965]': PM
+                  - generic [ref=e967]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e968]:
+                  - generic [ref=e969]: 互斥
+                - cell "-0.02" [ref=e970]
+                - cell "0%" [ref=e971]
+                - cell "0.33" [ref=e972]
+                - cell "中" [ref=e973]
+                - cell "结构规则" [ref=e974]
+                - cell [ref=e975]:
+                  - link [ref=e976] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e977]
+              - row "Panama PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e979]:
+                - cell "Panama PM World Cup Winner · 0¢" [ref=e980]:
+                  - strong [ref=e981]: Panama
+                  - 'generic "Source: Polymarket" [ref=e982]': PM
+                  - generic [ref=e984]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e985]:
+                  - generic [ref=e986]: 互斥
+                - cell "-0.02" [ref=e987]
+                - cell "0%" [ref=e988]
+                - cell "0.00" [ref=e989]
+                - cell "中" [ref=e990]
+                - cell "结构规则" [ref=e991]
+                - cell [ref=e992]:
+                  - link [ref=e993] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e994]
+              - row "South Africa PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e996]:
+                - cell "South Africa PM World Cup Winner · 0¢" [ref=e997]:
+                  - strong [ref=e998]: South Africa
+                  - 'generic "Source: Polymarket" [ref=e999]': PM
+                  - generic [ref=e1001]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1002]:
+                  - generic [ref=e1003]: 互斥
+                - cell "-0.02" [ref=e1004]
+                - cell "0%" [ref=e1005]
+                - cell "0.33" [ref=e1006]
+                - cell "中" [ref=e1007]
+                - cell "结构规则" [ref=e1008]
+                - cell [ref=e1009]:
+                  - link [ref=e1010] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1011]
+              - row "Ivory Coast PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e1013]:
+                - cell "Ivory Coast PM World Cup Winner · 0¢" [ref=e1014]:
+                  - strong [ref=e1015]: Ivory Coast
+                  - 'generic "Source: Polymarket" [ref=e1016]': PM
+                  - generic [ref=e1018]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1019]:
+                  - generic [ref=e1020]: 互斥
+                - cell "-0.02" [ref=e1021]
+                - cell "0%" [ref=e1022]
+                - cell "0.33" [ref=e1023]
+                - cell "中" [ref=e1024]
+                - cell "结构规则" [ref=e1025]
+                - cell [ref=e1026]:
+                  - link [ref=e1027] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1028]
+              - row "Congo DR PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e1030]:
+                - cell "Congo DR PM World Cup Winner · 0¢" [ref=e1031]:
+                  - strong [ref=e1032]: Congo DR
+                  - 'generic "Source: Polymarket" [ref=e1033]': PM
+                  - generic [ref=e1035]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1036]:
+                  - generic [ref=e1037]: 互斥
+                - cell "-0.02" [ref=e1038]
+                - cell "0%" [ref=e1039]
+                - cell "0.33" [ref=e1040]
+                - cell "中" [ref=e1041]
+                - cell "结构规则" [ref=e1042]
+                - cell [ref=e1043]:
+                  - link [ref=e1044] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1045]
+              - row "Cape Verde PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e1047]:
+                - cell "Cape Verde PM World Cup Winner · 0¢" [ref=e1048]:
+                  - strong [ref=e1049]: Cape Verde
+                  - 'generic "Source: Polymarket" [ref=e1050]': PM
+                  - generic [ref=e1052]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1053]:
+                  - generic [ref=e1054]: 互斥
+                - cell "-0.02" [ref=e1055]
+                - cell "0%" [ref=e1056]
+                - cell "0.33" [ref=e1057]
+                - cell "中" [ref=e1058]
+                - cell "结构规则" [ref=e1059]
+                - cell [ref=e1060]:
+                  - link [ref=e1061] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1062]
+              - row "Australia PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e1064]:
+                - cell "Australia PM World Cup Winner · 0¢" [ref=e1065]:
+                  - strong [ref=e1066]: Australia
+                  - 'generic "Source: Polymarket" [ref=e1067]': PM
+                  - generic [ref=e1069]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1070]:
+                  - generic [ref=e1071]: 互斥
+                - cell "-0.02" [ref=e1072]
+                - cell "0%" [ref=e1073]
+                - cell "0.33" [ref=e1074]
+                - cell "中" [ref=e1075]
+                - cell "结构规则" [ref=e1076]
+                - cell [ref=e1077]:
+                  - link [ref=e1078] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1079]
+              - row "Saudi Arabia PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e1081]:
+                - cell "Saudi Arabia PM World Cup Winner · 0¢" [ref=e1082]:
+                  - strong [ref=e1083]: Saudi Arabia
+                  - 'generic "Source: Polymarket" [ref=e1084]': PM
+                  - generic [ref=e1086]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1087]:
+                  - generic [ref=e1088]: 互斥
+                - cell "-0.02" [ref=e1089]
+                - cell "0%" [ref=e1090]
+                - cell "0.33" [ref=e1091]
+                - cell "中" [ref=e1092]
+                - cell "结构规则" [ref=e1093]
+                - cell [ref=e1094]:
+                  - link [ref=e1095] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1096]
+              - row "Team AL PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e1098]:
+                - cell "Team AL PM World Cup Winner · 0¢" [ref=e1099]:
+                  - strong [ref=e1100]: Team AL
+                  - 'generic "Source: Polymarket" [ref=e1101]': PM
+                  - generic [ref=e1103]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1104]:
+                  - generic [ref=e1105]: 互斥
+                - cell "-0.02" [ref=e1106]
+                - cell "0%" [ref=e1107]
+                - cell "0.33" [ref=e1108]
+                - cell "中" [ref=e1109]
+                - cell "结构规则" [ref=e1110]
+                - cell [ref=e1111]:
+                  - link [ref=e1112] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1113]
+              - row "Team AN PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.33 中 结构规则" [ref=e1115]:
+                - cell "Team AN PM World Cup Winner · 0¢" [ref=e1116]:
+                  - strong [ref=e1117]: Team AN
+                  - 'generic "Source: Polymarket" [ref=e1118]': PM
+                  - generic [ref=e1120]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1121]:
+                  - generic [ref=e1122]: 互斥
+                - cell "-0.02" [ref=e1123]
+                - cell "0%" [ref=e1124]
+                - cell "0.33" [ref=e1125]
+                - cell "中" [ref=e1126]
+                - cell "结构规则" [ref=e1127]
+                - cell [ref=e1128]:
+                  - link [ref=e1129] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1130]
+              - row "Egypt PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e1132]:
+                - cell "Egypt PM World Cup Winner · 0¢" [ref=e1133]:
+                  - strong [ref=e1134]: Egypt
+                  - 'generic "Source: Polymarket" [ref=e1135]': PM
+                  - generic [ref=e1137]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1138]:
+                  - generic [ref=e1139]: 互斥
+                - cell "-0.02" [ref=e1140]
+                - cell "0%" [ref=e1141]
+                - cell "0.00" [ref=e1142]
+                - cell "中" [ref=e1143]
+                - cell "结构规则" [ref=e1144]
+                - cell [ref=e1145]:
+                  - link [ref=e1146] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1147]
+              - row "Team AK PM World Cup Winner · 0¢ 互斥 -0.02 0% 0.00 中 结构规则" [ref=e1149]:
+                - cell "Team AK PM World Cup Winner · 0¢" [ref=e1150]:
+                  - strong [ref=e1151]: Team AK
+                  - 'generic "Source: Polymarket" [ref=e1152]': PM
+                  - generic [ref=e1154]: World Cup Winner · 0¢
+                - cell "互斥" [ref=e1155]:
+                  - generic [ref=e1156]: 互斥
+                - cell "-0.02" [ref=e1157]
+                - cell "0%" [ref=e1158]
+                - cell "0.00" [ref=e1159]
+                - cell "中" [ref=e1160]
+                - cell "结构规则" [ref=e1161]
+                - cell [ref=e1162]:
+                  - link [ref=e1163] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-winner
+                    - img [ref=e1164]
+              - row "Australia PM World Cup Group D Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1166]:
+                - cell "Australia PM World Cup Group D Winner · 0¢" [ref=e1167]:
+                  - strong [ref=e1168]: Australia
+                  - 'generic "Source: Polymarket" [ref=e1169]': PM
+                  - generic [ref=e1171]: World Cup Group D Winner · 0¢
+                - cell "互斥" [ref=e1172]:
+                  - generic [ref=e1173]: 互斥
+                - cell "-0.02" [ref=e1174]
+                - cell "0%" [ref=e1175]
+                - cell "0.00" [ref=e1176]
+                - cell "低" [ref=e1177]
+                - cell "启发" [ref=e1178]
+                - cell [ref=e1179]:
+                  - link [ref=e1180] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-group-d-winner
+                    - img [ref=e1181]
+              - 'row "Player Q PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1183]':
+                - 'cell "Player Q PM World Cup: Golden Boot Winner · 0¢" [ref=e1184]':
+                  - strong [ref=e1185]: Player Q
+                  - 'generic "Source: Polymarket" [ref=e1186]': PM
+                  - generic [ref=e1188]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1189]:
+                  - generic [ref=e1190]: 互斥
+                - cell "-0.02" [ref=e1191]
+                - cell "0%" [ref=e1192]
+                - cell "0.00" [ref=e1193]
+                - cell "低" [ref=e1194]
+                - cell "启发" [ref=e1195]
+                - cell [ref=e1196]:
+                  - link [ref=e1197] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1198]
+              - 'row "Player W PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1200]':
+                - 'cell "Player W PM World Cup: Golden Boot Winner · 0¢" [ref=e1201]':
+                  - strong [ref=e1202]: Player W
+                  - 'generic "Source: Polymarket" [ref=e1203]': PM
+                  - generic [ref=e1205]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1206]:
+                  - generic [ref=e1207]: 互斥
+                - cell "-0.02" [ref=e1208]
+                - cell "0%" [ref=e1209]
+                - cell "0.00" [ref=e1210]
+                - cell "低" [ref=e1211]
+                - cell "启发" [ref=e1212]
+                - cell [ref=e1213]:
+                  - link [ref=e1214] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1215]
+              - 'row "Player Y PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1217]':
+                - 'cell "Player Y PM World Cup: Golden Boot Winner · 0¢" [ref=e1218]':
+                  - strong [ref=e1219]: Player Y
+                  - 'generic "Source: Polymarket" [ref=e1220]': PM
+                  - generic [ref=e1222]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1223]:
+                  - generic [ref=e1224]: 互斥
+                - cell "-0.02" [ref=e1225]
+                - cell "0%" [ref=e1226]
+                - cell "0.00" [ref=e1227]
+                - cell "低" [ref=e1228]
+                - cell "启发" [ref=e1229]
+                - cell [ref=e1230]:
+                  - link [ref=e1231] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1232]
+              - 'row "Player J PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1234]':
+                - 'cell "Player J PM World Cup: Golden Boot Winner · 0¢" [ref=e1235]':
+                  - strong [ref=e1236]: Player J
+                  - 'generic "Source: Polymarket" [ref=e1237]': PM
+                  - generic [ref=e1239]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1240]:
+                  - generic [ref=e1241]: 互斥
+                - cell "-0.02" [ref=e1242]
+                - cell "0%" [ref=e1243]
+                - cell "0.00" [ref=e1244]
+                - cell "低" [ref=e1245]
+                - cell "启发" [ref=e1246]
+                - cell [ref=e1247]:
+                  - link [ref=e1248] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1249]
+              - 'row "Player L PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1251]':
+                - 'cell "Player L PM World Cup: Golden Boot Winner · 0¢" [ref=e1252]':
+                  - strong [ref=e1253]: Player L
+                  - 'generic "Source: Polymarket" [ref=e1254]': PM
+                  - generic [ref=e1256]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1257]:
+                  - generic [ref=e1258]: 互斥
+                - cell "-0.02" [ref=e1259]
+                - cell "0%" [ref=e1260]
+                - cell "0.00" [ref=e1261]
+                - cell "低" [ref=e1262]
+                - cell "启发" [ref=e1263]
+                - cell [ref=e1264]:
+                  - link [ref=e1265] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1266]
+              - 'row "Player N PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1268]':
+                - 'cell "Player N PM World Cup: Golden Boot Winner · 0¢" [ref=e1269]':
+                  - strong [ref=e1270]: Player N
+                  - 'generic "Source: Polymarket" [ref=e1271]': PM
+                  - generic [ref=e1273]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1274]:
+                  - generic [ref=e1275]: 互斥
+                - cell "-0.02" [ref=e1276]
+                - cell "0%" [ref=e1277]
+                - cell "0.00" [ref=e1278]
+                - cell "低" [ref=e1279]
+                - cell "启发" [ref=e1280]
+                - cell [ref=e1281]:
+                  - link [ref=e1282] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1283]
+              - 'row "Player P PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1285]':
+                - 'cell "Player P PM World Cup: Golden Boot Winner · 0¢" [ref=e1286]':
+                  - strong [ref=e1287]: Player P
+                  - 'generic "Source: Polymarket" [ref=e1288]': PM
+                  - generic [ref=e1290]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1291]:
+                  - generic [ref=e1292]: 互斥
+                - cell "-0.02" [ref=e1293]
+                - cell "0%" [ref=e1294]
+                - cell "0.00" [ref=e1295]
+                - cell "低" [ref=e1296]
+                - cell "启发" [ref=e1297]
+                - cell [ref=e1298]:
+                  - link [ref=e1299] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1300]
+              - 'row "Player R PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1302]':
+                - 'cell "Player R PM World Cup: Golden Boot Winner · 0¢" [ref=e1303]':
+                  - strong [ref=e1304]: Player R
+                  - 'generic "Source: Polymarket" [ref=e1305]': PM
+                  - generic [ref=e1307]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1308]:
+                  - generic [ref=e1309]: 互斥
+                - cell "-0.02" [ref=e1310]
+                - cell "0%" [ref=e1311]
+                - cell "0.00" [ref=e1312]
+                - cell "低" [ref=e1313]
+                - cell "启发" [ref=e1314]
+                - cell [ref=e1315]:
+                  - link [ref=e1316] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1317]
+              - 'row "Player T PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1319]':
+                - 'cell "Player T PM World Cup: Golden Boot Winner · 0¢" [ref=e1320]':
+                  - strong [ref=e1321]: Player T
+                  - 'generic "Source: Polymarket" [ref=e1322]': PM
+                  - generic [ref=e1324]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1325]:
+                  - generic [ref=e1326]: 互斥
+                - cell "-0.02" [ref=e1327]
+                - cell "0%" [ref=e1328]
+                - cell "0.00" [ref=e1329]
+                - cell "低" [ref=e1330]
+                - cell "启发" [ref=e1331]
+                - cell [ref=e1332]:
+                  - link [ref=e1333] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1334]
+              - 'row "Player X PM World Cup: Golden Boot Winner · 0¢ 互斥 -0.02 0% 0.00 低 启发" [ref=e1336]':
+                - 'cell "Player X PM World Cup: Golden Boot Winner · 0¢" [ref=e1337]':
+                  - strong [ref=e1338]: Player X
+                  - 'generic "Source: Polymarket" [ref=e1339]': PM
+                  - generic [ref=e1341]: "World Cup: Golden Boot Winner · 0¢"
+                - cell "互斥" [ref=e1342]:
+                  - generic [ref=e1343]: 互斥
+                - cell "-0.02" [ref=e1344]
+                - cell "0%" [ref=e1345]
+                - cell "0.00" [ref=e1346]
+                - cell "低" [ref=e1347]
+                - cell "启发" [ref=e1348]
+                - cell [ref=e1349]:
+                  - link [ref=e1350] [cursor=pointer]:
+                    - /url: https://polymarket.com/event/world-cup-golden-boot-winner
+                    - img [ref=e1351]
+        - generic [ref=e63]: "Not financial advice. The Related-markets table is a DESCRIPTIVE map: φ there is the binary correlation from the joint P(A∩B), exact for structural relations and a Fréchet-clamped estimate otherwise — it is NOT a settlement guarantee, and price co-movement is never used as φ. The Robust hedge is the only ACTIONABLE output: it prices each leg off the real book (cost), caps by depth (capacity), and admits a leg only when deterministic structure proves it covers every anchor-fail state, or settled-outcome calibration proves it pays more often when the anchor fails (uncertainty via credible bounds). LLM (Qwen) relations are hypotheses only — never an exact structural claim — and are rejected until calibrated. Soft legs add to the strict worst loss because they can pay $0 in a possible state."
+  - alert [ref=e64]

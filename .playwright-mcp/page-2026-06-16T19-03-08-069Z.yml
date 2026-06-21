@@ -1,0 +1,40 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - heading "HedgeAdvisor" [level=1] [ref=e4]
+    - generic [ref=e5]: pick a bet · get an honest plan
+  - paragraph [ref=e6]:
+    - text: Pick a real World Cup bet, set your budget, and slide between
+    - strong [ref=e7]: express your view
+    - text: and
+    - strong [ref=e8]: protect it
+    - text: . Every leg is a market that actually exists on Polymarket; we show the real return/risk — including that prediction bets lose money on average.
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - text: Your bet
+        - textbox "Your bet" [ref=e12]:
+          - /placeholder: e.g. England beats Croatia
+          - text: England beats Croatia
+      - generic [ref=e13]:
+        - text: Budget (USD)
+        - textbox "Budget (USD)" [ref=e14]:
+          - /placeholder: "20"
+          - text: "20"
+      - generic [ref=e15]:
+        - text: Number of bets
+        - textbox "Number of bets" [ref=e16]:
+          - /placeholder: all
+    - generic [ref=e17]: Number of bets caps how many separate markets to buy at once (your pick is always kept). Leave blank to let the posture spread across as many as help.
+    - generic [ref=e18]:
+      - text: "Posture:"
+      - strong [ref=e19]: Balanced
+      - generic [ref=e20]: (express your view ←→ protect / minimize loss)
+      - 'slider "Posture: Balanced (express your view ←→ protect / minimize loss)" [ref=e21]': "0.7"
+    - button "Build my plan" [ref=e22] [cursor=pointer]
+    - generic [ref=e23]:
+      - generic [ref=e24] [cursor=pointer]: England beats Croatia
+      - generic [ref=e25] [cursor=pointer]: Spain vs Cape Verde 0:0
+      - generic [ref=e26] [cursor=pointer]: France beats Senegal
+      - generic [ref=e27] [cursor=pointer]: Spain vs Portugal
+  - link "→ Hedge an existing position instead" [ref=e29] [cursor=pointer]:
+    - /url: /

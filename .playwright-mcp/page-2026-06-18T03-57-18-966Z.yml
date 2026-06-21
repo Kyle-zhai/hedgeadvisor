@@ -1,0 +1,81 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e5]
+        - text: HedgeAdvisor
+      - navigation [ref=e8]:
+        - link "Protect" [ref=e9] [cursor=pointer]:
+          - /url: /protect
+          - img [ref=e10]
+          - text: Protect
+        - link "Hedge" [ref=e12] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - text: Hedge
+        - link "Plan" [ref=e15] [cursor=pointer]:
+          - /url: /plan
+          - img [ref=e16]
+          - text: Plan
+        - link "Combo" [ref=e19] [cursor=pointer]:
+          - /url: /combo
+          - img [ref=e20]
+          - text: Combo
+        - link "Markets" [ref=e22] [cursor=pointer]:
+          - /url: /markets
+          - img [ref=e23]
+          - text: Markets
+        - link "History" [ref=e25] [cursor=pointer]:
+          - /url: /history
+          - img [ref=e26]
+          - text: History
+        - link "Settings" [ref=e28] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e29]
+          - text: Settings
+      - generic [ref=e33]: Live Polymarket data. We never hold funds or keys.
+    - main [ref=e34]:
+      - generic [ref=e35]:
+        - generic [ref=e36]:
+          - link "Hedge position" [ref=e37] [cursor=pointer]:
+            - /url: /
+          - link "Build plan" [ref=e38] [cursor=pointer]:
+            - /url: /plan
+          - link "Combo check" [ref=e39] [cursor=pointer]:
+            - /url: /combo
+        - generic [ref=e41]: Priced from live CLOB
+      - paragraph [ref=e43]:
+        - text: Build a multi-leg combo (parlay). We walk each leg's
+        - strong [ref=e44]: real order book
+        - text: to show the true cost of legging it in yourself, the fair value, and the
+        - strong [ref=e45]: compounded vig
+        - text: — and, if you paste a quoted combo price, whether the “discount” is actually real.
+      - generic [ref=e46]:
+        - generic [ref=e47]: Legs all must hit for the combo to pay
+        - generic [ref=e48]:
+          - generic [ref=e49]: "1"
+          - textbox "Type a real outcome, e.g. England win the World Cup, Trump 2028, Lakers win NBA" [ref=e50]: England win the World Cup
+          - group "side" [ref=e51]:
+            - button "yes" [ref=e52] [cursor=pointer]
+            - button "no" [ref=e53] [cursor=pointer]
+          - button "remove leg" [ref=e54] [cursor=pointer]: ✕
+        - generic [ref=e55]:
+          - generic [ref=e56]: "2"
+          - textbox "Type a real outcome, e.g. England win the World Cup, Trump 2028, Lakers win NBA" [ref=e57]: France win the World Cup
+          - group "side" [ref=e58]:
+            - button "yes" [ref=e59] [cursor=pointer]
+            - button "no" [ref=e60] [cursor=pointer]
+          - button "remove leg" [ref=e61] [cursor=pointer]: ✕
+        - button "+ Add leg" [ref=e63] [cursor=pointer]
+        - generic [ref=e64]:
+          - generic [ref=e65]:
+            - text: Stake
+            - generic [ref=e66]:
+              - generic: $
+              - textbox "20" [ref=e67]
+          - generic [ref=e68]:
+            - text: Quoted combo price
+            - generic [ref=e69]: optional, in ¢ per $1
+            - textbox "e.g. 23" [ref=e71]
+          - button "Check combo" [ref=e72] [cursor=pointer]
+  - alert [ref=e73]

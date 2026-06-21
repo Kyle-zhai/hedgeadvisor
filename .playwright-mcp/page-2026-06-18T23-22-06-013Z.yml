@@ -1,0 +1,279 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e5]
+        - text: HedgeAdvisor
+      - navigation [ref=e8]:
+        - link "Protect" [ref=e9] [cursor=pointer]:
+          - /url: /protect
+          - img [ref=e10]
+          - text: Protect
+        - link "Plan" [ref=e12] [cursor=pointer]:
+          - /url: /plan
+          - img [ref=e13]
+          - text: Plan
+        - link "Combo" [ref=e16] [cursor=pointer]:
+          - /url: /combo
+          - img [ref=e17]
+          - text: Combo
+        - link "Markets" [ref=e19] [cursor=pointer]:
+          - /url: /markets
+          - img [ref=e20]
+          - text: Markets
+        - link "History" [ref=e22] [cursor=pointer]:
+          - /url: /history
+          - img [ref=e23]
+          - text: History
+        - link "Settings" [ref=e25] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e26]
+          - text: Settings
+      - generic [ref=e30]: Live Polymarket data. We never hold funds or keys.
+    - main [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - link "Protect" [ref=e34] [cursor=pointer]:
+            - /url: /protect
+          - link "Plan" [ref=e35] [cursor=pointer]:
+            - /url: /plan
+          - link "Combo" [ref=e36] [cursor=pointer]:
+            - /url: /combo
+          - generic [ref=e37] [cursor=pointer]: Markets
+        - generic [ref=e39]: Live Polymarket search
+      - paragraph [ref=e41]:
+        - text: Search any keyword. We list
+        - strong [ref=e42]: every related bet that actually exists on Polymarket
+        - text: ", priced off the live book — then send any one straight into"
+        - strong [ref=e43]: Protect
+        - text: as your position.
+      - generic [ref=e45]:
+        - text: Search real markets
+        - textbox "Search real markets 6 events · 26 related bets" [active] [ref=e50]:
+          - /placeholder: World Cup, election, Bitcoin, Lakers…
+          - text: World Cup
+        - generic [ref=e47]: 6 events · 26 related bets
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - text: Which continent will win the World Cup?
+          - generic [ref=e53]: 6 outcomes · live price
+        - table [ref=e55]:
+          - rowgroup [ref=e56]:
+            - row "Bet (outcome) Price Use" [ref=e57]:
+              - columnheader "Bet (outcome)" [ref=e58]
+              - columnheader "Price" [ref=e59]
+              - columnheader "Use" [ref=e60]
+          - rowgroup [ref=e61]:
+            - row "Europe (UEFA) 70.5¢ Protect →" [ref=e62]:
+              - cell "Europe (UEFA)" [ref=e63]
+              - cell "70.5¢" [ref=e64]
+              - cell "Protect →" [ref=e65]:
+                - link "Protect →" [ref=e66] [cursor=pointer]:
+                  - /url: /protect?q=Europe%20(UEFA)
+            - row "South America (CONMEBOL) 20.5¢ Protect →" [ref=e67]:
+              - cell "South America (CONMEBOL)" [ref=e68]
+              - cell "20.5¢" [ref=e69]
+              - cell "Protect →" [ref=e70]:
+                - link "Protect →" [ref=e71] [cursor=pointer]:
+                  - /url: /protect?q=South%20America%20(CONMEBOL)
+            - row "Africa (CAF) 3.9¢ Protect →" [ref=e72]:
+              - cell "Africa (CAF)" [ref=e73]
+              - cell "3.9¢" [ref=e74]
+              - cell "Protect →" [ref=e75]:
+                - link "Protect →" [ref=e76] [cursor=pointer]:
+                  - /url: /protect?q=Africa%20(CAF)
+            - row "North America (CONCACAF) 3.8¢ Protect →" [ref=e77]:
+              - cell "North America (CONCACAF)" [ref=e78]
+              - cell "3.8¢" [ref=e79]
+              - cell "Protect →" [ref=e80]:
+                - link "Protect →" [ref=e81] [cursor=pointer]:
+                  - /url: /protect?q=North%20America%20(CONCACAF)
+            - row "Asia (AFC) 2.1¢ Protect →" [ref=e82]:
+              - cell "Asia (AFC)" [ref=e83]
+              - cell "2.1¢" [ref=e84]
+              - cell "Protect →" [ref=e85]:
+                - link "Protect →" [ref=e86] [cursor=pointer]:
+                  - /url: /protect?q=Asia%20(AFC)
+            - row "Oceania (OCF) 0.4¢ Protect →" [ref=e87]:
+              - cell "Oceania (OCF)" [ref=e88]
+              - cell "0.4¢" [ref=e89]
+              - cell "Protect →" [ref=e90]:
+                - link "Protect →" [ref=e91] [cursor=pointer]:
+                  - /url: /protect?q=Oceania%20(OCF)
+      - generic [ref=e92]:
+        - generic [ref=e93]:
+          - text: World Cup Group B Winner
+          - generic [ref=e94]: 4 outcomes · live price
+        - table [ref=e96]:
+          - rowgroup [ref=e97]:
+            - row "Bet (outcome) Price Use" [ref=e98]:
+              - columnheader "Bet (outcome)" [ref=e99]
+              - columnheader "Price" [ref=e100]
+              - columnheader "Use" [ref=e101]
+          - rowgroup [ref=e102]:
+            - row "Canada 57.5¢ Protect →" [ref=e103]:
+              - cell "Canada" [ref=e104]
+              - cell "57.5¢" [ref=e105]
+              - cell "Protect →" [ref=e106]:
+                - link "Protect →" [ref=e107] [cursor=pointer]:
+                  - /url: /protect?q=Canada
+            - row "Switzerland 42.5¢ Protect →" [ref=e108]:
+              - cell "Switzerland" [ref=e109]
+              - cell "42.5¢" [ref=e110]
+              - cell "Protect →" [ref=e111]:
+                - link "Protect →" [ref=e112] [cursor=pointer]:
+                  - /url: /protect?q=Switzerland
+            - row "Bosnia and Herzegovina 0.1¢ Protect →" [ref=e113]:
+              - cell "Bosnia and Herzegovina" [ref=e114]
+              - cell "0.1¢" [ref=e115]
+              - cell "Protect →" [ref=e116]:
+                - link "Protect →" [ref=e117] [cursor=pointer]:
+                  - /url: /protect?q=Bosnia%20and%20Herzegovina
+            - row "Qatar 0.1¢ Protect →" [ref=e118]:
+              - cell "Qatar" [ref=e119]
+              - cell "0.1¢" [ref=e120]
+              - cell "Protect →" [ref=e121]:
+                - link "Protect →" [ref=e122] [cursor=pointer]:
+                  - /url: /protect?q=Qatar
+      - generic [ref=e123]:
+        - generic [ref=e124]:
+          - text: World Cup Group A Winner
+          - generic [ref=e125]: 4 outcomes · live price
+        - table [ref=e127]:
+          - rowgroup [ref=e128]:
+            - row "Bet (outcome) Price Use" [ref=e129]:
+              - columnheader "Bet (outcome)" [ref=e130]
+              - columnheader "Price" [ref=e131]
+              - columnheader "Use" [ref=e132]
+          - rowgroup [ref=e133]:
+            - row "Mexico 62.5¢ Protect →" [ref=e134]:
+              - cell "Mexico" [ref=e135]
+              - cell "62.5¢" [ref=e136]
+              - cell "Protect →" [ref=e137]:
+                - link "Protect →" [ref=e138] [cursor=pointer]:
+                  - /url: /protect?q=Mexico
+            - row "South Korea 38.5¢ Protect →" [ref=e139]:
+              - cell "South Korea" [ref=e140]
+              - cell "38.5¢" [ref=e141]
+              - cell "Protect →" [ref=e142]:
+                - link "Protect →" [ref=e143] [cursor=pointer]:
+                  - /url: /protect?q=South%20Korea
+            - row "Czechia 0.4¢ Protect →" [ref=e144]:
+              - cell "Czechia" [ref=e145]
+              - cell "0.4¢" [ref=e146]
+              - cell "Protect →" [ref=e147]:
+                - link "Protect →" [ref=e148] [cursor=pointer]:
+                  - /url: /protect?q=Czechia
+            - row "South Africa 0.3¢ Protect →" [ref=e149]:
+              - cell "South Africa" [ref=e150]
+              - cell "0.3¢" [ref=e151]
+              - cell "Protect →" [ref=e152]:
+                - link "Protect →" [ref=e153] [cursor=pointer]:
+                  - /url: /protect?q=South%20Africa
+      - generic [ref=e154]:
+        - generic [ref=e155]:
+          - text: World Cup Group K Winner
+          - generic [ref=e156]: 4 outcomes · live price
+        - table [ref=e158]:
+          - rowgroup [ref=e159]:
+            - row "Bet (outcome) Price Use" [ref=e160]:
+              - columnheader "Bet (outcome)" [ref=e161]
+              - columnheader "Price" [ref=e162]
+              - columnheader "Use" [ref=e163]
+          - rowgroup [ref=e164]:
+            - row "Colombia 47.5¢ Protect →" [ref=e165]:
+              - cell "Colombia" [ref=e166]
+              - cell "47.5¢" [ref=e167]
+              - cell "Protect →" [ref=e168]:
+                - link "Protect →" [ref=e169] [cursor=pointer]:
+                  - /url: /protect?q=Colombia
+            - row "Portugal 45.5¢ Protect →" [ref=e170]:
+              - cell "Portugal" [ref=e171]
+              - cell "45.5¢" [ref=e172]
+              - cell "Protect →" [ref=e173]:
+                - link "Protect →" [ref=e174] [cursor=pointer]:
+                  - /url: /protect?q=Portugal
+            - row "Congo DR 6.5¢ Protect →" [ref=e175]:
+              - cell "Congo DR" [ref=e176]
+              - cell "6.5¢" [ref=e177]
+              - cell "Protect →" [ref=e178]:
+                - link "Protect →" [ref=e179] [cursor=pointer]:
+                  - /url: /protect?q=Congo%20DR
+            - row "Uzbekistan 0.5¢ Protect →" [ref=e180]:
+              - cell "Uzbekistan" [ref=e181]
+              - cell "0.5¢" [ref=e182]
+              - cell "Protect →" [ref=e183]:
+                - link "Protect →" [ref=e184] [cursor=pointer]:
+                  - /url: /protect?q=Uzbekistan
+      - generic [ref=e185]:
+        - generic [ref=e186]:
+          - text: World Cup Group L Winner
+          - generic [ref=e187]: 4 outcomes · live price
+        - table [ref=e189]:
+          - rowgroup [ref=e190]:
+            - row "Bet (outcome) Price Use" [ref=e191]:
+              - columnheader "Bet (outcome)" [ref=e192]
+              - columnheader "Price" [ref=e193]
+              - columnheader "Use" [ref=e194]
+          - rowgroup [ref=e195]:
+            - row "England 91.5¢ Protect →" [ref=e196]:
+              - cell "England" [ref=e197]
+              - cell "91.5¢" [ref=e198]
+              - cell "Protect →" [ref=e199]:
+                - link "Protect →" [ref=e200] [cursor=pointer]:
+                  - /url: /protect?q=England
+            - row "Ghana 4.7¢ Protect →" [ref=e201]:
+              - cell "Ghana" [ref=e202]
+              - cell "4.7¢" [ref=e203]
+              - cell "Protect →" [ref=e204]:
+                - link "Protect →" [ref=e205] [cursor=pointer]:
+                  - /url: /protect?q=Ghana
+            - row "Croatia 3.8¢ Protect →" [ref=e206]:
+              - cell "Croatia" [ref=e207]
+              - cell "3.8¢" [ref=e208]
+              - cell "Protect →" [ref=e209]:
+                - link "Protect →" [ref=e210] [cursor=pointer]:
+                  - /url: /protect?q=Croatia
+            - row "Panama 1.1¢ Protect →" [ref=e211]:
+              - cell "Panama" [ref=e212]
+              - cell "1.1¢" [ref=e213]
+              - cell "Protect →" [ref=e214]:
+                - link "Protect →" [ref=e215] [cursor=pointer]:
+                  - /url: /protect?q=Panama
+      - generic [ref=e216]:
+        - generic [ref=e217]:
+          - text: World Cup Group D Winner
+          - generic [ref=e218]: 4 outcomes · live price
+        - table [ref=e220]:
+          - rowgroup [ref=e221]:
+            - row "Bet (outcome) Price Use" [ref=e222]:
+              - columnheader "Bet (outcome)" [ref=e223]
+              - columnheader "Price" [ref=e224]
+              - columnheader "Use" [ref=e225]
+          - rowgroup [ref=e226]:
+            - row "USA 68.5¢ Protect →" [ref=e227]:
+              - cell "USA" [ref=e228]
+              - cell "68.5¢" [ref=e229]
+              - cell "Protect →" [ref=e230]:
+                - link "Protect →" [ref=e231] [cursor=pointer]:
+                  - /url: /protect?q=USA
+            - row "Australia 21.2¢ Protect →" [ref=e232]:
+              - cell "Australia" [ref=e233]
+              - cell "21.2¢" [ref=e234]
+              - cell "Protect →" [ref=e235]:
+                - link "Protect →" [ref=e236] [cursor=pointer]:
+                  - /url: /protect?q=Australia
+            - row "Türkiye 8.5¢ Protect →" [ref=e237]:
+              - cell "Türkiye" [ref=e238]
+              - cell "8.5¢" [ref=e239]
+              - cell "Protect →" [ref=e240]:
+                - link "Protect →" [ref=e241] [cursor=pointer]:
+                  - /url: /protect?q=T%C3%BCrkiye
+            - row "Paraguay 2.5¢ Protect →" [ref=e242]:
+              - cell "Paraguay" [ref=e243]
+              - cell "2.5¢" [ref=e244]
+              - cell "Protect →" [ref=e245]:
+                - link "Protect →" [ref=e246] [cursor=pointer]:
+                  - /url: /protect?q=Paraguay
+      - generic [ref=e48]: All markets and prices are live from Polymarket's public APIs (Gamma + CLOB). No account or API key. We never hold your funds or keys.
+  - alert [ref=e49]

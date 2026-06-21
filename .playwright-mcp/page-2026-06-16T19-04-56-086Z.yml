@@ -1,0 +1,233 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - heading "HedgeAdvisor" [level=1] [ref=e4]
+      - generic [ref=e5]: pick a bet · get an honest plan
+    - paragraph [ref=e6]:
+      - text: Pick a real World Cup bet, set your budget, and slide between
+      - strong [ref=e7]: express your view
+      - text: and
+      - strong [ref=e8]: protect it
+      - text: . Every leg is a market that actually exists on Polymarket; we show the real return/risk — including that prediction bets lose money on average.
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - text: Your bet
+          - textbox "Your bet" [ref=e12]:
+            - /placeholder: e.g. England beats Croatia
+            - text: England vs Croatia 1:0
+        - generic [ref=e13]:
+          - text: Budget (USD)
+          - textbox "Budget (USD)" [ref=e14]:
+            - /placeholder: "20"
+            - text: "20"
+        - generic [ref=e15]:
+          - text: Number of bets
+          - textbox "Number of bets" [ref=e16]:
+            - /placeholder: all
+      - generic [ref=e17]: Number of bets caps how many separate markets to buy at once (your pick is always kept). Leave blank to let the posture spread across as many as help.
+      - generic [ref=e18]:
+        - text: "Posture:"
+        - strong [ref=e19]: Protect
+        - generic [ref=e20]: (express your view ←→ protect / minimize loss)
+        - 'slider "Posture: Protect (express your view ←→ protect / minimize loss)" [ref=e119]': "1"
+      - button "Build my plan" [ref=e22] [cursor=pointer]
+      - generic [ref=e23]:
+        - generic [ref=e24] [cursor=pointer]: England beats Croatia
+        - generic [ref=e25] [cursor=pointer]: Spain vs Cape Verde 0:0
+        - generic [ref=e26] [cursor=pointer]: France beats Senegal
+        - generic [ref=e27] [cursor=pointer]: Spain vs Portugal
+    - generic [ref=e120]:
+      - generic [ref=e121]: PROTECT
+      - text: England vs. Croatia
+      - generic [ref=e122]: "England vs. Croatia: exact score England 1 - 0 Croatia — $18 plan"
+      - generic [ref=e123]:
+        - generic [ref=e124]:
+          - generic [ref=e125]: Chance of profit
+          - generic [ref=e126]: 0%
+        - generic [ref=e127]:
+          - generic [ref=e128]: Expected value (honest)
+          - generic [ref=e129]: "-$2.53"
+        - generic [ref=e130]:
+          - generic [ref=e131]: Best case
+          - generic [ref=e132]: "-$1"
+        - generic [ref=e133]:
+          - generic [ref=e134]: Worst case
+          - generic [ref=e135]: "-$18"
+      - generic [ref=e136]: "⚠️ This spread covers ~every outcome, so it LOSES money no matter what (about $1–$18 — the vig). That's not a hedge worth making: cut the number of bets, or concentrate on fewer outcomes."
+      - generic [ref=e137]: Prediction-market bets are expected to LOSE money on average (the vig). This plan expresses your view; it is not an edge.
+    - generic [ref=e138]:
+      - generic [ref=e139]: What happens in each outcome
+      - generic [ref=e140]: Most likely first. Probabilities are market-implied (de-vigged), not our estimate.
+      - table [ref=e141]:
+        - rowgroup [ref=e142]:
+          - row "If this happens Chance You get P&L" [ref=e143]:
+            - columnheader "If this happens" [ref=e144]
+            - columnheader "Chance" [ref=e145]
+            - columnheader "You get" [ref=e146]
+            - columnheader "P&L" [ref=e147]
+        - rowgroup [ref=e148]:
+          - row "England 1 - 0 Croatia 13% $17 -$1" [ref=e149]:
+            - cell "England 1 - 0 Croatia" [ref=e150]
+            - cell "13%" [ref=e151]
+            - cell "$17" [ref=e152]
+            - cell "-$1" [ref=e153]
+          - row "England 2 - 0 Croatia 13% $17 -$1" [ref=e154]:
+            - cell "England 2 - 0 Croatia" [ref=e155]
+            - cell "13%" [ref=e156]
+            - cell "$17" [ref=e157]
+            - cell "-$1" [ref=e158]
+          - row "England 1 - 1 Croatia 12% $17 -$1" [ref=e159]:
+            - cell "England 1 - 1 Croatia" [ref=e160]
+            - cell "12%" [ref=e161]
+            - cell "$17" [ref=e162]
+            - cell "-$1" [ref=e163]
+          - row "England 2 - 1 Croatia 10% $17 -$1" [ref=e164]:
+            - cell "England 2 - 1 Croatia" [ref=e165]
+            - cell "10%" [ref=e166]
+            - cell "$17" [ref=e167]
+            - cell "-$1" [ref=e168]
+          - 'row "Exact Score: Any Other Score 9% $17 -$1" [ref=e169]':
+            - 'cell "Exact Score: Any Other Score" [ref=e170]'
+            - cell "9%" [ref=e171]
+            - cell "$17" [ref=e172]
+            - cell "-$1" [ref=e173]
+          - row "Any other scoreline 8% $0 -$18" [ref=e174]:
+            - cell "Any other scoreline" [ref=e175]
+            - cell "8%" [ref=e176]
+            - cell "$0" [ref=e177]
+            - cell "-$18" [ref=e178]
+          - row "England 0 - 0 Croatia 8% $17 -$1" [ref=e179]:
+            - cell "England 0 - 0 Croatia" [ref=e180]
+            - cell "8%" [ref=e181]
+            - cell "$17" [ref=e182]
+            - cell "-$1" [ref=e183]
+          - row "England 0 - 1 Croatia 7% $17 -$1" [ref=e184]:
+            - cell "England 0 - 1 Croatia" [ref=e185]
+            - cell "7%" [ref=e186]
+            - cell "$17" [ref=e187]
+            - cell "-$1" [ref=e188]
+          - row "England 3 - 1 Croatia 5% $17 -$1" [ref=e189]:
+            - cell "England 3 - 1 Croatia" [ref=e190]
+            - cell "5%" [ref=e191]
+            - cell "$17" [ref=e192]
+            - cell "-$1" [ref=e193]
+          - row "England 3 - 0 Croatia 5% $17 -$1" [ref=e194]:
+            - cell "England 3 - 0 Croatia" [ref=e195]
+            - cell "5%" [ref=e196]
+            - cell "$17" [ref=e197]
+            - cell "-$1" [ref=e198]
+          - row "England 1 - 2 Croatia 5% $17 -$1" [ref=e199]:
+            - cell "England 1 - 2 Croatia" [ref=e200]
+            - cell "5%" [ref=e201]
+            - cell "$17" [ref=e202]
+            - cell "-$1" [ref=e203]
+          - row "England 2 - 2 Croatia 4% $17 -$1" [ref=e204]:
+            - cell "England 2 - 2 Croatia" [ref=e205]
+            - cell "4%" [ref=e206]
+            - cell "$17" [ref=e207]
+            - cell "-$1" [ref=e208]
+          - row "England 0 - 2 Croatia 3% $17 -$1" [ref=e209]:
+            - cell "England 0 - 2 Croatia" [ref=e210]
+            - cell "3%" [ref=e211]
+            - cell "$17" [ref=e212]
+            - cell "-$1" [ref=e213]
+    - generic [ref=e214]:
+      - generic [ref=e215]:
+        - generic [ref=e216]: Place it on Polymarket (you confirm there)
+        - button "Copy stakes" [ref=e217] [cursor=pointer]
+      - generic [ref=e218]:
+        - text: We never touch your funds, keys, or orders. Buy each leg on Polymarket, in order. Each leg shows
+        - strong [ref=e219]: fair value
+        - text: (de-vigged) next to what you pay — the gap is the vig + spread you eat.
+      - generic [ref=e220]:
+        - generic [ref=e221]:
+          - strong [ref=e222]: 1. Buy YES · England 0 - 0 Croatia
+          - generic [ref=e223]: $1.56 · ~17 sh @ 0.090
+        - generic [ref=e224]: Fair value 7.9¢ · you pay 9.0¢ → 1.1¢/share vig + spread. Set a limit at 0.100 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e226] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e227]:
+        - generic [ref=e228]:
+          - strong [ref=e229]: 2. Buy YES · England 1 - 0 Croatia
+          - generic [ref=e230]: $2.43 · ~17 sh @ 0.140
+        - generic [ref=e231]: Fair value 12.6¢ · you pay 14.0¢ → 1.4¢/share vig + spread. Set a limit at 0.140 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e233] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e234]:
+        - generic [ref=e235]:
+          - strong [ref=e236]: 3. Buy YES · England 1 - 1 Croatia
+          - generic [ref=e237]: $2.25 · ~17 sh @ 0.130
+        - generic [ref=e238]: Fair value 11.7¢ · you pay 13.0¢ → 1.3¢/share vig + spread. Set a limit at 0.130 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e240] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e241]:
+        - generic [ref=e242]:
+          - strong [ref=e243]: 4. Buy YES · England 2 - 1 Croatia
+          - generic [ref=e244]: $1.91 · ~17 sh @ 0.110
+        - generic [ref=e245]: Fair value 9.8¢ · you pay 11.0¢ → 1.2¢/share vig + spread. Set a limit at 0.110 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e247] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e248]:
+        - generic [ref=e249]:
+          - strong [ref=e250]: 5. Buy YES · England 3 - 1 Croatia
+          - generic [ref=e251]: $1.04 · ~17 sh @ 0.060
+        - generic [ref=e252]: Fair value 5.1¢ · you pay 6.0¢ → 0.9¢/share vig + spread. Set a limit at 0.060 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e254] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e255]:
+        - generic [ref=e256]:
+          - strong [ref=e257]: "6. Buy YES · Exact Score: Any Other Score"
+          - generic [ref=e258]: $1.91 · ~17 sh @ 0.110
+        - generic [ref=e259]: Fair value 8.9¢ · you pay 11.0¢ → 2.1¢/share vig + spread. Set a limit at 0.110 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e261] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e262]:
+        - generic [ref=e263]:
+          - strong [ref=e264]: 7. Buy YES · England 0 - 1 Croatia
+          - generic [ref=e265]: $1.38 · ~17 sh @ 0.080
+        - generic [ref=e266]: Fair value 6.5¢ · you pay 8.0¢ → 1.5¢/share vig + spread. Set a limit at 0.080 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e268] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e269]:
+        - generic [ref=e270]:
+          - strong [ref=e271]: 8. Buy YES · England 0 - 2 Croatia
+          - generic [ref=e272]: $0.55 · ~17 sh @ 0.032
+        - generic [ref=e273]: Fair value 2.7¢ · you pay 3.2¢ → 0.5¢/share vig + spread. Set a limit at 0.032 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e275] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e276]:
+        - generic [ref=e277]:
+          - strong [ref=e278]: 9. Buy YES · England 2 - 0 Croatia
+          - generic [ref=e279]: $2.43 · ~17 sh @ 0.140
+        - generic [ref=e280]: Fair value 12.6¢ · you pay 14.0¢ → 1.4¢/share vig + spread. Set a limit at 0.140 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e282] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e283]:
+        - generic [ref=e284]:
+          - strong [ref=e285]: 10. Buy YES · England 1 - 2 Croatia
+          - generic [ref=e286]: $1.04 · ~17 sh @ 0.060
+        - generic [ref=e287]: Fair value 4.7¢ · you pay 6.0¢ → 1.3¢/share vig + spread. Set a limit at 0.060 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e289] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e290]:
+        - generic [ref=e291]:
+          - strong [ref=e292]: 11. Buy YES · England 3 - 0 Croatia
+          - generic [ref=e293]: $1.04 · ~17 sh @ 0.060
+        - generic [ref=e294]: Fair value 5.1¢ · you pay 6.0¢ → 0.9¢/share vig + spread. Set a limit at 0.060 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e296] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e297]:
+        - generic [ref=e298]:
+          - strong [ref=e299]: 12. Buy YES · England 2 - 2 Croatia
+          - generic [ref=e300]: $0.86 · ~17 sh @ 0.050
+        - generic [ref=e301]: Fair value 4.2¢ · you pay 5.0¢ → 0.8¢/share vig + spread. Set a limit at 0.050 so you can't fill worse.
+        - link "Open this market on Polymarket →" [ref=e303] [cursor=pointer]:
+          - /url: https://polymarket.com/event/fifwc-eng-hrv-2026-06-17-exact-score?utm_source=hedgeadvisor
+      - generic [ref=e305]: "• This spread covers ~every outcome, so it LOSES money no matter what (about $1–$18 — the vig). That's not a hedge worth making: cut the number of bets, or concentrate on fewer outcomes."
+    - generic [ref=e306]: Not financial advice. Prediction-market bets are expected to lose money on average (the vig). This plan expresses your view honestly; it is not an edge. HedgeAdvisor is an independent interface, not affiliated with Polymarket, and never holds your funds or keys.
+    - link "→ Hedge an existing position instead" [ref=e29] [cursor=pointer]:
+      - /url: /
+  - button "Open Next.js Dev Tools" [ref=e35] [cursor=pointer]:
+    - img [ref=e36]
+  - alert [ref=e39]

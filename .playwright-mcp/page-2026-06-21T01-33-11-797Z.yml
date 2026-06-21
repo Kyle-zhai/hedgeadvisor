@@ -1,0 +1,65 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "HedgeAdvisor" [ref=e4] [cursor=pointer]:
+        - /url: /protect
+        - img [ref=e6]
+        - text: HedgeAdvisor
+      - navigation "Primary navigation" [ref=e8]:
+        - link "Protect" [ref=e9] [cursor=pointer]:
+          - /url: /protect
+          - img [ref=e10]
+          - text: Protect
+        - link "Plan" [ref=e12] [cursor=pointer]:
+          - /url: /plan
+          - img [ref=e13]
+          - text: Plan
+        - link "Combo" [ref=e15] [cursor=pointer]:
+          - /url: /combo
+          - img [ref=e16]
+          - text: Combo
+        - link "Cross-venue" [ref=e18] [cursor=pointer]:
+          - /url: /link
+          - img [ref=e19]
+          - text: Cross-venue
+        - link "Discover" [ref=e21] [cursor=pointer]:
+          - /url: /discover
+          - img [ref=e22]
+          - text: Discover
+        - link "Markets" [ref=e24] [cursor=pointer]:
+          - /url: /markets
+          - img [ref=e25]
+          - text: Markets
+        - link "History" [ref=e27] [cursor=pointer]:
+          - /url: /history
+          - img [ref=e28]
+          - text: History
+        - link "Settings" [ref=e30] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e31]
+          - text: Settings
+      - generic [ref=e34]:
+        - generic [ref=e35]: Live Polymarket + Kalshi data
+        - generic [ref=e37]: We never hold funds or keys.
+    - main [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - button "Protect" [ref=e41] [cursor=pointer]
+          - button "Amplify" [ref=e42] [cursor=pointer]
+        - generic [ref=e44]: Live CLOB
+      - generic [ref=e47]:
+        - generic [ref=e48]:
+          - text: Position
+          - combobox "Position Pricing Spain to win the World Cup" [ref=e50]: Spain to win the World Cup
+          - generic [ref=e51]: Pricing Spain to win the World Cup
+        - generic [ref=e52]:
+          - text: Stake
+          - generic [ref=e53]:
+            - generic [ref=e54]: $
+            - textbox "Stake $" [ref=e55]: "20"
+        - generic [ref=e57]:
+          - text: Protection level
+          - slider "Protection level 0% downside protected" [ref=e59]: "-50"
+          - generic [ref=e60]: 0% downside protected
+        - button "Analyze" [ref=e61] [cursor=pointer]
+  - alert [ref=e62]

@@ -1,0 +1,94 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - heading "HedgeAdvisor" [level=1] [ref=e4]
+      - generic [ref=e5]: honest hedges for Polymarket
+    - 'link "→ New: pick a bet and get a full plan (express ←→ protect)" [ref=e7] [cursor=pointer]':
+      - /url: /plan
+    - paragraph [ref=e8]:
+      - text: Enter a position you hold or like. We rank several correlated hedges, price each at the
+      - strong [ref=e9]: real executable cost
+      - text: (not the displayed midpoint), and tell you honestly which is worth it — including when the answer is “don't bother.”
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - text: Your position
+          - textbox "Your position" [ref=e13]:
+            - /placeholder: e.g. Spain wins the World Cup
+            - text: Spain wins the World Cup
+        - generic [ref=e14]:
+          - text: Stake (USD)
+          - textbox "Stake (USD)" [ref=e15]:
+            - /placeholder: "1000"
+            - text: "1000"
+        - generic [ref=e16]:
+          - text: Avg price (optional)
+          - textbox "Avg price (optional)" [ref=e17]:
+            - /placeholder: market
+        - generic [ref=e18]:
+          - text: Bankroll (optional)
+          - textbox "Bankroll (optional)" [ref=e19]:
+            - /placeholder: for exact size
+      - button "Rank my hedges" [ref=e20] [cursor=pointer]
+      - generic [ref=e21]:
+        - generic [ref=e22] [cursor=pointer]: Spain wins the World Cup
+        - generic [ref=e23] [cursor=pointer]: France wins the World Cup
+        - generic [ref=e24] [cursor=pointer]: Brazil wins the World Cup
+        - generic [ref=e25] [cursor=pointer]: Argentina wins the World Cup
+    - generic [ref=e36]: Spain · World Cup Winner · 60 outcomes · book overround 3.0% · 4 hedge options, ranked
+    - generic [ref=e37]: Priced from live order books at 15:06:35 · size assumes your position is ~20% of bankroll (≈$5,000) — enter your bankroll above for an exact size
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]: GO
+        - strong [ref=e41]: Buy NO · Spain
+        - generic [ref=e42]: Recommended
+        - generic [ref=e43]: η 37.73×
+      - generic [ref=e44]: "Hedge recommended: Buy NO · Spain."
+      - generic [ref=e45]: "✅ Hedge recommended: Buy NO · Spain. Hedging 2,320 shares (Buy NO · Spain) cuts your worst-case loss from $1,000 to $687 — that's $313 of downside removed — and lowers your P&L swing by 32.1%. Out-of-pocket execution cost: $8.3 (slippage vs mid, which already includes the half-spread, plus the taker fee). Expected cost including the market's vig: $0. That's 37.7× risk removed per dollar. Why: \"Spain NO\" pays $1 in exactly the outcomes where \"Spain wins\" pays $0 — it is the exact complement of your position, the cleanest possible hedge. Hedging within the same book is EV-negative after the spread, fee and vig. It buys variance reduction, not profit. 💡 Posting limit orders (maker) instead of market orders pays ~0 fee and skips the spread — but may not fill before kickoff."
+      - generic [ref=e46]:
+        - generic [ref=e47]:
+          - generic [ref=e48]: Max loss
+          - generic [ref=e49]: $1,000 → $687
+        - generic [ref=e50]:
+          - generic [ref=e51]: P&L volatility
+          - generic [ref=e52]: $2,463 → $1,671
+        - generic [ref=e53]:
+          - generic [ref=e54]: Execution cost
+          - generic [ref=e55]: $8.3
+        - generic [ref=e56]:
+          - generic [ref=e57]: Expected cost (incl. vig)
+          - generic [ref=e58]: $0
+      - generic [ref=e59]:
+        - generic [ref=e60]: "Place it on Polymarket (you confirm there — we never touch your funds/keys):"
+        - generic [ref=e61]:
+          - generic [ref=e62]:
+            - strong [ref=e63]: Buy NO · Spain
+            - generic [ref=e64]: est. $2,007
+          - generic [ref=e65]: ~2,320 shares · limit 0.862
+          - link "Open Polymarket →" [ref=e66] [cursor=pointer]:
+            - /url: https://polymarket.com/event/world-cup-winner?utm_source=hedgeadvisor
+    - generic [ref=e67]:
+      - generic [ref=e68]:
+        - generic [ref=e69]: NO-GO
+        - strong [ref=e70]: Buy YES · France + England + Portugal
+        - generic [ref=e71]: η 0×
+      - generic [ref=e72]: "Buy YES · France + England + Portugal: not worth it."
+      - generic [ref=e73]: "🔴 Buy YES · France + England + Portugal: not worth it. This actually RAISES your worst-case loss: if a team outside this hedge wins (often the most likely outcome), you lose your position AND this bet. It's a directional side bet, not a hedge. Why: Covers the most likely teams to beat you (France, England, Portugal). Each leg pays if that team wins — the branches where Spain most likely loses. It leaves rarer upsets uncovered, so it removes less worst-case risk than the broad NO hedge, but it's cheaper and more targeted. Hedging within the same book is EV-negative after the spread, fee and vig. It buys variance reduction, not profit."
+    - generic [ref=e74]:
+      - generic [ref=e75]:
+        - generic [ref=e76]: NO-GO
+        - strong [ref=e77]: Buy YES · France
+        - generic [ref=e78]: η 0×
+      - generic [ref=e79]: "Buy YES · France: not worth it."
+      - generic [ref=e80]: "🔴 Buy YES · France: not worth it. This actually RAISES your worst-case loss: if a team outside this hedge wins (often the most likely outcome), you lose your position AND this bet. It's a directional side bet, not a hedge. Why: A targeted bet that your single biggest threat (France) wins. Cheapest of the options, but it only covers the one branch where France beats you — not other upsets. Hedging within the same book is EV-negative after the spread, fee and vig. It buys variance reduction, not profit."
+    - generic [ref=e81]:
+      - generic [ref=e82]:
+        - generic [ref=e83]: NO-GO
+        - strong [ref=e84]: Buy NO · Spain to reach the final (cross-event)
+        - generic [ref=e85]: η 0×
+      - generic [ref=e86]: "Buy NO · Spain to reach the final (cross-event): not worth it."
+      - generic [ref=e87]: "🔴 Buy NO · Spain to reach the final (cross-event): not worth it. This actually RAISES your worst-case loss: if a team outside this hedge wins (often the most likely outcome), you lose your position AND this bet. It's a directional side bet, not a hedge. Why: Pays only when Spain fails to reach the final. It covers that branch, but adds cost if they reach the final yet still lose — so it can raise your worst case. Hedging within the same book is EV-negative after the spread, fee and vig. It buys variance reduction, not profit."
+    - generic [ref=e88]: Not financial advice. Prediction-market trading involves substantial risk, including total loss. Within-book hedging is EV-negative after spread, fee and vig — it reduces variance, it is not expected to be profitable. HedgeAdvisor is an independent interface, not affiliated with Polymarket, and never holds your funds or keys.
+  - button "Open Next.js Dev Tools" [ref=e32] [cursor=pointer]:
+    - img [ref=e33]
+  - alert [ref=e26]

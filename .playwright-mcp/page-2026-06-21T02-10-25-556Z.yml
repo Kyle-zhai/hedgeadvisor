@@ -1,0 +1,67 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "HedgeAdvisor" [ref=e4] [cursor=pointer]:
+        - /url: /protect
+        - img [ref=e6]
+        - text: HedgeAdvisor
+      - navigation "Primary navigation" [ref=e8]:
+        - link "Protect" [ref=e9] [cursor=pointer]:
+          - /url: /protect
+          - img [ref=e10]
+          - text: Protect
+        - link "Plan" [ref=e12] [cursor=pointer]:
+          - /url: /plan
+          - img [ref=e13]
+          - text: Plan
+        - link "Combo" [ref=e15] [cursor=pointer]:
+          - /url: /combo
+          - img [ref=e16]
+          - text: Combo
+        - link "Cross-venue" [ref=e18] [cursor=pointer]:
+          - /url: /link
+          - img [ref=e19]
+          - text: Cross-venue
+        - link "Discover" [ref=e21] [cursor=pointer]:
+          - /url: /discover
+          - img [ref=e22]
+          - text: Discover
+        - link "Markets" [ref=e24] [cursor=pointer]:
+          - /url: /markets
+          - img [ref=e25]
+          - text: Markets
+        - link "History" [ref=e27] [cursor=pointer]:
+          - /url: /history
+          - img [ref=e28]
+          - text: History
+        - link "Settings" [ref=e30] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e31]
+          - text: Settings
+      - generic [ref=e34]:
+        - generic [ref=e35]: Live Polymarket + Kalshi data
+        - generic [ref=e37]: We never hold funds or keys.
+    - main [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e41]:
+            - generic [ref=e42]: Relation engine
+            - heading "Discover relations" [level=1] [ref=e43]
+          - generic [ref=e45]: Live Polymarket + Kalshi
+        - generic [ref=e47]:
+          - paragraph [ref=e48]: Enter a bet. The engine builds a live cross-venue market universe, then runs the 5-stage pipeline — candidate generation → relation classification → φ correlation, optimal hedge ratio, effectiveness, and confidence — and ranks every related market. Structural relations are exact; cross-entity links need embeddings (set an AI key).
+          - generic [ref=e49]:
+            - generic [ref=e50]:
+              - text: Bet
+              - generic [ref=e51]:
+                - img [ref=e53]
+                - textbox "Bet Try “Spain to win the World Cup” or “Mbappe golden boot”." [ref=e55]:
+                  - /placeholder: e.g. France to win the World Cup
+                  - text: France to win the World Cup
+              - generic [ref=e56]: Try “Spain to win the World Cup” or “Mbappe golden boot”.
+            - button [disabled] [ref=e58]:
+              - img [ref=e59]
+              - text: Discover
+        - generic [ref=e62]: Building the cross-venue universe and classifying relations…
+        - generic [ref=e63]: "Not financial advice. The Related-markets table is a DESCRIPTIVE map: φ there is the binary correlation from the joint P(A∩B), exact for structural relations and a Fréchet-clamped estimate otherwise — it is NOT a settlement guarantee, and price co-movement is never used as φ. The Robust hedge is the only ACTIONABLE output: it prices each leg off the real book (cost), caps by depth (capacity), and admits a leg only when deterministic structure proves it covers every anchor-fail state, or settled-outcome calibration proves it pays more often when the anchor fails (uncertainty via credible bounds). LLM (Qwen) relations are hypotheses only — never an exact structural claim — and are rejected until calibrated. Soft legs add to the strict worst loss because they can pay $0 in a possible state."
+  - alert [ref=e64]
