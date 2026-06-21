@@ -268,9 +268,9 @@ export default function ProtectPage() {
 
   const postureText = useMemo(() => {
     if (!bet) return "";
-    if (amplify) return `放大（combo）：把 ${bet.title} 和别的真实市场打成 parlay。中了赢更多，没中亏更多 —— 投机，EV 仍为负。`;
-    if (noHedge) return "不对冲：原样持有。中了拿满，没中亏全部本金。";
-    return `保护：留住约 ${Math.round(k * 100)}% 盈利（最保守也保留 ${Math.round(minK * 100)}%，所以中了一定还有赚头），其余拿去压低没中的亏损。`;
+    if (amplify) return `Amplify (combo): parlay ${bet.title} with other real markets. Win more if it hits, lose more if it does not. Speculative, EV still negative.`;
+    if (noHedge) return "No hedge: hold as is. Full upside if it hits, full stake lost if it does not.";
+    return `Protect: keep about ${Math.round(k * 100)}% of the profit (at least ${Math.round(minK * 100)}% even at the most conservative, so a win always nets something), and spend the rest to cut the loss if it does not hit.`;
   }, [bet, amplify, noHedge, k, minK]);
 
   const riskReduction = bet ? Math.max(0, 1 - lossIfFail / bet.stakeUsd) : 0;

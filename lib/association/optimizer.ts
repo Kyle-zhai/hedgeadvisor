@@ -7,7 +7,7 @@ import type {
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const round = (x: number) => Number(x.toFixed(4));
-const INFERRED_MAX_CONSERVATISM = 0.6; // inferred cross-event legs admitted only below this (进取/低平衡)
+const INFERRED_MAX_CONSERVATISM = 0.6; // inferred cross-event legs admitted only below this (aggressive / low-balanced)
 const MAX_INFERRED_LEGS = 2; // cap correlated inferred legs (no joint model proves their independence)
 
 interface RankedCandidate {

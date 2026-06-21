@@ -20,12 +20,12 @@ function sharedEntity(a: string[], b: string[]): boolean {
 /** Structured rules — return a classification when one fires, else null (defer to LLM/heuristic). */
 function ruleClassify(pair: CandidatePair): PairClassification | null {
   const { a, b } = pair;
-  // R1: same single-winner event, different outcome ⇒ mutually exclusive (exact, path 甲).
+  // R1: same single-winner event, different outcome ⇒ mutually exclusive (exact, path A).
   if (a.eventKey === b.eventKey && a.mutuallyExclusiveEvent && b.mutuallyExclusiveEvent) {
     return {
       relation: "mutually_exclusive",
       direction: "negative",
-      reasoning: `「${a.title}」与「${b.title}」是同一市场的不同结果，不可能同时为真。`,
+      reasoning: `"${a.title}" and "${b.title}" are different outcomes of the same market and cannot both be true.`,
       method: "rule",
       structuralJoint: 0,
       structuralKind: "exclusive",
@@ -41,7 +41,7 @@ function ruleClassify(pair: CandidatePair): PairClassification | null {
       return {
         relation: "same",
         direction: "positive",
-        reasoning: `「${a.title}」在两处描述同一结果（${a.marketTitle}），结算实质一致。`,
+        reasoning: `"${a.title}" describes the same outcome in both places (${a.marketTitle}); they settle identically.`,
         method: "rule",
         estimateRho: 0.97,
       };
@@ -62,7 +62,7 @@ function heuristicClassify(pair: CandidatePair): PairClassification {
     return {
       relation: "related",
       direction: "positive",
-      reasoning: `「${pair.a.title}」与「${pair.b.title}」主题相近，可能弱相关（无世界知识，估计偏保守）。`,
+      reasoning: `"${pair.a.title}" and "${pair.b.title}" are thematically close and may be weakly related (no world knowledge, conservative estimate).`,
       method: "heuristic",
       estimateRho: 0.25,
     };
@@ -70,7 +70,7 @@ function heuristicClassify(pair: CandidatePair): PairClassification {
   return {
     relation: "independent",
     direction: "none",
-    reasoning: `「${pair.a.title}」与「${pair.b.title}」无明显逻辑关系，按独立处理。`,
+    reasoning: `"${pair.a.title}" and "${pair.b.title}" have no clear logical link; treated as independent.`,
     method: "heuristic",
   };
 }

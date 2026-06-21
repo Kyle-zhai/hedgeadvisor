@@ -246,15 +246,15 @@ export async function runProtect(req: ProtectRequest): Promise<ProtectResponse> 
   const totalFailStates = states.length - 1; // single-winner: every other outcome is a way you lose
   const comboDefs: { id: string; name: string; covers: string; legIds: string[] }[] = [];
   if (legById.has("complement")) {
-    comboDefs.push({ id: "broad", name: "全保护 · 买自己的 NO", covers: "覆盖你输的每一种情况（精确互补）", legIds: ["complement"] });
+    comboDefs.push({ id: "broad", name: "Full protection · buy your own NO", covers: "Covers every state where you lose (exact complement)", legIds: ["complement"] });
   }
   const rivalIds = legMenu.filter((l) => l.id.startsWith("rival-")).slice(0, 3).map((l) => l.id);
   if (rivalIds.length >= 2) {
-    comboDefs.push({ id: "rivals", name: "主力对手篮子", covers: "盖住最可能赢你的几支队（更便宜，留下罕见冷门的尾部）", legIds: rivalIds });
+    comboDefs.push({ id: "rivals", name: "Top-rivals basket", covers: "Covers the teams most likely to beat you (cheaper, leaves the rare-upset tail)", legIds: rivalIds });
   }
   const confIds = legMenu.filter((l) => l.id.startsWith("conf-")).map((l) => l.id);
   if (confIds.length >= 2) {
-    comboDefs.push({ id: "confed", name: "洲际分散", covers: "盖住非你大洲的球队（跨市场）", legIds: confIds });
+    comboDefs.push({ id: "confed", name: "Confederation spread", covers: "Covers teams outside your continent (cross-market)", legIds: confIds });
   }
 
   // Evaluate each combo across the whole posture range (k: 1 → MIN_KEEP_FRACTION), probability-free.

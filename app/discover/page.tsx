@@ -63,7 +63,7 @@ interface DiscoverResult {
 }
 
 const cents = (v: number) => `${Math.round(v * 100)}¢`;
-const REL_LABEL: Record<RelationType, string> = { same: "同一", related: "相关", mutually_exclusive: "互斥", independent: "独立" };
+const REL_LABEL: Record<RelationType, string> = { same: "Same", related: "Related", mutually_exclusive: "Exclusive", independent: "Independent" };
 const REL_BADGE: Record<RelationType, string> = { same: "PARTIAL", related: "PARTIAL", mutually_exclusive: "GO", independent: "" };
 
 function RelationRow({ r }: { r: DiscoveredRelation }) {
@@ -79,8 +79,8 @@ function RelationRow({ r }: { r: DiscoveredRelation }) {
       <td style={{ textAlign: "right", color: rel.correlation < 0 ? "var(--go)" : rel.correlation > 0 ? "var(--warn)" : "var(--ink)" }}>{rel.correlation >= 0 ? "+" : ""}{rel.correlation.toFixed(2)}</td>
       <td style={{ textAlign: "right" }}>{Math.round(rel.effectiveness * 100)}%</td>
       <td style={{ textAlign: "right" }}>{rel.hedgeRatio.toFixed(2)}</td>
-      <td>{rel.confidence === "high" ? "高" : rel.confidence === "medium" ? "中" : "低"}</td>
-      <td className="muted">{r.classifyMethod === "rule" ? "结构规则" : r.classifyMethod === "llm" ? `LLM · ${r.mechanismGraph?.mechanismType ?? "机制"}/${r.mechanismGraph?.scope ?? "未知范围"}` : "启发"}</td>
+      <td>{rel.confidence === "high" ? "High" : rel.confidence === "medium" ? "Med" : "Low"}</td>
+      <td className="muted">{r.classifyMethod === "rule" ? "Structural rule" : r.classifyMethod === "llm" ? `LLM · ${r.mechanismGraph?.mechanismType ?? "mechanism"}/${r.mechanismGraph?.scope ?? "unknown scope"}` : "Heuristic"}</td>
       <td style={{ textAlign: "right" }}><a className="ghostbtn" target="_blank" rel="noreferrer" href={r.market.url}><ArrowSquareOut size={13} /></a></td>
     </tr>
   );
@@ -154,7 +154,7 @@ export default function DiscoverPage() {
             <span className="combo-hint">Try “Spain to win the World Cup” or “Mbappe golden boot”.</span>
           </label>
           <label className="combo-label" style={{ flex: 1.8, minWidth: 220 }}>
-            Evidence conservatism · 证据保守度 {conservatism <= 0.33 ? "· 进取" : conservatism >= 0.8 ? "· 保守" : "· 平衡"}
+            Evidence conservatism {conservatism <= 0.33 ? "· aggressive" : conservatism >= 0.8 ? "· conservative" : "· balanced"}
             <div className="range-control"><input type="range" min={0} max={1} step={0.05} value={conservatism} onChange={(e) => { const s = Number(e.target.value); setConservatism(s); run(query, s); }} /></div>
             <span className="combo-hint">{conservatism <= 0.33 ? "posterior mean · admits strong-calibrated soft legs" : conservatism >= 0.98 ? "strict posture · structural cover only" : conservatism >= 0.8 ? "credible lower bound · soft legs require separated intervals" : "95% interval · evidence-gated soft legs"} · (does not change the hedge budget)</span>
           </label>
@@ -193,7 +193,7 @@ export default function DiscoverPage() {
           {data?.robustHedge && (
             <div className="card" style={{ borderColor: data.robustHedge.status === "RECOMMEND" && optimalLegs.length ? "var(--go)" : "var(--border-strong)" }}>
               <div className="cardtitle">
-                Optimal hedge · 最优对冲 <span className="hint">structural + settlement-calibrated legs only · trustworthy, usable today</span>
+                Optimal hedge <span className="hint">structural + settlement-calibrated legs only · trustworthy, usable today</span>
               </div>
               <p className="sub" style={{ marginTop: 6 }}>{data.robustHedge.reason}</p>
               {optimalLegs.length > 0 ? (
@@ -235,10 +235,10 @@ export default function DiscoverPage() {
           {(inferredLegs.length > 0 || crossEvent.length > 0) && (
             <div className="card" style={{ background: "var(--bg-subtle)" }}>
               <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                Exploratory · 探索 · 推理 · 低置信 <span className="badge PARTIAL">LOW CONFIDENCE</span>
+                Exploratory · inferred <span className="badge PARTIAL">LOW CONFIDENCE</span>
               </div>
               <p className="sub" style={{ marginTop: 6, color: "var(--ink-2)" }}>
-                Cross-event and cross-domain mechanisms the model surfaced. Not settlement-proven, not guaranteed, and not part of the optimal hedge above. For exploration only. 仅供参考,未经结算校准,不构成对冲建议。
+                Cross-event and cross-domain mechanisms the model surfaced. Not settlement-proven, not guaranteed, and not part of the optimal hedge above. For exploration only, not a hedge recommendation.
               </p>
 
               {inferredLegs.length > 0 && (
@@ -247,7 +247,7 @@ export default function DiscoverPage() {
                     <thead><tr><th>Inferred leg in the combo</th><th style={{ textAlign: "right" }}>Spend</th><th style={{ textAlign: "right" }}>Assumed pay if fail</th></tr></thead>
                     <tbody>{inferredLegs.map((a) => (
                       <tr key={a.candidateId}>
-                        <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /> <span className="badge PARTIAL">推理 INFERRED</span></td>
+                        <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /> <span className="badge PARTIAL">INFERRED</span></td>
                         <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
                         <td style={{ textAlign: "right", color: "var(--ink-2)" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
                       </tr>
@@ -263,9 +263,9 @@ export default function DiscoverPage() {
                     <tbody>{crossEvent.map((r) => (
                       <tr key={r.market.id}>
                         <td><strong>{r.market.title}</strong> <VenueTag venue={r.market.venue} short /><div style={{ color: "var(--ink-2)", fontSize: 12 }}>{r.market.marketTitle} · {cents(r.market.probYes)}</div></td>
-                        <td style={{ color: "var(--ink-2)" }}>{r.mechanismGraph?.mechanismType ?? "机制"}{r.mechanismGraph?.scope ? ` · ${r.mechanismGraph.scope}` : ""}</td>
+                        <td style={{ color: "var(--ink-2)" }}>{r.mechanismGraph?.mechanismType ?? "mechanism"}{r.mechanismGraph?.scope ? ` · ${r.mechanismGraph.scope}` : ""}</td>
                         <td style={{ textAlign: "right", color: "var(--ink-2)" }}>{r.relation.correlation >= 0 ? "+" : ""}{r.relation.correlation.toFixed(2)}</td>
-                        <td style={{ color: "var(--ink-2)" }}>{r.relation.confidence === "high" ? "高" : r.relation.confidence === "medium" ? "中" : "低"}</td>
+                        <td style={{ color: "var(--ink-2)" }}>{r.relation.confidence === "high" ? "High" : r.relation.confidence === "medium" ? "Med" : "Low"}</td>
                         <td style={{ textAlign: "right" }}><a className="ghostbtn" target="_blank" rel="noreferrer" href={r.market.url}><ArrowSquareOut size={13} /></a></td>
                       </tr>
                     ))}</tbody>

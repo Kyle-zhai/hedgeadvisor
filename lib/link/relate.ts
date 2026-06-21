@@ -59,8 +59,8 @@ export interface RelateRequest {
 
 function detectClaimKind(query: string): ClaimKind {
   const q = query.toLowerCase();
-  const champ = /\b(champion|world cup winner|win(s|ning)? (the )?(world cup|cup|tournament)|win it all|lift the (cup|trophy))\b|夺冠|冠军/.test(q);
-  const match = /\b(beats?|defeats?|vs\.?|v\.?|next match|next game|this match|win(s)? (their|its|the) (match|game))\b|下一场|这场|赢球|赢下/.test(q);
+  const champ = /\b(champion|world cup winner|win(s|ning)? (the )?(world cup|cup|tournament)|win it all|lift the (cup|trophy))\b/.test(q);
+  const match = /\b(beats?|defeats?|vs\.?|v\.?|next match|next game|this match|win(s)? (their|its|the) (match|game))\b/.test(q);
   if (champ && !match) return "champion";
   if (match) return "match";
   return "champion";

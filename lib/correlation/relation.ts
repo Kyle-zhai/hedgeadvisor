@@ -72,10 +72,10 @@ function classify(phi: number, pAB: number, pA: number, pB: number): RelationTyp
 export interface RelationInput {
   pA: number;
   pB: number;
-  /** Path 甲: a structurally-derived joint (exclusive ⇒ 0, subset ⇒ min). Highest trust. */
+  /** Path A: a structurally-derived joint (exclusive ⇒ 0, subset ⇒ min). Highest trust. */
   structuralJoint?: number;
   structuralKind?: "exclusive" | "same-outcome" | "subset";
-  /** Path 乙: an illustrative/stated ρ to imply the joint when nothing structural applies.
+  /** Path B: an illustrative/stated ρ to imply the joint when nothing structural applies.
    *  NOTE: price co-movement is NEVER fed here — it is not the settlement correlation. The settled
    *  relationship comes from lib/association (conditional payoff calibration on resolved outcomes). */
   estimateRho?: number;
@@ -98,18 +98,18 @@ function reasoningFor(rel: RelationType, phi: number, signal: HedgeSignal, ratio
   const r2 = `${Math.round(eff * 100)}%`;
   const phiStr = `${phi >= 0 ? "+" : ""}${phi.toFixed(2)}`;
   if (rel === "mutually_exclusive")
-    return `「${a}」与「${b}」互斥（不可能同时为真，φ=${phiStr}）；买「${b}」会在你输掉「${a}」时赔付，是天然对冲，但只能消除约 ${r2} 的风险。`;
+    return `"${a}" and "${b}" are mutually exclusive (cannot both be true, φ=${phiStr}). Buying "${b}" pays when "${a}" loses, a natural hedge, but removes only about ${r2} of the risk.`;
   if (rel === "same")
-    return `「${a}」与「${b}」几乎是同一结果（φ=${phiStr}）；它们同生共死，不能互相对冲。`;
+    return `"${a}" and "${b}" are essentially the same outcome (φ=${phiStr}). They rise and fall together and cannot hedge each other.`;
   if (rel === "independent")
-    return `「${a}」与「${b}」基本独立（φ=${phiStr}）；「${b}」帮不上对冲，但可用于分散。`;
+    return `"${a}" and "${b}" are roughly independent (φ=${phiStr}). "${b}" does not hedge, but can diversify.`;
   // related
   if (signal === "same_exposure") {
-    const side = ratio < 0 ? `买 No-${b} 约 ${Math.abs(ratio).toFixed(2)}:1` : `反向操作约 ${ratio.toFixed(2)}:1`;
-    return `「${a}」与「${b}」同向暴露（φ=${phiStr}），风险在叠加而非分散；若要对冲需${side}，但只能消除约 ${r2} 的波动。`;
+    const side = ratio < 0 ? `buy No-${b} at about ${Math.abs(ratio).toFixed(2)}:1` : `take the opposite side at about ${ratio.toFixed(2)}:1`;
+    return `"${a}" and "${b}" share the same exposure (φ=${phiStr}); risk stacks rather than diversifies. To hedge, ${side}, which removes only about ${r2} of the variance.`;
   }
   // related + negative φ ⇒ natural hedge
-  return `「${a}」与「${b}」负相关（φ=${phiStr}）；买 Yes-${b} 约 ${Math.abs(ratio).toFixed(2)}:1 能对冲「${a}」，消除约 ${r2} 的波动。`;
+  return `"${a}" and "${b}" are negatively correlated (φ=${phiStr}). Buying Yes-${b} at about ${Math.abs(ratio).toFixed(2)}:1 hedges "${a}", removing about ${r2} of the variance.`;
 }
 
 /**
@@ -130,11 +130,11 @@ export function buildEventRelation(input: RelationInput): EventRelation {
   let frechetViolated = false;
 
   if (input.structuralJoint !== undefined) {
-    // Path 甲 — exact, derived from market structure.
+    // Path A: exact, derived from market structure.
     pAB = Math.min(frechet[1], Math.max(frechet[0], input.structuralJoint));
     method = "structural";
   } else if (input.estimateRho !== undefined) {
-    // Path 乙 — stated/illustrative ρ, Fréchet-clamped.
+    // Path B: stated/illustrative ρ, Fréchet-clamped.
     const j = jointFromPhi(pA, pB, input.estimateRho);
     pAB = j.pAB;
     frechetViolated = j.clamped;

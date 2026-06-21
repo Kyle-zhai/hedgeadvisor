@@ -8,7 +8,7 @@
  *   CALIBRATED — settled-outcome history (loadConditionalCounts on a stable relation_key) gives a
  *                beta-binomial credible interval where the leg pays MORE often when the anchor fails.
  *   HYPOTHESIS — only Qwen/semantic similarity (or insufficient settled samples). The optimizer
- *                rejects it: a hypothesis is "可能有关", never "可以买".
+ *                rejects it: a hypothesis is "may be related", never "safe to buy".
  *
  * This is the closed loop's wiring half: Qwen DISCOVERS (hypothesis), settled DATA PROVES (calibrated),
  * the optimizer DECIDES (cost = book all-in price, capacity = depth, uncertainty = credible bounds).

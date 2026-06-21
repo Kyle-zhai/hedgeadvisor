@@ -3,7 +3,7 @@
  *
  * Anchor-driven (relations FOR one market), so we never enumerate N² pairs:
  *   (a) STRUCTURAL candidates — the anchor's same-event siblings (mutually-exclusive outcomes).
- *       Surfaced directly; path 甲 will price them exactly. No embedding/LLM needed.
+ *       Surfaced directly; path A will price them exactly. No embedding/LLM needed.
  *   (b) SEMANTIC candidates — cross-event markets, after a metadata hard filter, ranked by a
  *       similarity score (cosine over embeddings when available, else lexical token overlap) and
  *       capped at top-K. Embedding recall finds non-obvious cross-entity links (France ↔ Mbappé)

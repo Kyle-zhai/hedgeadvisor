@@ -209,18 +209,18 @@ export default function ComboPage() {
           {c.relation && c.legs.length === 2 && (
             <div className="card" style={{ borderColor: "var(--border-strong)" }}>
               <div className="cardtitle">
-                Correlation &amp; hedge · 相关性与对冲{" "}
+                Correlation &amp; hedge{" "}
                 <span className="hint">
-                  {c.relation.method === "structural" ? "ANALYTIC · 由市场结构推导" : c.relation.method === "independence" ? "默认独立（无相关信息）" : "估计 · Fréchet 夹界"}
+                  {c.relation.method === "structural" ? "ANALYTIC · derived from market structure" : c.relation.method === "independence" ? "independent by default (no correlation info)" : "estimate · Fréchet-clamped"}
                 </span>
               </div>
               <div className="metric-strip" style={{ marginTop: 8 }}>
                 <div className="metric">
                   <div className="label">Relation</div>
                   <div className="value" style={{ fontSize: 18 }}>
-                    {c.relation.relation === "mutually_exclusive" ? "互斥" : c.relation.relation === "same" ? "同一" : c.relation.relation === "related" ? "相关" : "独立"}
+                    {c.relation.relation === "mutually_exclusive" ? "Exclusive" : c.relation.relation === "same" ? "Same" : c.relation.relation === "related" ? "Related" : "Independent"}
                   </div>
-                  <div className="detail">{c.relation.hedgeSignal === "same_exposure" ? "同向叠加" : c.relation.hedgeSignal === "hedge" ? "天然对冲" : "可分散"}</div>
+                  <div className="detail">{c.relation.hedgeSignal === "same_exposure" ? "Same-direction exposure" : c.relation.hedgeSignal === "hedge" ? "Natural hedge" : "Diversifiable"}</div>
                 </div>
                 <div className="metric">
                   <div className="label">Correlation φ</div>
@@ -237,12 +237,12 @@ export default function ComboPage() {
                 <div className="metric">
                   <div className="label">Optimal hedge ratio</div>
                   <div className="value">{c.relation.hedgeRatio.toFixed(2)}:1</div>
-                  <div className="detail">{c.relation.hedgeRatio < 0 ? `买 No-leg2 ${Math.abs(c.relation.hedgeRatio).toFixed(2)}:1` : c.relation.hedgeRatio > 0 ? `买 Yes-leg2 ${c.relation.hedgeRatio.toFixed(2)}:1` : "—"}</div>
+                  <div className="detail">{c.relation.hedgeRatio < 0 ? `buy No-leg2 ${Math.abs(c.relation.hedgeRatio).toFixed(2)}:1` : c.relation.hedgeRatio > 0 ? `buy Yes-leg2 ${c.relation.hedgeRatio.toFixed(2)}:1` : "n/a"}</div>
                 </div>
                 <div className="metric">
                   <div className="label">Confidence</div>
-                  <div className="value" style={{ fontSize: 18 }}>{c.relation.confidence === "high" ? "高" : c.relation.confidence === "medium" ? "中" : "低"}</div>
-                  <div className="detail">P(A∩B) ≈ {pct1(c.relation.pAB)}{c.relation.frechetViolated ? " · 越界已夹回" : ""}</div>
+                  <div className="value" style={{ fontSize: 18 }}>{c.relation.confidence === "high" ? "High" : c.relation.confidence === "medium" ? "Med" : "Low"}</div>
+                  <div className="detail">P(A∩B) ≈ {pct1(c.relation.pAB)}{c.relation.frechetViolated ? " · clamped to bounds" : ""}</div>
                 </div>
               </div>
               <div className="note-box" style={{ marginTop: 10 }}>{c.relation.reasoning}</div>
