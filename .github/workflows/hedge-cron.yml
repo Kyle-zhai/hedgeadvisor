@@ -92,6 +92,24 @@ jobs:
           printf '%s' "$body" | grep -oE '"error":"[^"]{0,80}' | head -1 || true
           echo "::endgroup::"
 
+      - name: Qwen RAW connectivity probe (manual only — tests both endpoints directly)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          QWEN_RELATION_MODEL: ${{ vars.QWEN_RELATION_MODEL }}
+        run: |
+          for base in "https://dashscope.aliyuncs.com/compatible-mode/v1" "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"; do
+            echo "::group::raw probe -> $base (model=$QWEN_RELATION_MODEL)"
+            code=$(curl -s -o /tmp/q.json -w '%{http_code}' --max-time 40 \
+              -H "Authorization: Bearer ${QWEN_API_KEY}" -H "content-type: application/json" \
+              -d "{\"model\":\"${QWEN_RELATION_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4}" \
+              "$base/chat/completions" || echo "CURL_FAILED")
+            echo "HTTP: $code"
+            # print only error/status fields, never the key
+            grep -oE '"(message|code|type)":[ ]?"[^"]{0,160}"' /tmp/q.json 2>/dev/null | head -4 || echo "(no error fields — likely 200/success)"
+            echo "::endgroup::"
+          done
+
       - name: Server log (qwen/error lines, secret-filtered)
         if: always()
         run: |
