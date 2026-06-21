@@ -79,9 +79,24 @@ jobs:
           done
           exit $fail
 
-      - name: Server log on failure
-        if: failure()
-        run: cat server.log || true
+      - name: Qwen-in-CI probe (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::group::/api/discover probe — does Qwen classify + emit mechanism graphs on the runner?"
+          body=$(curl -s --max-time 150 -X POST "http://localhost:3000/api/discover" \
+            -H "content-type: application/json" \
+            -d '{"query":"France wins the World Cup","eventSlug":"world-cup-winner","topK":12}')
+          echo "response bytes:             $(printf '%s' "$body" | wc -c | tr -d ' ')"
+          echo "mechanism-graph signatures: $(printf '%s' "$body" | grep -oE 'mechanismGraph|mechanismType|anchorEventClass|cross_entity|cross_domain' | wc -l | tr -d ' ')"
+          echo "llm-method markers:         $(printf '%s' "$body" | grep -oE '"method":"llm"' | wc -l | tr -d ' ')"
+          printf '%s' "$body" | grep -oE '"error":"[^"]{0,80}' | head -1 || true
+          echo "::endgroup::"
+
+      - name: Server log (qwen/error lines, secret-filtered)
+        if: always()
+        run: |
+          grep -aiE "qwen|dashscope|mechanism|classif|ECONNREFUSED|ETIMEDOUT|timeout|fetch failed|aborted|unauthorized|status (4|5)[0-9][0-9]" server.log 2>/dev/null \
+            | grep -aviE "api[-_]?key|authorization|bearer|password|postgres" | tail -40 || echo "(no qwen/error lines in server.log)"
 
       - name: Stop server
         if: always()
