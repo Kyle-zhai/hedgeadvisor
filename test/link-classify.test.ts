@@ -1,7 +1,8 @@
 /**
- * Cross-venue relationship classifier. These are the HONESTY-critical invariants: only
- * structural relations (EQUIVALENT / MUTEX / SUBSET) are ANALYTIC and actionable as hedges;
- * everything entity/theme-level is SPECULATIVE context. The (role × claimKind) matrix must
+ * Cross-venue relationship classifier. These are the HONESTY-critical invariants: structural
+ * relations (EQUIVALENT / MUTEX / SUBSET) are ANALYTIC, but the only actionable use is
+ * same-direction amplify (EQUIVALENT / SUBSET) for a cross-venue price comparison; rivals
+ * (MUTEX) are context, never a short of your own bet. The (role × claimKind) matrix must
  * never upgrade a merely-correlated pairing into a guaranteed one.
  */
 import { describe, expect, test } from "vitest";
@@ -10,20 +11,21 @@ import { classify } from "@/lib/link";
 const ctx = { entity: "Spain", opponent: "Saudi Arabia", fixture: "Spain vs Saudi Arabia", continent: "Europe", rivalName: "France" };
 
 describe("classify — structural (ANALYTIC, actionable)", () => {
-  test("champion bet ↔ Kalshi champion market = EQUIVALENT, hedge+amplify", () => {
+  test("champion bet ↔ Kalshi champion market = EQUIVALENT, amplify+context, same-direction YES", () => {
     const c = classify("champion_self", "champion", ctx)!;
     expect(c.rule).toBe("EQUIVALENT");
     expect(c.provenance).toBe("ANALYTIC");
-    expect(c.uses).toEqual(expect.arrayContaining(["hedge", "amplify"]));
-    expect(c.side).toBe("no"); // hedge-first: buy NO to cover the loss states
+    expect(c.uses).toEqual(["amplify", "context"]); // no hedge: never short your own bet
+    expect(c.uses).not.toContain("hedge");
+    expect(c.side).toBe("yes"); // same direction: buy YES on the cheaper venue
   });
 
-  test("champion bet ↔ a rival winning the cup = MUTEX hedge", () => {
+  test("champion bet ↔ a rival winning the cup = MUTEX, context only (not a short)", () => {
     const c = classify("champion_rival", "champion", ctx)!;
     expect(c.rule).toBe("MUTEX");
     expect(c.provenance).toBe("ANALYTIC");
-    expect(c.uses).toEqual(["hedge"]);
-    expect(c.side).toBe("yes");
+    expect(c.uses).toEqual(["context"]);
+    expect(c.uses).not.toContain("hedge");
   });
 
   test("champion bet ↔ own continent winning = SUBSET (containment)", () => {
@@ -32,17 +34,17 @@ describe("classify — structural (ANALYTIC, actionable)", () => {
     expect(c.provenance).toBe("ANALYTIC");
   });
 
-  test("champion bet ↔ another continent winning = MUTEX hedge", () => {
+  test("champion bet ↔ another continent winning = MUTEX, context only", () => {
     const c = classify("continent_other", "champion", ctx)!;
     expect(c.rule).toBe("MUTEX");
-    expect(c.uses).toEqual(["hedge"]);
+    expect(c.uses).toEqual(["context"]);
   });
 
-  test("match bet ↔ same Kalshi fixture = EQUIVALENT; siblings = MUTEX", () => {
+  test("match bet ↔ same Kalshi fixture = EQUIVALENT; siblings = MUTEX context", () => {
     expect(classify("match_self", "match", ctx)!.rule).toBe("EQUIVALENT");
     const sib = classify("match_rival", "match", ctx)!;
     expect(sib.rule).toBe("MUTEX");
-    expect(sib.uses).toEqual(["hedge"]);
+    expect(sib.uses).toEqual(["context"]);
   });
 });
 

@@ -9,6 +9,5 @@ export type {
   ClaimKind,
   Venue,
   CrossVenueLink,
-  CrossVenueHedge,
   RelateResult,
 } from "./types";

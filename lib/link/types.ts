@@ -43,33 +43,6 @@ export interface CrossVenueLink {
   priceNote?: string; // cross-venue price comparison when both sides are priced
 }
 
-/**
- * A solver-sized cross-venue hedge: the EQUIVALENT Kalshi leg, sized by the probability-free
- * maximin win-floor solver, with a like-for-like Polymarket cost comparison. This is what turns
- * the list of related markets into an actionable, reasonable hedge STRATEGY.
- */
-export interface CrossVenueHedge {
-  available: boolean;
-  partition: "champion" | "match" | "generic";
-  states: string[]; // the single-winner partition the hedge is solved over
-  coverLabel: string; // e.g. "Spain does NOT win"
-  coverTicker: string; // the Kalshi market used as the cover-all leg
-  coverSide: "no";
-  coverDeepLink: string;
-  stakeUsd: number;
-  keepFraction: number; // k
-  // solver outputs (probability-free)
-  spendUsd: number; // protection cost on the recommended venue
-  keepIfWinUsd: number; // kept if B wins, after cost (≥ k·G)
-  lossIfFailUsd: number; // worst loss if B fails, after the hedge
-  unhedgedLossUsd: number; // worst loss if B fails with NO hedge (= stake)
-  // venue economics
-  kalshiCoverPrice: number; // executable near-touch NO price on Kalshi (incl. fee)
-  polymarketCoverPrice: number | null; // executable near-touch NO price on Polymarket (incl. fee)
-  cheaperVenue: Venue | null;
-  venueNote: string; // plain-language venue comparison
-}
-
 /** The Polymarket anchor as resolved + the classified Kalshi links. */
 export interface RelateResult {
   status: "ok" | "ambiguous" | "not_found";
@@ -84,7 +57,6 @@ export interface RelateResult {
     deepLink: string;
   };
   links?: CrossVenueLink[];
-  hedge?: CrossVenueHedge; // the recommended solver-sized cross-venue hedge (EQUIVALENT leg)
   candidates?: { title: string; score: number }[];
   suggestions?: string[];
   pricedAt?: string;

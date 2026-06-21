@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowSquareOut, LinkSimple, MagnifyingGlass, ShieldCheck } from "@phosphor-icons/react";
+import { ArrowSquareOut, ArrowsLeftRight, LinkSimple, MagnifyingGlass } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import VenueTag from "@/components/VenueTag";
 
@@ -20,24 +20,6 @@ interface CrossVenueLink {
   why: string;
   priceNote?: string;
 }
-interface CrossVenueHedge {
-  available: boolean;
-  partition: "champion" | "match" | "generic";
-  coverLabel: string;
-  coverTicker: string;
-  coverSide: "no";
-  coverDeepLink: string;
-  stakeUsd: number;
-  keepFraction: number;
-  spendUsd: number;
-  keepIfWinUsd: number;
-  lossIfFailUsd: number;
-  unhedgedLossUsd: number;
-  kalshiCoverPrice: number;
-  polymarketCoverPrice: number | null;
-  cheaperVenue: "polymarket" | "kalshi" | null;
-  venueNote: string;
-}
 interface RelateResult {
   status: "ok" | "ambiguous" | "not_found";
   pm?: {
@@ -51,7 +33,6 @@ interface RelateResult {
     deepLink: string;
   };
   links?: CrossVenueLink[];
-  hedge?: CrossVenueHedge;
   candidates?: { title: string; score: number }[];
   suggestions?: string[];
   pricedAt?: string;
@@ -61,8 +42,8 @@ interface RelateResult {
 const cents = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}¢`);
 
 const RULE_META: Record<LinkRule, { label: string; badge: "GO" | "PARTIAL" | "MUTED"; blurb: string }> = {
-  EQUIVALENT: { label: "Same bet", badge: "GO", blurb: "Resolves identically on Kalshi" },
-  MUTEX: { label: "Pays if you lose", badge: "GO", blurb: "Mutually exclusive with your bet" },
+  EQUIVALENT: { label: "Same outcome", badge: "GO", blurb: "Resolves identically on Kalshi, compare the price" },
+  MUTEX: { label: "Rival outcome", badge: "MUTED", blurb: "Mutually exclusive with your bet, context only" },
   SUBSET: { label: "Contains your bet", badge: "PARTIAL", blurb: "Your win implies this one" },
   SUPERSET: { label: "Implied by", badge: "PARTIAL", blurb: "This implies your bet" },
   SAME_EVENT: { label: "Same event", badge: "MUTED", blurb: "Same game, different question" },
@@ -72,7 +53,8 @@ const RULE_META: Record<LinkRule, { label: string; badge: "GO" | "PARTIAL" | "MU
 
 function LinkCard({ link }: { link: CrossVenueLink }) {
   const meta = RULE_META[link.rule];
-  const actionable = link.provenance === "ANALYTIC" && (link.uses.includes("hedge") || link.uses.includes("amplify"));
+  // "hedge" uses are stripped upstream (no shorting your own bet); only same-direction amplify is actionable.
+  const actionable = link.provenance === "ANALYTIC" && link.uses.includes("amplify");
   return (
     <div className="card" style={{ borderColor: actionable ? "var(--go)" : "var(--border)" }}>
       <div className="legtop" style={{ alignItems: "baseline", gap: 8 }}>
@@ -90,12 +72,12 @@ function LinkCard({ link }: { link: CrossVenueLink }) {
         <span className="k">How to act</span>
         <span className="v">
           {actionable ? (
+            // Amplify is always the same-direction (YES) side; the stored kalshiSide is the old hedge cover side.
             <>
-              Take <strong>{link.kalshiSide.toUpperCase()}</strong> on Kalshi
-              {link.uses.includes("hedge") && link.uses.includes("amplify") ? " (NO hedges · YES amplifies)" : ""}
+              Buy <strong>YES</strong> on Kalshi {link.rule === "EQUIVALENT" ? "if it is cheaper than Polymarket" : "for more of the same exposure"}
             </>
           ) : (
-            <span className="muted">Context only — not a hedge</span>
+            <span className="muted">Related context, not an action</span>
           )}
         </span>
       </div>
@@ -144,7 +126,12 @@ export default function LinkPage() {
 
   const structural = useMemo(() => (data?.links ?? []).filter((l) => l.provenance === "ANALYTIC"), [data]);
   const speculative = useMemo(() => (data?.links ?? []).filter((l) => l.provenance === "SPECULATIVE"), [data]);
+  const equivalent = useMemo(() => (data?.links ?? []).find((l) => l.rule === "EQUIVALENT"), [data]);
   const pm = data?.pm;
+  // Net-of-mid cheaper venue for buying YES (the comparison hero). Both venues priced ⇒ pick the lower.
+  const cheaperYes = pm?.yesMid != null && equivalent?.kalshiYesMid != null
+    ? (equivalent.kalshiYesMid < pm.yesMid ? "kalshi" : equivalent.kalshiYesMid > pm.yesMid ? "polymarket" : "aligned")
+    : null;
 
   return (
     <div className="page">
@@ -158,9 +145,9 @@ export default function LinkPage() {
 
       <div className="card">
         <p className="sub" style={{ marginTop: 0 }}>
-          Enter a Polymarket bet. We find the live Kalshi markets logically tied to it and label how each one relates —
-          a real cross-venue hedge, an amplifier, or just related colour. Structural links are exact; thematic and
-          narrative links are clearly marked speculative.
+          Enter a Polymarket bet. We find the same outcome on Kalshi and compare the price across venues, so you can place
+          your YES where it is cheapest net of fees. Related and narrative markets are surfaced as labeled context. This is
+          an execution comparison, not a hedge: we never recommend shorting your own bet on the other venue.
         </p>
         <form
           className="formrow"
@@ -225,45 +212,42 @@ export default function LinkPage() {
 
           <div className="metric-strip">
             <div className="metric"><div className="label">Claim type</div><div className="value">{pm.claimKind === "match" ? "Single match" : pm.claimKind === "champion" ? "Tournament" : "General"}</div><div className="detail">how your bet resolves</div></div>
-            <div className="metric"><div className="label">Cross-venue hedges</div><div className="value">{structural.filter((l) => l.uses.includes("hedge")).length}</div><div className="detail">Kalshi legs that pay if you lose</div></div>
+            <div className="metric"><div className="label">Same outcome on Kalshi</div><div className="value">{equivalent ? cents(equivalent.kalshiYesMid) : "—"}</div><div className="detail">{equivalent ? "YES price to compare" : "no equivalent found"}</div></div>
             <div className="metric"><div className="label">Related markets</div><div className="value">{(data?.links ?? []).length}</div><div className="detail">classified Kalshi markets</div></div>
           </div>
 
-          {data?.hedge?.available && (
+          {equivalent && (
             <div className="card" style={{ borderColor: "var(--go)", marginTop: 4 }}>
               <div className="section-head" style={{ marginBottom: 6 }}>
                 <h2 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                  <ShieldCheck size={18} color="var(--go)" weight="fill" /> Recommended cross-venue hedge
+                  <ArrowsLeftRight size={18} color="var(--go)" weight="bold" /> Cheaper venue for your bet
                 </h2>
-                {/* The cover leg you trade is ALWAYS a Kalshi market; the source tag reflects that.
-                    cheaperVenue is a price signal, shown separately (never as the source). */}
                 <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <VenueTag venue="kalshi" />
-                  {data.hedge.cheaperVenue === "polymarket" && (
-                    <span className="badge" style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}>Cheaper on Polymarket</span>
-                  )}
+                  {cheaperYes === "aligned"
+                    ? <span className="badge" style={{ background: "var(--surface-2, #f4f4f3)", color: "var(--muted)" }}>Aligned</span>
+                    : <span className="badge GO">{cheaperYes === "kalshi" ? "Cheaper on Kalshi" : "Cheaper on Polymarket"}</span>}
                 </span>
               </div>
               <p className="sub" style={{ marginTop: 0 }}>
-                Buy <strong>NO</strong> on <strong>{data.hedge.coverLabel}</strong> ({data.hedge.coverTicker}) — it pays in every
-                state where your bet loses. Sized by the win-floor solver to keep at least {Math.round(data.hedge.keepFraction * 100)}% of your winnings.
+                The same outcome trades on both venues. Buy your <strong>YES</strong> where it is cheaper, net of fees. This is
+                an execution comparison: it places your bet at a better price, it does not short your position.
               </p>
               <div className="metric-strip" style={{ marginTop: 4 }}>
-                <div className="metric"><div className="label">Worst loss now</div><div className="value pnl-neg">${data.hedge.unhedgedLossUsd.toFixed(2)}</div><div className="detail">unhedged, if your bet fails</div></div>
-                <div className="metric"><div className="label">Worst loss hedged</div><div className="value pnl-pos">${data.hedge.lossIfFailUsd.toFixed(2)}</div><div className="detail">after buying the cover leg</div></div>
-                <div className="metric"><div className="label">Hedge spend</div><div className="value">${data.hedge.spendUsd.toFixed(2)}</div><div className="detail">live near-touch + fee</div></div>
-                <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${data.hedge.keepIfWinUsd.toFixed(2)}</div><div className="detail">winnings after the hedge</div></div>
+                <div className="metric"><div className="label">YES on Polymarket</div><div className={`value ${cheaperYes === "polymarket" ? "pnl-pos" : ""}`}>{cents(pm.yesMid)}</div><div className="detail">your current venue</div></div>
+                <div className="metric"><div className="label">YES on Kalshi</div><div className={`value ${cheaperYes === "kalshi" ? "pnl-pos" : ""}`}>{cents(equivalent.kalshiYesMid)}</div><div className="detail">{equivalent.kalshiLabel}</div></div>
+                <div className="metric"><div className="label">Cheaper venue</div><div className="value">{cheaperYes === "aligned" ? "Either" : cheaperYes === "kalshi" ? "Kalshi" : cheaperYes === "polymarket" ? "Polymarket" : "—"}</div><div className="detail">for buying YES</div></div>
               </div>
-              <div className="note-box" style={{ marginTop: 8 }}>{data.hedge.venueNote}</div>
+              {equivalent.priceNote && <div className="note-box" style={{ marginTop: 8 }}>{equivalent.priceNote}</div>}
               <div className="toolbar" style={{ marginTop: 8 }}>
-                <a className="primarybtn" target="_blank" rel="noreferrer" href={data.hedge.coverDeepLink}>Open the cover market on Kalshi <ArrowSquareOut size={14} /></a>
+                <a className="primarybtn" target="_blank" rel="noreferrer" href={equivalent.kalshiDeepLink}>Open the Kalshi market <ArrowSquareOut size={14} /></a>
+                <a className="ghostbtn" target="_blank" rel="noreferrer" href={pm.deepLink}>Open on Polymarket <ArrowSquareOut size={14} /></a>
               </div>
             </div>
           )}
 
           {structural.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <div className="section-head"><h2 style={{ margin: 0 }}>Structural links</h2><span className="muted">exact — usable as cross-venue hedges or amplifiers</span></div>
+              <div className="section-head"><h2 style={{ margin: 0 }}>Structural links</h2><span className="muted">exact same-outcome and related markets</span></div>
               <div className="card-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12, marginTop: 10 }}>
                 {structural.map((l) => <LinkCard key={l.kalshiTicker + l.rule} link={l} />)}
               </div>
@@ -272,7 +256,7 @@ export default function LinkPage() {
 
           {speculative.length > 0 && (
             <div style={{ marginTop: 16 }}>
-              <div className="section-head"><h2 style={{ margin: 0 }}>Related context</h2><span className="muted">speculative — correlated colour, not a hedge</span></div>
+              <div className="section-head"><h2 style={{ margin: 0 }}>Related context</h2><span className="muted">speculative, correlated colour, not an action</span></div>
               <div className="card-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12, marginTop: 10 }}>
                 {speculative.map((l) => <LinkCard key={l.kalshiTicker + l.rule} link={l} />)}
               </div>
@@ -282,9 +266,10 @@ export default function LinkPage() {
       )}
 
       <div className="disclaimer">
-        Not financial advice. Prices are live market-implied mids, not forecasts. Only structural links (same-bet, mutually
-        exclusive, containment) guarantee a payoff relationship; thematic and narrative links are correlated context and may
-        move independently of your bet. Execution stays on each venue — HedgeAdvisor never holds funds or keys.
+        Not financial advice. Prices are live market-implied mids, not forecasts. The cross-venue comparison helps you buy
+        the same outcome at a better price; it is not a hedge and never shorts your own bet. Related and narrative links are
+        correlated context and may move independently of your bet. Execution stays on each venue; HedgeAdvisor never holds
+        funds or keys.
       </div>
     </div>
   );

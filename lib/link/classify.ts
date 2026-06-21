@@ -67,9 +67,9 @@ export function classify(role: KalshiRole, claim: ClaimKind, ctx: ClassifyCtx): 
       if (claim === "champion")
         return ANALYTIC(
           "EQUIVALENT",
-          ["hedge", "amplify", "context"],
-          "no",
-          `Same outcome on both venues: Kalshi "${E} wins the World Cup" resolves identically to your Polymarket bet. Buy NO here to hedge (it pays in every state where your bet loses), or YES to amplify. Also a clean cross-venue price check.`,
+          ["amplify", "context"],
+          "yes",
+          `Same outcome on both venues: Kalshi "${E} wins the World Cup" resolves identically to your Polymarket bet. Buy YES on whichever venue is cheaper, net of fees. A clean cross-venue price check, not a hedge.`,
         );
       // match claim: winning the whole tournament neither requires nor is required by one match
       return SPECULATIVE(
@@ -81,18 +81,18 @@ export function classify(role: KalshiRole, claim: ClaimKind, ctx: ClassifyCtx): 
       if (claim === "champion")
         return ANALYTIC(
           "MUTEX",
-          ["hedge"],
+          ["context"],
           "yes",
-          `Mutually exclusive: only one nation wins the World Cup, so "${ctx.rivalName ?? "this rival"} wins" pays exactly in a slice of the states where ${E} does not. Buy YES as a targeted cross-venue hedge.`,
+          `Mutually exclusive: only one nation wins the World Cup, so "${ctx.rivalName ?? "this rival"} wins" and ${E} winning cannot both happen. Shown as context, not an action.`,
         );
       return null;
     case "match_self":
       if (claim === "match")
         return ANALYTIC(
           "EQUIVALENT",
-          ["hedge", "amplify", "context"],
-          "no",
-          `Same match on both venues: Kalshi "${E} wins ${ctx.fixture ?? "this match"}" resolves identically to your Polymarket bet. Buy NO to hedge, YES to amplify, or compare the two prices.`,
+          ["amplify", "context"],
+          "yes",
+          `Same match on both venues: Kalshi "${E} wins ${ctx.fixture ?? "this match"}" resolves identically to your Polymarket bet. Buy YES on whichever venue is cheaper, and compare the two prices.`,
         );
       return SPECULATIVE(
         "SAME_ENTITY",
@@ -103,9 +103,9 @@ export function classify(role: KalshiRole, claim: ClaimKind, ctx: ClassifyCtx): 
       if (claim === "match")
         return ANALYTIC(
           "MUTEX",
-          ["hedge"],
+          ["context"],
           "yes",
-          `Covers ONE of the ways you lose ${ctx.fixture ?? "this match"} (this outcome alone). The ${ctx.opponent ?? "opponent"}-win and tie legs TOGETHER are the exact complement of your bet — take both to fully cover the match, or use the EQUIVALENT "buy NO" leg above, which does the same in one trade.`,
+          `One of the ways you lose ${ctx.fixture ?? "this match"}: the ${ctx.opponent ?? "opponent"}-win and tie outcomes are mutually exclusive with your bet. Shown as context, not an action.`,
         );
       return null;
     case "continent_self":
@@ -125,9 +125,9 @@ export function classify(role: KalshiRole, claim: ClaimKind, ctx: ClassifyCtx): 
       if (claim === "champion")
         return ANALYTIC(
           "MUTEX",
-          ["hedge"],
+          ["context"],
           "yes",
-          `Disjoint from your bet: if ${ctx.continent ?? "this continent"} wins the World Cup then ${E} did not. Buy YES to hedge the way ${E} loses to a team from that continent (cross-market, champion-determined).`,
+          `Disjoint from your bet: if ${ctx.continent ?? "this continent"} wins the World Cup then ${E} did not. Shown as context, not an action.`,
         );
       return null;
     case "group_self":
@@ -152,16 +152,16 @@ export function classify(role: KalshiRole, claim: ClaimKind, ctx: ClassifyCtx): 
     case "generic_self":
       return ANALYTIC(
         "EQUIVALENT",
-        ["hedge", "amplify", "context"],
-        "no",
-        `Same outcome on Kalshi: this market resolves on "${E}" the same way your Polymarket bet does. Buy NO here to hedge (it pays whenever your bet loses), or YES to amplify. Also a clean cross-venue price check.`,
+        ["amplify", "context"],
+        "yes",
+        `Same outcome on Kalshi: this market resolves on "${E}" the same way your Polymarket bet does. Buy YES on whichever venue is cheaper, net of fees. A clean cross-venue price check.`,
       );
     case "generic_sibling":
       return ANALYTIC(
         "MUTEX",
-        ["hedge"],
+        ["context"],
         "yes",
-        `Mutually exclusive with your bet: in Kalshi's single-winner market only one outcome wins, so "${ctx.rivalName ?? "this outcome"}" pays in a slice of the states where ${E} does not. Buy YES as a targeted cross-venue hedge.`,
+        `Mutually exclusive with your bet: in Kalshi's single-winner market only one outcome wins, so "${ctx.rivalName ?? "this outcome"}" and your bet cannot both win. Shown as context, not an action.`,
       );
     case "generic_same_entity":
       return SPECULATIVE(

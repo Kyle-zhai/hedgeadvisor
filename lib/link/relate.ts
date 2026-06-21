@@ -16,7 +16,6 @@ import {
   resolvePosition,
   resolveBet,
   fetchMidpoints,
-  fetchBooks,
   tokenSetScore,
   type EventBundle,
 } from "@/lib/polymarket";
@@ -24,12 +23,10 @@ import { buildMarketDeepLink } from "@/lib/execute";
 import { norm } from "@/lib/polymarket/text";
 import { confederationOf, type Confederation } from "@/lib/data/seed/wc2026-structure";
 import { listKalshiEvents, fetchKalshiMarkets, type KalshiMarket } from "@/lib/kalshi";
-import type { Book } from "@/lib/types";
 import { classify, type KalshiRole } from "./classify";
 import { parseEntityQuery, refersTo, opponentOf, fixtureSortKey } from "./match";
-import { buildCrossVenueHedge } from "./hedge";
 import { relateGeneric } from "./relate.generic";
-import type { ClaimKind, CrossVenueLink, CrossVenueHedge, RelateResult } from "./types";
+import type { ClaimKind, CrossVenueLink, RelateResult } from "./types";
 
 const DEFAULT_SLUG = process.env.HEDGE_DEFAULT_EVENT_SLUG ?? "world-cup-winner";
 
@@ -89,7 +86,9 @@ function toLink(
   return {
     rule: c.rule,
     provenance: c.provenance,
-    uses: c.uses,
+    // /link no longer recommends shorting your own bet, so the "hedge" use (buy the cross-venue NO /
+    // rival) is stripped. EQUIVALENT keeps "amplify" (buy YES on the cheaper venue); rivals fall to context.
+    uses: c.uses.filter((u) => u !== "hedge"),
     venue: "kalshi",
     kalshiTicker: m.ticker,
     kalshiLabel: m.label,
@@ -289,16 +288,6 @@ async function pmChampionContext(entity: string, eventSlug: string | undefined) 
   return { yesMid, slug, title, noToken };
 }
 
-/** Fetch a single Polymarket NO book (for the cross-venue hedge cost compare). */
-async function pmNoBookFor(noToken: string | null): Promise<Book | null> {
-  if (!noToken) return null;
-  try {
-    return (await fetchBooks([noToken])).get(noToken) ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function sortLinks(links: CrossVenueLink[]): CrossVenueLink[] {
   return links.slice().sort((a, b) => RULE_RANK[a.rule] - RULE_RANK[b.rule] || (b.kalshiYesMid ?? 0) - (a.kalshiYesMid ?? 0));
 }
@@ -342,26 +331,6 @@ export async function relateCrossVenue(req: RelateRequest): Promise<RelateResult
 
   const g = await relateGeneric({ entity, pmEventTitle: bundle.title, pmTags: bundle.tags, claimKind, pmYesMid: yesMid }).catch(() => ({ links: [], hedgeAnchor: undefined }));
 
-  let hedge: CrossVenueHedge | undefined;
-  if (g.hedgeAnchor) {
-    const pmNoBook = await pmNoBookFor(ref.tokenIdNo);
-    const h = await buildCrossVenueHedge({
-      claimKind,
-      entity,
-      stakeUsd,
-      pmYesMid: yesMid,
-      partition: "generic",
-      states: g.hedgeAnchor.states,
-      heldIndex: g.hedgeAnchor.heldIndex,
-      coverTicker: g.hedgeAnchor.coverTicker,
-      coverLabel: g.hedgeAnchor.coverLabel,
-      coverDeepLink: g.hedgeAnchor.coverDeepLink,
-      kalshiFeeMultiplier: g.hedgeAnchor.kalshiFeeMultiplier,
-      pmNoBook,
-    }).catch(() => undefined);
-    if (h?.available) hedge = h;
-  }
-
   const pm = {
     entity,
     claim: `${entity} — ${bundle.title}`,
@@ -373,7 +342,7 @@ export async function relateCrossVenue(req: RelateRequest): Promise<RelateResult
     deepLink: buildMarketDeepLink(bundle.slug),
   };
 
-  return { status: "ok", pm, links: sortLinks(g.links), hedge, pricedAt: new Date().toISOString() };
+  return { status: "ok", pm, links: sortLinks(g.links), pricedAt: new Date().toISOString() };
 }
 
 /** The World Cup flagship path: the hand-built relation set + solver-sized cross-venue hedge. */
@@ -432,34 +401,5 @@ async function relateWorldCup(
   const champion = championLinks(champ, entity, claimKind, pm.yesMid);
   const links = sortLinks([...champion, ...match, ...continent, ...narrative]);
 
-  // ── Solver-sized cross-venue hedge from the EQUIVALENT leg (cover-all NO). ──
-  let hedge: CrossVenueHedge | undefined;
-  if (isMatch && gameEvent) {
-    const gameMarkets = await fetchKalshiMarkets(gameEvent.eventTicker).catch(() => []);
-    const self = gameMarkets.find((m) => refersTo(entity, m.label));
-    if (self) {
-      const pmNoBook = await pmNoBookFor(pmMatchNoToken);
-      const h = await buildCrossVenueHedge({
-        claimKind, entity, stakeUsd, pmYesMid: pmMatchYes, partition: "match",
-        states: gameMarkets.map((m) => m.label), heldIndex: gameMarkets.findIndex((m) => m.ticker === self.ticker),
-        coverTicker: self.ticker, coverLabel: entity, coverDeepLink: self.deepLink, pmNoBook,
-        kalshiFeeMultiplier: gameEvent.feeMultiplier,
-      }).catch(() => undefined);
-      if (h?.available) hedge = h;
-    }
-  } else {
-    const self = champ.markets.find((m) => refersTo(entity, m.label));
-    if (self) {
-      const pmNoBook = await pmNoBookFor(pmChamp.noToken);
-      const h = await buildCrossVenueHedge({
-        claimKind, entity, stakeUsd, pmYesMid: pmChamp.yesMid, partition: "champion",
-        states: champ.markets.map((m) => m.label), heldIndex: champ.markets.findIndex((m) => m.ticker === self.ticker),
-        coverTicker: self.ticker, coverLabel: entity, coverDeepLink: self.deepLink, pmNoBook,
-        kalshiFeeMultiplier: champ.feeMultiplier,
-      }).catch(() => undefined);
-      if (h?.available) hedge = h;
-    }
-  }
-
-  return { status: "ok", pm, links, hedge, pricedAt: new Date().toISOString() };
+  return { status: "ok", pm, links, pricedAt: new Date().toISOString() };
 }

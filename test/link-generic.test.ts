@@ -76,18 +76,19 @@ describe("shared matcher safety", () => {
 
 describe("generic classify roles", () => {
   const ctx = { entity: "Trump", rivalName: "Newsom" };
-  test("generic_self → EQUIVALENT, hedge+amplify, side NO", () => {
+  test("generic_self → EQUIVALENT, amplify+context, same-direction YES", () => {
     const c = classify("generic_self", "generic", ctx)!;
     expect(c.rule).toBe("EQUIVALENT");
     expect(c.provenance).toBe("ANALYTIC");
-    expect(c.side).toBe("no");
-    expect(c.uses).toEqual(expect.arrayContaining(["hedge", "amplify"]));
+    expect(c.side).toBe("yes");
+    expect(c.uses).toEqual(["amplify", "context"]);
+    expect(c.uses).not.toContain("hedge");
   });
-  test("generic_sibling → MUTEX hedge", () => {
+  test("generic_sibling → MUTEX, context only (not a short)", () => {
     const c = classify("generic_sibling", "generic", ctx)!;
     expect(c.rule).toBe("MUTEX");
     expect(c.provenance).toBe("ANALYTIC");
-    expect(c.uses).toEqual(["hedge"]);
+    expect(c.uses).toEqual(["context"]);
   });
   test("generic_same_entity / generic_narrative are SPECULATIVE context", () => {
     expect(classify("generic_same_entity", "generic", ctx)!.provenance).toBe("SPECULATIVE");
