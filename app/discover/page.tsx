@@ -125,7 +125,13 @@ export default function DiscoverPage() {
   }, []);
 
   const anchor = data?.anchor;
-  const hedges = useMemo(() => (data?.relations ?? []).filter((r) => r.relation.hedgeSignal === "hedge"), [data]);
+  // Two-layer split: trustworthy legs (logically certain or settlement-proven) vs exploratory
+  // cross-event mechanisms (model-inferred, never calibrated). Honesty separation is the point.
+  const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED"), [data]);
+  const inferredLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "HYPOTHESIS"), [data]);
+  const crossEvent = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod === "llm"), [data]);
+  const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
+  const inferredSpend = inferredLegs.reduce((s, a) => s + a.spendUsd, 0);
 
   return (
     <div className="page">
@@ -183,27 +189,28 @@ export default function DiscoverPage() {
             <div className="metric"><div className="label">Recall</div><div className="value" style={{ fontSize: 18 }}>{data?.semanticRecall ? "Semantic" : "Lexical"}</div><div className="detail">{data?.semanticRecall ? "embeddings on" : "set an AI key for embeddings"}</div></div>
           </div>
 
+          {/* Layer 1 — the trustworthy, actionable hedge: logically certain or settlement-calibrated only. */}
           {data?.robustHedge && (
-            <div className="card" style={{ borderColor: data.robustHedge.status === "RECOMMEND" ? "var(--go)" : "var(--border-strong)" }}>
+            <div className="card" style={{ borderColor: data.robustHedge.status === "RECOMMEND" && optimalLegs.length ? "var(--go)" : "var(--border-strong)" }}>
               <div className="cardtitle">
-                Robust hedge · 成本/容量/不确定性约束优化 <span className="hint">settlement-calibrated; cost = book all-in price, capacity = depth, uncertainty = credible bounds</span>
+                Optimal hedge · 最优对冲 <span className="hint">structural + settlement-calibrated legs only · trustworthy, usable today</span>
               </div>
               <p className="sub" style={{ marginTop: 6 }}>{data.robustHedge.reason}</p>
-              {data.robustHedge.allocations.length > 0 ? (
+              {optimalLegs.length > 0 ? (
                 <>
                   <div className="metric-strip" style={{ marginTop: 4 }}>
-                    <div className="metric"><div className="label">Spend</div><div className="value">${data.robustHedge.spendUsd.toFixed(2)}</div><div className="detail">budget ${data.robustHedge.budgetUsd.toFixed(2)}</div></div>
+                    <div className="metric"><div className="label">Spend</div><div className="value">${data.robustHedge.spendUsd.toFixed(2)}</div><div className="detail">budget ${data.robustHedge.budgetUsd.toFixed(2)}{inferredSpend > 0 ? ` · incl. $${inferredSpend.toFixed(2)} exploratory` : ""}</div></div>
                     <div className="metric"><div className="label">Modeled loss if fails</div><div className="value pnl-pos">${data.robustHedge.modeledLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">after the hedge</div></div>
-                    <div className="metric"><div className="label">Strict worst loss</div><div className="value pnl-neg">${data.robustHedge.strictWorstLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">soft legs can pay $0 — the true floor</div></div>
+                    <div className="metric"><div className="label">Strict worst loss</div><div className="value pnl-neg">${data.robustHedge.strictWorstLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">the true floor; soft/inferred legs can pay $0</div></div>
                     <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${data.robustHedge.keepIfPrimaryWinsFloorUsd.toFixed(2)}</div></div>
                   </div>
                   <div className="table-wrap" style={{ marginTop: 8 }}>
                     <table style={{ minWidth: 560 }}>
                       <thead><tr><th>Leg</th><th>Provenance</th><th style={{ textAlign: "right" }}>Spend</th><th style={{ textAlign: "right" }}>Pay if fail</th><th style={{ textAlign: "right" }}>Loss ↓</th></tr></thead>
-                      <tbody>{data.robustHedge.allocations.map((a) => (
+                      <tbody>{optimalLegs.map((a) => (
                         <tr key={a.candidateId}>
                           <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /></td>
-                          <td><span className={`badge ${a.provenance === "ANALYTIC" ? "GO" : a.provenance === "CALIBRATED" ? "PARTIAL" : ""}`}>{a.provenance}</span></td>
+                          <td><span className={`badge ${a.provenance === "ANALYTIC" ? "GO" : "PARTIAL"}`}>{a.provenance}</span></td>
                           <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
                           <td style={{ textAlign: "right" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
                           <td style={{ textAlign: "right" }} className="pnl-pos">${a.modeledLossReductionUsd.toFixed(2)}</td>
@@ -212,36 +219,86 @@ export default function DiscoverPage() {
                     </table>
                   </div>
                 </>
-              ) : null}
+              ) : (
+                <p className="sub" style={{ margin: "8px 0 0" }}>No structural or settlement-calibrated leg clears its executable cost here. The honest answer is to skip the hedge, or weigh the exploratory layer below at your own risk.</p>
+              )}
               {data.robustHedge.rejected.length > 0 && (
                 <details style={{ marginTop: 8 }}>
-                  <summary className="muted">Rejected candidates ({data.robustHedge.rejected.length}) · why they’re not recommended</summary>
+                  <summary className="muted">Rejected candidates ({data.robustHedge.rejected.length}) · why they are not recommended</summary>
                   <div style={{ marginTop: 6 }}>{data.robustHedge.rejected.slice(0, 8).map((r) => <div key={r.candidateId} className="muted" style={{ fontSize: 12 }}>· {r.candidateId}: {r.reason}</div>)}</div>
                 </details>
               )}
             </div>
           )}
 
-          <div className="card">
-            <div className="section-head"><h2 style={{ margin: 0 }}>Related markets</h2><span className="muted">descriptive map · ranked by |φ| · {hedges.length} candidate hedges</span></div>
-            <div className="table-wrap" style={{ marginTop: 8 }}>
-              <table style={{ minWidth: 720 }}>
-                <thead><tr><th>Market</th><th>Relation</th><th style={{ textAlign: "right" }}>φ</th><th style={{ textAlign: "right" }}>Effect.</th><th style={{ textAlign: "right" }}>Hedge ×</th><th>Conf.</th><th>Method</th><th></th></tr></thead>
-                <tbody>{(data?.relations ?? []).map((r) => <RelationRow key={r.market.id} r={r} />)}</tbody>
-              </table>
+          {/* Layer 2 — exploratory cross-event mechanisms: model-inferred, never calibrated. Subordinate by design. */}
+          {(inferredLegs.length > 0 || crossEvent.length > 0) && (
+            <div className="card" style={{ background: "var(--bg-subtle)" }}>
+              <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                Exploratory · 探索 · 推理 · 低置信 <span className="badge PARTIAL">LOW CONFIDENCE</span>
+              </div>
+              <p className="sub" style={{ marginTop: 6, color: "var(--ink-2)" }}>
+                Cross-event and cross-domain mechanisms the model surfaced. Not settlement-proven, not guaranteed, and not part of the optimal hedge above. For exploration only. 仅供参考,未经结算校准,不构成对冲建议。
+              </p>
+
+              {inferredLegs.length > 0 && (
+                <div className="table-wrap" style={{ marginTop: 4 }}>
+                  <table style={{ minWidth: 520 }}>
+                    <thead><tr><th>Inferred leg in the combo</th><th style={{ textAlign: "right" }}>Spend</th><th style={{ textAlign: "right" }}>Assumed pay if fail</th></tr></thead>
+                    <tbody>{inferredLegs.map((a) => (
+                      <tr key={a.candidateId}>
+                        <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /> <span className="badge PARTIAL">推理 INFERRED</span></td>
+                        <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
+                        <td style={{ textAlign: "right", color: "var(--ink-2)" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+
+              {crossEvent.length > 0 && (
+                <div className="table-wrap" style={{ marginTop: inferredLegs.length > 0 ? 10 : 4 }}>
+                  <table style={{ minWidth: 640 }}>
+                    <thead><tr><th>Cross-event market</th><th>Mechanism</th><th style={{ textAlign: "right" }}>φ est.</th><th>Conf.</th><th></th></tr></thead>
+                    <tbody>{crossEvent.map((r) => (
+                      <tr key={r.market.id}>
+                        <td><strong>{r.market.title}</strong> <VenueTag venue={r.market.venue} short /><div style={{ color: "var(--ink-2)", fontSize: 12 }}>{r.market.marketTitle} · {cents(r.market.probYes)}</div></td>
+                        <td style={{ color: "var(--ink-2)" }}>{r.mechanismGraph?.mechanismType ?? "机制"}{r.mechanismGraph?.scope ? ` · ${r.mechanismGraph.scope}` : ""}</td>
+                        <td style={{ textAlign: "right", color: "var(--ink-2)" }}>{r.relation.correlation >= 0 ? "+" : ""}{r.relation.correlation.toFixed(2)}</td>
+                        <td style={{ color: "var(--ink-2)" }}>{r.relation.confidence === "high" ? "高" : r.relation.confidence === "medium" ? "中" : "低"}</td>
+                        <td style={{ textAlign: "right" }}><a className="ghostbtn" target="_blank" rel="noreferrer" href={r.market.url}><ArrowSquareOut size={13} /></a></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
+          {/* Descriptive reference: the full structural φ map (not actionable on its own). */}
+          {structuralRels.length > 0 && (
+            <div className="card">
+              <div className="section-head"><h2 style={{ margin: 0 }}>Related markets</h2><span className="muted">descriptive map · structural relations ranked by |φ|</span></div>
+              <div className="table-wrap" style={{ marginTop: 8 }}>
+                <table style={{ minWidth: 720 }}>
+                  <thead><tr><th>Market</th><th>Relation</th><th style={{ textAlign: "right" }}>φ</th><th style={{ textAlign: "right" }}>Effect.</th><th style={{ textAlign: "right" }}>Hedge ×</th><th>Conf.</th><th>Method</th><th></th></tr></thead>
+                  <tbody>{structuralRels.map((r) => <RelationRow key={r.market.id} r={r} />)}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
 
       <div className="disclaimer">
-        Not financial advice. The Related-markets table is a DESCRIPTIVE map: φ there is the binary correlation from the joint
-        P(A∩B), exact for structural relations and a Fréchet-clamped estimate otherwise — it is NOT a settlement guarantee, and
-        price co-movement is never used as φ. The Robust hedge is the only ACTIONABLE output: it prices each leg off the real
-        book (cost), caps by depth (capacity), and admits a leg only when deterministic structure proves it covers every
-        anchor-fail state, or settled-outcome calibration proves it pays more often when the anchor fails (uncertainty via
-        credible bounds). LLM (Qwen) relations are hypotheses only — never an exact structural claim — and are rejected until
-        calibrated. Soft legs add to the strict worst loss because they can pay $0 in a possible state.
+        Not financial advice. Two layers, read them differently. The OPTIMAL hedge is the trustworthy output: it prices each
+        leg off the real book (cost), caps by depth (capacity), and admits a leg only when deterministic structure proves it
+        covers every anchor-fail state, or settled-outcome calibration proves it pays more often when the anchor fails
+        (uncertainty via credible bounds). The EXPLORATORY layer is low confidence by design: cross-event and cross-domain
+        mechanisms are model-inferred, their edge is assumed (not settlement-proven), and they are shown for exploration, never
+        as a guarantee. Inferred and soft legs add to the strict worst loss because they can pay $0 in a possible state. The
+        Related-markets table is a DESCRIPTIVE map: φ is the binary correlation from the joint P(A and B), exact for structural
+        relations and a Fréchet-clamped estimate otherwise; price co-movement is never used as φ.
       </div>
     </div>
   );
