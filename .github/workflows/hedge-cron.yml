@@ -92,23 +92,25 @@ jobs:
           printf '%s' "$body" | grep -oE '"error":"[^"]{0,80}' | head -1 || true
           echo "::endgroup::"
 
-      - name: Qwen RAW connectivity probe (manual only — tests both endpoints directly)
+      - name: Qwen REALISTIC probe (manual only — mimics the app's exact request)
         if: github.event_name == 'workflow_dispatch'
         env:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           QWEN_RELATION_MODEL: ${{ vars.QWEN_RELATION_MODEL }}
+          QWEN_BASE_URL: ${{ vars.QWEN_BASE_URL }}
         run: |
-          for base in "https://dashscope.aliyuncs.com/compatible-mode/v1" "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"; do
-            echo "::group::raw probe -> $base (model=$QWEN_RELATION_MODEL)"
-            code=$(curl -s -o /tmp/q.json -w '%{http_code}' --max-time 40 \
-              -H "Authorization: Bearer ${QWEN_API_KEY}" -H "content-type: application/json" \
-              -d "{\"model\":\"${QWEN_RELATION_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4}" \
-              "$base/chat/completions" || echo "CURL_FAILED")
-            echo "HTTP: $code"
-            # print only error/status fields, never the key
-            grep -oE '"(message|code|type)":[ ]?"[^"]{0,160}"' /tmp/q.json 2>/dev/null | head -4 || echo "(no error fields — likely 200/success)"
-            echo "::endgroup::"
-          done
+          MODEL="${QWEN_RELATION_MODEL:-qwen-plus}"
+          BASE="${QWEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}"
+          # same shape the app sends: json_object format, enable_thinking:false, max_tokens 3000
+          PAYLOAD='{"model":"'"$MODEL"'","temperature":0,"enable_thinking":false,"max_tokens":3000,"messages":[{"role":"system","content":"You classify prediction-market relations and return JSON only with keys relation,direction,mechanism,sharedEntities,counterexamples,confidence,requiresCalibration,mechanismGraph."},{"role":"user","content":"ANCHOR: France wins the 2026 World Cup. CANDIDATE: France national-team head coach departs by end of 2026. Classify and return the JSON object."}],"response_format":{"type":"json_object"}}'
+          echo "endpoint: ${BASE%/}  model: $MODEL"
+          out=$(curl -s -o /tmp/qr.json -w 'HTTP=%{http_code} time=%{time_total}s' --max-time 90 \
+            -H "Authorization: Bearer ${QWEN_API_KEY}" -H "content-type: application/json" \
+            -d "$PAYLOAD" "${BASE%/}/chat/completions" || echo "HTTP=CURL_FAILED")
+          echo "$out"
+          echo "response bytes: $(wc -c < /tmp/qr.json 2>/dev/null)"
+          echo "mechanismGraph in response: $(grep -c mechanismGraph /tmp/qr.json 2>/dev/null)"
+          grep -oE '"(message|code|type)":[ ]?"[^"]{0,180}"' /tmp/qr.json 2>/dev/null | head -3 || echo "(no error fields)"
 
       - name: Server log (qwen/error lines, secret-filtered)
         if: always()
