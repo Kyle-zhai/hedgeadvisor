@@ -1,30 +1,30 @@
 /**
  * lib/relate/toOptimizerCandidates.ts — adapt Discover's classified candidates into the canonical
- * robust optimizer's input (lib/association/optimizeRobustHedge), priced off the REAL book, with the
- * full provenance ladder wired in:
+ * robust optimizer's input (lib/association/optimizeRobustHedge), priced off the REAL book.
  *
- *   ANALYTIC   — a DETERMINISTIC rule proves the leg pays $1 in EVERY anchor-fail state (buy NO on
- *                the anchor's own market, or on a strict cross-venue EQUIVALENT). Never from the LLM.
+ * POSITIVE-SUM ONLY. A hedge here is never a short of the user's own bet (no anchor-NO complement, no
+ * cross-venue equivalent NO, no exclusive rival, no same-entity subset). Every leg is a standalone
+ * positive bet on a DIFFERENT event that tends to pay when the anchor fails, so ideally both win and
+ * at worst one wins. Two confidence tiers feed the optimizer:
+ *
  *   CALIBRATED — settled-outcome history (loadConditionalCounts on a stable relation_key) gives a
  *                beta-binomial credible interval where the leg pays MORE often when the anchor fails.
- *   HYPOTHESIS — only Qwen/semantic similarity (or insufficient settled samples). The optimizer
- *                rejects it: a hypothesis is "may be related", never "safe to buy".
+ *   HYPOTHESIS — Qwen mechanism graph, no calibration yet: admitted as an INFERRED low-confidence leg
+ *                (edge assumed from the mechanism) only below balanced conservatism, never as a guarantee.
  *
- * This is the closed loop's wiring half: Qwen DISCOVERS (hypothesis), settled DATA PROVES (calibrated),
- * the optimizer DECIDES (cost = book all-in price, capacity = depth, uncertainty = credible bounds).
+ * Qwen DISCOVERS (hypothesis), settled DATA PROVES (calibrated), the optimizer DECIDES (cost = book
+ * all-in price, capacity = depth, uncertainty = credible bounds).
  */
 import type { Book } from "@/lib/types";
 import { fetchBooks } from "@/lib/polymarket";
 import { fetchKalshiBook } from "@/lib/kalshi";
 import { walkBookBuyBudgetCapped, bandDepthUsd, kalshiTakerFeeUsd, takerFeeUsd } from "@/lib/netcost";
-import { sameEntityStrict } from "@/lib/link";
 import { calibrateConditionalPayoff, loadConditionalCounts, type OptimizerCandidate } from "@/lib/association";
 import { mechanismSignature, relationKey, relationRole } from "./relationKey";
 import type { CandidatePair, NormalizedMarket, PairClassification } from "./types";
 
 const NOMINAL_BUDGET = 50; // near-touch pricing probe size (USD)
 const MAX_HYPOTHESIS = 8; // cap rejected legs shown (transparency), per relation-family dedup
-const MAX_EXCLUSIVE = 12; // cap priced exclusive-rival legs (bounds book fetches); optimizer picks the best
 const INFERRED_REL_EDGE = 0.4; // max ASSUMED relative edge of an inferred mechanism leg (at confidence 1)
 const CREDIBLE_LEVEL = 0.95;
 const MIN_SAMPLES = 20;
@@ -63,75 +63,30 @@ export interface ClassifiedCandidate {
 }
 
 export async function buildOptimizerCandidates(anchor: NormalizedMarket, classified: ClassifiedCandidate[]): Promise<OptimizerCandidate[]> {
+  // POSITIVE-SUM hedges only. We never short the user's own bet, so there is no anchor-NO complement,
+  // no cross-venue equivalent NO, no mutually-exclusive rival, and no same-entity subset here. Every
+  // leg is a standalone positive bet on a DIFFERENT event that tends to pay when the anchor fails.
   const out: OptimizerCandidate[] = [];
-
-  // (1) The anchor's OWN NO — the exact complement, ANALYTIC, covers ALL anchor-fail states.
-  const anchorNo = await priceSide(anchor, "no");
-  if (anchorNo) {
-    out.push({
-      id: `anchor-no:${anchor.id}`, label: `${anchor.title} does NOT win · ${anchor.venue}`,
-      venue: anchor.venue, side: "no", price: anchorNo.price, maxSpendUsd: anchorNo.capacityUsd,
-      provenance: "ANALYTIC", structuralCoverage: "ALL_ANCHOR_FAIL_STATES",
-    });
-  }
-
   let hypothesisCount = 0;
-  let exclusiveCount = 0;
-  const pAnchorFail = 1 - anchor.probYes; // P(anchor does NOT win), for structural rival payoff
 
-  // Process the most-liquid candidate first so the per-relation_key dedup keeps the BEST one
-  // (not merely the first by array order). Liquidity is the pre-price proxy; ANALYTIC legs are
-  // handled in their own branch regardless of order.
+  // Most-liquid candidate first so the per-relation_key dedup keeps the best one (pre-price proxy).
   const ordered = [...classified].sort((a, b) => Number(b.pair.b.liquidityOk) - Number(a.pair.b.liquidityOk) || b.pair.b.probYes - a.pair.b.probYes);
 
   for (const { pair, cls } of ordered) {
     const m = pair.b;
 
-    // (2) A RULE-verified cross-venue EQUIVALENT ("same"): buying its NO covers ALL anchor-fail states
-    // (resolves identically) — ANALYTIC. Must be method "rule" AND strict outcome identity (defence-in-depth).
-    if (cls.method === "rule" && cls.relation === "same" && sameEntityStrict(anchor.title, m.title)) {
-      const eq = await priceSide(m, "no");
-      if (eq) out.push({ id: `equiv-no:${m.id}`, label: `${m.title} does NOT win · ${m.venue}`, venue: m.venue, side: "no", price: eq.price, maxSpendUsd: eq.capacityUsd, provenance: "ANALYTIC", structuralCoverage: "ALL_ANCHOR_FAIL_STATES" });
-      continue;
-    }
-
-    // (2b) A mutually-EXCLUSIVE rival in the same single-winner event (only one outcome can win, proven
-    // by venue negRisk metadata). Buying its YES pays exactly when that rival wins ⟹ the anchor loses:
-    // P(pay|win)=0 (exclusive), P(pay|fail)=P(rival)/P(anchor fails) from current prices. Logically
-    // certain, no calibration needed — a basket of liquid rivals is a coherent launch-ready hedge.
-    if (cls.structuralKind === "exclusive") {
-      if (exclusiveCount < MAX_EXCLUSIVE && pAnchorFail > 1e-6 && m.probYes > 0) {
-        const priced = await priceSide(m, "yes");
-        if (priced) {
-          exclusiveCount++;
-          // P(rival wins | anchor fails) from a price CONSISTENT with the live cost: cap the stored mid
-          // by the live executable so a stale-high underdog mid can't manufacture a fake edge that
-          // outranks the true complement (anchor NO). reductionPerDollar then ≈ anchorP/(1-anchorP) for
-          // every rival — a basket is a synthetic NO that just adds fill capacity, never a lottery ticket.
-          const payGivenFail = Math.min(1, Math.min(m.probYes, priced.price) / pAnchorFail);
-          out.push({
-            id: `rival-yes:${m.id}`, label: `${m.title} wins instead · ${m.venue}`,
-            venue: m.venue, side: "yes", price: priced.price, maxSpendUsd: priced.capacityUsd,
-            provenance: "ANALYTIC", structuralPayoff: { payGivenFail, payGivenWin: 0 },
-            associationGroup: `rival:${m.id}`,
-          });
-        }
-      }
-      continue;
-    }
-
-    // (3) Soft association — buy the hedge side, keyed by a stable relation_key. Settled history
-    // (if any) calibrates it; otherwise it stays a HYPOTHESIS (rejected by the optimizer).
+    // Cross-event positive-sum hedge: a standalone bet on a DIFFERENT event, keyed by a stable
+    // relation_key. Settled history calibrates it; otherwise it is admitted as inferred low-confidence.
     const preferredSide = hedgeSide(cls);
-    // Granular key: include the candidate's settlement PREDICATE + ENTITY ROLE so says_champion ≠
-    // first_song, and "France wins ↔ Mbappé golden boot" (unrelated) never pools as a hedge.
     const role = relationRole(anchor.title, {
       entity: m.title,
       family: m.eventFamily,
       context: `${m.marketTitle} ${m.description} ${m.resolutionCriteria}`,
       mechanismGraph: cls.hypothesis?.mechanismGraph,
     });
-    if (role === "unrelated") continue; // no meaningful settlement relation to calibrate
+    // Drop every "short your own bet" leg: same event (rival), same entity (subset / own progress),
+    // and anything unrelated. A hedge leg must resolve on a DIFFERENT event from the anchor.
+    if (role === "unrelated" || role === "rival" || role === "same_entity" || m.eventKey === anchor.eventKey) continue;
     const graph = cls.hypothesis?.mechanismGraph;
     const mechanism = mechanismSignature(graph);
     const reusableCohort = !graph || graph.portability !== "INSTANCE_ONLY";

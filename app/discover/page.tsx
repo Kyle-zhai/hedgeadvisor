@@ -193,7 +193,7 @@ export default function DiscoverPage() {
           {data?.robustHedge && (
             <div className="card" style={{ borderColor: data.robustHedge.status === "RECOMMEND" && optimalLegs.length ? "var(--go)" : "var(--border-strong)" }}>
               <div className="cardtitle">
-                Optimal hedge <span className="hint">structural + settlement-calibrated legs only · trustworthy, usable today</span>
+                Optimal hedge <span className="hint">settlement-calibrated cross-event legs only · trustworthy</span>
               </div>
               <p className="sub" style={{ marginTop: 6 }}>{data.robustHedge.reason}</p>
               {optimalLegs.length > 0 ? (
@@ -220,7 +220,7 @@ export default function DiscoverPage() {
                   </div>
                 </>
               ) : (
-                <p className="sub" style={{ margin: "8px 0 0" }}>No structural or settlement-calibrated leg clears its executable cost here. The honest answer is to skip the hedge, or weigh the exploratory layer below at your own risk.</p>
+                <p className="sub" style={{ margin: "8px 0 0" }}>No settlement-calibrated cross-event hedge yet. The honest answer is to hold the bet as is, or weigh the exploratory layer below at your own risk.</p>
               )}
               {data.robustHedge.rejected.length > 0 && (
                 <details style={{ marginTop: 8 }}>
@@ -291,14 +291,15 @@ export default function DiscoverPage() {
       )}
 
       <div className="disclaimer">
-        Not financial advice. Two layers, read them differently. The OPTIMAL hedge is the trustworthy output: it prices each
-        leg off the real book (cost), caps by depth (capacity), and admits a leg only when deterministic structure proves it
-        covers every anchor-fail state, or settled-outcome calibration proves it pays more often when the anchor fails
-        (uncertainty via credible bounds). The EXPLORATORY layer is low confidence by design: cross-event and cross-domain
+        Not financial advice. Every hedge here is positive-sum, never a short of your own bet: each leg is a standalone
+        positive bet on a different event that tends to pay when your bet does not, so ideally both win and at worst one wins.
+        Two layers, read them differently. The OPTIMAL hedge is the trustworthy output: legs priced off the real book (cost),
+        capped by depth (capacity), admitted only when settled-outcome calibration proves the leg pays more often when your bet
+        fails (uncertainty via credible bounds). The EXPLORATORY layer is low confidence by design: cross-event and cross-domain
         mechanisms are model-inferred, their edge is assumed (not settlement-proven), and they are shown for exploration, never
-        as a guarantee. Inferred and soft legs add to the strict worst loss because they can pay $0 in a possible state. The
-        Related-markets table is a DESCRIPTIVE map: φ is the binary correlation from the joint P(A and B), exact for structural
-        relations and a Fréchet-clamped estimate otherwise; price co-movement is never used as φ.
+        as a guarantee. Every leg adds to the strict worst loss because it can pay $0 in a possible state. The Related-markets
+        table is a DESCRIPTIVE map: φ is the binary correlation from the joint P(A and B), exact for structural relations and a
+        Fréchet-clamped estimate otherwise; price co-movement is never used as φ.
       </div>
     </div>
   );
