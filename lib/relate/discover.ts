@@ -11,6 +11,7 @@ import { gammaGet } from "@/lib/polymarket/client";
 import { listKalshiEvents, fetchKalshiMarkets } from "@/lib/kalshi";
 import { buildEventRelation, type EventRelation } from "@/lib/correlation";
 import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
+import { norm } from "@/lib/polymarket/text";
 import { generateCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
@@ -115,6 +116,17 @@ async function sharedUniverse(): Promise<NormalizedMarket[]> {
   return markets;
 }
 
+// Candidates that can never be a POSITIVE-SUM cross-event hedge for a team/nation anchor, so they
+// pollute neither the relation map nor the optimizer (eval 2026-06-21: these dominated the noise and
+// the engine never produced a valid hedge from them):
+//  - individual player-award outcomes (Golden Boot / top scorer): same-nation => amplifier (fails WITH
+//    the anchor), cross-nation => weak noise, and we have no roster to tell which.
+//  - unidentifiable placeholder outcomes ("Player Q", "Team AH") with no resolvable entity.
+function isHedgeIneligibleCandidate(m: NormalizedMarket): boolean {
+  if (m.eventFamily === "golden_boot") return true;
+  return /^(player|team)\s+[a-z]{1,2}$/.test(norm(m.title));
+}
+
 async function buildUniverse(anchorBundle: EventBundle): Promise<NormalizedMarket[]> {
   const byId = new Map<string, NormalizedMarket>();
   const add = (ms: NormalizedMarket[]) => ms.forEach((m) => byId.has(m.id) || byId.set(m.id, m));
@@ -187,7 +199,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     minSimilarity: semanticScore ? 0.12 : 0.08,
   });
   const llmRecall = !semanticScore ? await recallCandidatesWithQwen(anchor, universe, topK) : null;
-  const candidates = llmRecall
+  const rawCandidates = llmRecall
     ? [...baseCandidates, ...llmRecall.map((candidate) => ({
         a: anchor,
         b: candidate,
@@ -199,6 +211,9 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
         allowCrossCategory: true,
         minSimilarity: 0.08,
       });
+  // Drop player-award and placeholder candidates at this one chokepoint, so they reach neither the
+  // relation map (display) nor buildOptimizerCandidates (legs) — both consume `classified` below.
+  const candidates = rawCandidates.filter(({ b }) => !isHedgeIneligibleCandidate(b));
 
   // Stage 2: classify every candidate (keeping the raw classification for the optimizer adapter).
   const classified = await Promise.all(candidates.map(async (pair) => ({ pair, cls: await classifyPair(pair) })));

@@ -69,6 +69,9 @@ interface DiscoverResult {
 }
 
 const cents = (v: number) => `${Math.round(v * 100)}¢`;
+// A companion bet only qualifies as a hedge if it is MEANINGFULLY negatively correlated (pays when
+// your bet fails). Weaker than this is noise or an amplifier, and is hidden from the companion layer.
+const MIN_HEDGE_CORRELATION = -0.15;
 const REL_LABEL: Record<RelationType, string> = { same: "Same", related: "Related", mutually_exclusive: "Exclusive", independent: "Independent" };
 const REL_BADGE: Record<RelationType, string> = { same: "PARTIAL", related: "PARTIAL", mutually_exclusive: "GO", independent: "" };
 
@@ -139,8 +142,10 @@ export default function HedgePage() {
   // correlated markets (same-nation player props, the anchor's own progression) fail TOGETHER with
   // your bet, so they amplify rather than hedge. Gate them OUT of the companion layer (eval fix).
   const llmRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod === "llm"), [data]);
-  const crossEvent = useMemo(() => llmRels.filter((r) => r.relation.correlation < 0), [llmRels]);
-  const amplifierCount = useMemo(() => llmRels.filter((r) => r.relation.correlation >= 0).length, [llmRels]);
+  // A companion must be MEANINGFULLY negatively correlated to qualify (eval 2026-06-21: a bare <0 gate
+  // admitted ~0 noise). Anything weaker is hidden — weak/zero or positively-correlated (amplifier).
+  const crossEvent = useMemo(() => llmRels.filter((r) => r.relation.correlation <= MIN_HEDGE_CORRELATION), [llmRels]);
+  const amplifierCount = useMemo(() => llmRels.filter((r) => r.relation.correlation > MIN_HEDGE_CORRELATION).length, [llmRels]);
   const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
   const inferredSpend = inferredLegs.reduce((s, a) => s + a.spendUsd, 0);
 
@@ -289,7 +294,7 @@ export default function HedgePage() {
 
               {amplifierCount > 0 && (
                 <div className="note-box" style={{ marginTop: crossEvent.length > 0 || inferredLegs.length > 0 ? 10 : 4 }}>
-                  {amplifierCount} positively-correlated market{amplifierCount === 1 ? "" : "s"} (e.g. same-nation player props) were hidden: they pay when your bet wins, so they amplify your exposure rather than hedge it. See the descriptive map below.
+                  {amplifierCount} market{amplifierCount === 1 ? "" : "s"} with weak or positive correlation {amplifierCount === 1 ? "was" : "were"} hidden: a companion must be meaningfully negatively correlated (φ ≤ -0.15) to pay when your bet fails, otherwise it amplifies your exposure or does nothing. See the descriptive map below.
                 </div>
               )}
             </div>
