@@ -42,7 +42,7 @@ export async function buildSemanticScorer(
   markets: NormalizedMarket[],
 ): Promise<((a: NormalizedMarket, b: NormalizedMarket) => number) | null> {
   if (process.env.HEDGE_ENABLE_SEMANTIC_EMBEDDINGS?.toLowerCase() === "false") return null;
-  const qwenKey = process.env.DASHSCOPE_API_KEY ?? process.env.QWEN_API_KEY;
+  const qwenKey = process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY; // || so empty "" falls through
   const provider = process.env.AI_GATEWAY_API_KEY ? "gateway" : qwenKey ? "qwen" : null;
   if (!provider) return null;
   const model = provider === "gateway" ? EMBED_MODEL : QWEN_EMBED_MODEL;

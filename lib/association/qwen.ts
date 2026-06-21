@@ -94,10 +94,12 @@ export async function analyzeRelationWithQwen(
   candidate: MarketRuleInput,
   options: QwenRelationOptions = {},
 ): Promise<QwenRelationResult> {
-  const apiKey = options.apiKey ?? process.env.DASHSCOPE_API_KEY ?? process.env.QWEN_API_KEY;
-  const model = options.model ?? process.env.QWEN_RELATION_MODEL ?? "qwen-plus";
+  // Use || not ?? so an EMPTY-STRING env var (e.g. a non-existent GitHub secret mapped to "") is
+  // treated as absent and falls through — ?? would keep "" and wrongly disable Qwen.
+  const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY;
+  const model = options.model || process.env.QWEN_RELATION_MODEL || "qwen-plus";
   if (!apiKey) return { status: "disabled", model, reason: "DASHSCOPE_API_KEY/QWEN_API_KEY is not configured" };
-  const baseUrl = (options.baseUrl ?? process.env.QWEN_BASE_URL ?? "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
+  const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
   const configuredTimeout = Number(process.env.QWEN_RELATION_TIMEOUT_MS ?? 30_000);

@@ -26,12 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # secrets (keys + DB)
+      # secrets (keys + DB). NOTE: do NOT map secrets you haven't set — GitHub injects them as "" and
+      # `process.env.X ?? ...` would keep the empty string instead of falling through. Only map what exists.
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
-      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
       QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-      AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
       # non-secret config (mirror what you keep in .env.local)
       HEDGE_RELATION_SNAPSHOT_JOBS_JSON: ${{ vars.HEDGE_RELATION_SNAPSHOT_JOBS_JSON }}
       HEDGE_SETTLE_JOBS_JSON: ${{ vars.HEDGE_SETTLE_JOBS_JSON }}
