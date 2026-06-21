@@ -112,6 +112,13 @@ jobs:
           echo "mechanismGraph in response: $(grep -c mechanismGraph /tmp/qr.json 2>/dev/null)"
           grep -oE '"(message|code|type)":[ ]?"[^"]{0,180}"' /tmp/qr.json 2>/dev/null | head -3 || echo "(no error fields)"
 
+      - name: Real-code Qwen classifier diagnostic (manual only — shows the actual status+reason)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "/api/diag/qwen (runs analyzeRelationWithQwen incl. Zod validation):"
+          curl -s --max-time 90 -H "authorization: Bearer ${CRON_SECRET}" "http://localhost:3000/api/diag/qwen"
+          echo
+
       - name: Server log (qwen/error lines, secret-filtered)
         if: always()
         run: |
