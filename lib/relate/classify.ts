@@ -113,7 +113,10 @@ async function llmClassify(pair: CandidatePair): Promise<PairClassification | nu
     { title: `${pair.a.title} — ${pair.a.marketTitle}`, rules: pair.a.resolutionCriteria },
     { title: `${pair.b.title} — ${pair.b.marketTitle}`, rules: pair.b.resolutionCriteria },
   );
-  if (res.status !== "ok" || !res.hypothesis) return null; // disabled/error ⇒ fall through to heuristic
+  if (res.status !== "ok" || !res.hypothesis) {
+    if (res.status === "error") console.error(`[llmClassify] ${pair.a.title}↔${pair.b.title}: ${res.reason}`);
+    return null; // disabled/error ⇒ fall through to heuristic
+  }
   return hypothesisToClassification(res.hypothesis);
 }
 

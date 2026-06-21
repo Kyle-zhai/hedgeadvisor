@@ -90,7 +90,8 @@ export async function buildSemanticScorer(
       const vb = vectorIndex.get(cacheKey(b.id))?.v;
       return va && vb ? cosine(va, vb) : 0;
     };
-  } catch {
+  } catch (e) {
+    console.error("[embed] semantic recall disabled:", e instanceof Error ? e.message : e);
     return null;
   }
 }

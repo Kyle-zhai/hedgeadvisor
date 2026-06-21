@@ -14,7 +14,11 @@ name: hedge-closed-loop
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # every 6h UTC: freeze candidates, resolve settled pairs, snapshot prices
+    # Hourly. NOTE: more frequent does NOT speed accrual — backtest rows appear only when frozen pairs'
+    # markets SETTLE (real-world calendar). Hourly mainly keeps capture fresh + finer price snapshots.
+    # GitHub's floor is every 5 min, but build caching below keeps each run ~1-2 min so hourly fits the
+    # private-repo 2000 min/mo budget (~720 runs). Dial down (e.g. "0 */6 * * *") to save minutes.
+    - cron: "0 * * * *"
   workflow_dispatch: {} # manual "Run workflow" button (use this to test the setup immediately)
 
 concurrency:
@@ -48,7 +52,22 @@ jobs:
           node-version: "22"
           cache: "npm"
 
+      # Cache node_modules so most hourly runs skip the ~1-2 min install entirely.
+      - uses: actions/cache@v4
+        id: node-modules-cache
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+
       - run: npm ci
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+
+      # Reuse Next's incremental build cache across runs (build itself is ~5s for this app).
+      - uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-cache-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: next-cache-${{ hashFiles('package-lock.json') }}-
 
       - name: Build (no secrets needed — routes are force-dynamic)
         run: npm run build

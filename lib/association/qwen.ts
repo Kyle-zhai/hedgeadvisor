@@ -39,18 +39,40 @@ const RelationSchema = z.object({
   mechanismGraph: MechanismGraphSchema,
 });
 
+// Meaning-preserving aliases for enum values Qwen commonly emits outside the schema vocabulary.
+// Anything NOT listed here is left as-is and still fails the Zod parse (fail-closed honesty).
+const MECH_TYPE_ALIAS: Record<string, string> = {
+  LOGICAL_IMPLICATION: "LOGICAL", THEMATIC: "OTHER", CORRELATION: "COMMON_CAUSE",
+  COMMON_DRIVER: "COMMON_CAUSE", ASSOCIATION: "OTHER", STRUCTURAL: "LOGICAL",
+  REPUTATIONAL: "BEHAVIORAL", POLITICAL: "INSTITUTIONAL", FINANCIAL: "ECONOMIC", SENTIMENT: "BEHAVIORAL",
+};
+const TIME_ORDER_ALIAS: Record<string, string> = {
+  SIMULTANEOUS: "OVERLAPPING", SIMULTANEOUS_WINDOW: "OVERLAPPING", CONCURRENT: "OVERLAPPING",
+  INDEPENDENT: "UNKNOWN", NONE: "UNKNOWN", UNSPECIFIED: "UNKNOWN", UNORDERED: "UNKNOWN",
+  ANCHOR_AFTER_CANDIDATE: "CANDIDATE_BEFORE_ANCHOR", CANDIDATE_AFTER_ANCHOR: "ANCHOR_BEFORE_CANDIDATE",
+};
+const EDGE_KIND_ALIAS: Record<string, string> = {
+  IMPLICATION: "IMPLIES", INFLUENCES: "SIGNALS", INFLUENCE: "SIGNALS", AFFECTS: "SIGNALS",
+  IMPACTS: "SIGNALS", CORRELATES_WITH: "SHARES_DRIVER", CORRELATED_WITH: "SHARES_DRIVER",
+  PRECEDES: "SIGNALS", LEADS_TO: "CAUSES", RESULTS_IN: "CAUSES", CONTRIBUTES_TO: "ENABLES",
+  PREVENTS: "INHIBITS", REDUCES: "INHIBITS", INCREASES: "ENABLES", DEPENDS_ON: "REACTS_TO",
+};
+
 /** Narrow, meaning-preserving aliases observed from Qwen. Unknown values still fail closed. */
 function canonicalizeRelationJson(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const root = value as Record<string, unknown>;
+  if (typeof root.mechanism === "string" && root.mechanism.length > 1200) root.mechanism = root.mechanism.slice(0, 1200);
   const graph = root.mechanismGraph;
   if (!graph || typeof graph !== "object" || Array.isArray(graph)) return value;
   const g = graph as Record<string, unknown>;
-  if (g.mechanismType === "LOGICAL_IMPLICATION") g.mechanismType = "LOGICAL";
+  if (typeof g.mechanismType === "string") { const k = g.mechanismType.toUpperCase(); g.mechanismType = MECH_TYPE_ALIAS[k] ?? k; }
+  if (typeof g.timeOrder === "string") { const k = g.timeOrder.toUpperCase(); g.timeOrder = TIME_ORDER_ALIAS[k] ?? k; }
   if (Array.isArray(g.edges)) {
     for (const edge of g.edges) {
-      if (edge && typeof edge === "object" && (edge as Record<string, unknown>).kind === "IMPLICATION") {
-        (edge as Record<string, unknown>).kind = "IMPLIES";
+      if (edge && typeof edge === "object") {
+        const e = edge as Record<string, unknown>;
+        if (typeof e.kind === "string") { const k = e.kind.toUpperCase(); e.kind = EDGE_KIND_ALIAS[k] ?? k; }
       }
     }
   }

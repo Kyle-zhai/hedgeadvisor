@@ -16,10 +16,10 @@ export async function recallCandidatesWithQwen(
   limit: number,
   options: RecallOptions = {},
 ): Promise<NormalizedMarket[] | null> {
-  const apiKey = options.apiKey ?? process.env.DASHSCOPE_API_KEY ?? process.env.QWEN_API_KEY;
+  const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY; // || so empty "" falls through
   if (!apiKey || limit <= 0) return null;
-  const model = options.model ?? process.env.QWEN_RELATION_MODEL ?? "qwen-plus";
-  const baseUrl = (options.baseUrl ?? process.env.QWEN_BASE_URL ?? "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
+  const model = options.model || process.env.QWEN_RELATION_MODEL || "qwen-plus";
+  const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
   const eligible = universe.filter((candidate) => candidate.liquidityOk && metadataCompatible(anchor, candidate, true));
   const lexical = [...eligible].sort((a, b) => lexicalSimilarity(anchor, b) - lexicalSimilarity(anchor, a));
   const pool: NormalizedMarket[] = lexical.slice(0, 40);
@@ -43,10 +43,10 @@ export async function recallCandidatesWithQwen(
         model,
         temperature: 0,
         enable_thinking: false,
-        max_tokens: 800,
+        max_tokens: 2000, // a long candidateIds list for big pools must not truncate (→ invalid JSON)
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "Shortlist prediction-market contracts that may have a real logical, causal, institutional, behavioral, informational, economic, narrative, temporal, or common-cause mechanism with the anchor. Find non-obvious cross-entity and cross-domain candidates. Exclude mere word/date overlap. Return exactly {\"candidateIds\":[\"id\"]}. This is recall only; do not estimate correlation or recommend trades." },
+          { role: "system", content: "Shortlist prediction-market contracts that may have a real logical, causal, institutional, behavioral, informational, economic, narrative, temporal, or common-cause mechanism with the anchor. Find non-obvious cross-entity and cross-domain candidates. Exclude mere word/date overlap. Return JSON only, exactly {\"candidateIds\":[\"id\"]}. This is recall only; do not estimate correlation or recommend trades." },
           { role: "user", content: JSON.stringify({
             anchor: { title: anchor.title, marketTitle: anchor.marketTitle, rules: anchor.resolutionCriteria },
             limit,
@@ -61,13 +61,16 @@ export async function recallCandidatesWithQwen(
         ],
       }),
     });
-    if (!response.ok) return null;
+    if (!response.ok) { console.error(`[llmRecall] HTTP ${response.status}: ${(await response.text().catch(() => "")).slice(0, 200)}`); return null; }
     const raw = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const decoded = JSON.parse(raw.choices?.[0]?.message?.content ?? "{}") as { candidateIds?: unknown };
-    if (!Array.isArray(decoded.candidateIds)) return null;
+    if (!Array.isArray(decoded.candidateIds)) { console.error(`[llmRecall] no candidateIds array; keys=${Object.keys(decoded).join(",")}`); return null; }
     const ids = new Set(decoded.candidateIds.filter((id): id is string => typeof id === "string").slice(0, limit));
-    return pool.filter((candidate) => ids.has(candidate.id)).slice(0, limit);
-  } catch {
+    const matched = pool.filter((candidate) => ids.has(candidate.id)).slice(0, limit);
+    console.error(`[llmRecall] pool=${pool.length} modelReturnedIds=${decoded.candidateIds.length} matchedPoolIds=${matched.length}`);
+    return matched;
+  } catch (e) {
+    console.error("[llmRecall] failed:", e instanceof Error ? e.message : e);
     return null;
   } finally {
     clearTimeout(timer);
