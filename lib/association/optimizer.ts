@@ -51,6 +51,16 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
     if (candidate.structuralCoverage === "ALL_ANCHOR_FAIL_STATES" && candidate.provenance === "ANALYTIC") {
       pFail = 1;
       pWin = 0;
+    } else if (candidate.provenance === "ANALYTIC" && candidate.structuralPayoff) {
+      // Logically-certain leg that does NOT cover all fail states (exclusive rival, subset). Its
+      // conditional payoff is derived from the rules + current prices, so it is admissible at launch
+      // without settlement calibration. No uncertainty penalty (it is structural, not estimated).
+      if (c >= 0.98) {
+        rejected.push({ candidateId: candidate.id, reason: "strictest posture accepts verified ALL-fail-state coverage only" });
+        continue;
+      }
+      pFail = clamp01(candidate.structuralPayoff.payGivenFail);
+      pWin = clamp01(candidate.structuralPayoff.payGivenWin);
     } else if (candidate.provenance === "CALIBRATED" && candidate.calibration) {
       if (c >= 0.98) {
         rejected.push({ candidateId: candidate.id, reason: "strictest posture accepts verified structural coverage only" });

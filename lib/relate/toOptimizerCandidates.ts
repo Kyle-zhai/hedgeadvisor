@@ -24,6 +24,7 @@ import type { CandidatePair, NormalizedMarket, PairClassification } from "./type
 
 const NOMINAL_BUDGET = 50; // near-touch pricing probe size (USD)
 const MAX_HYPOTHESIS = 8; // cap rejected legs shown (transparency), per relation-family dedup
+const MAX_EXCLUSIVE = 12; // cap priced exclusive-rival legs (bounds book fetches); optimizer picks the best
 const CREDIBLE_LEVEL = 0.95;
 const MIN_SAMPLES = 20;
 
@@ -74,6 +75,8 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
   }
 
   let hypothesisCount = 0;
+  let exclusiveCount = 0;
+  const pAnchorFail = 1 - anchor.probYes; // P(anchor does NOT win), for structural rival payoff
 
   // Process the most-liquid candidate first so the per-relation_key dedup keeps the BEST one
   // (not merely the first by array order). Liquidity is the pre-price proxy; ANALYTIC legs are
@@ -88,6 +91,31 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
     if (cls.method === "rule" && cls.relation === "same" && sameEntityStrict(anchor.title, m.title)) {
       const eq = await priceSide(m, "no");
       if (eq) out.push({ id: `equiv-no:${m.id}`, label: `${m.title} does NOT win · ${m.venue}`, venue: m.venue, side: "no", price: eq.price, maxSpendUsd: eq.capacityUsd, provenance: "ANALYTIC", structuralCoverage: "ALL_ANCHOR_FAIL_STATES" });
+      continue;
+    }
+
+    // (2b) A mutually-EXCLUSIVE rival in the same single-winner event (only one outcome can win, proven
+    // by venue negRisk metadata). Buying its YES pays exactly when that rival wins ⟹ the anchor loses:
+    // P(pay|win)=0 (exclusive), P(pay|fail)=P(rival)/P(anchor fails) from current prices. Logically
+    // certain, no calibration needed — a basket of liquid rivals is a coherent launch-ready hedge.
+    if (cls.structuralKind === "exclusive") {
+      if (exclusiveCount < MAX_EXCLUSIVE && pAnchorFail > 1e-6 && m.probYes > 0) {
+        const priced = await priceSide(m, "yes");
+        if (priced) {
+          exclusiveCount++;
+          // P(rival wins | anchor fails) from a price CONSISTENT with the live cost: cap the stored mid
+          // by the live executable so a stale-high underdog mid can't manufacture a fake edge that
+          // outranks the true complement (anchor NO). reductionPerDollar then ≈ anchorP/(1-anchorP) for
+          // every rival — a basket is a synthetic NO that just adds fill capacity, never a lottery ticket.
+          const payGivenFail = Math.min(1, Math.min(m.probYes, priced.price) / pAnchorFail);
+          out.push({
+            id: `rival-yes:${m.id}`, label: `${m.title} wins instead · ${m.venue}`,
+            venue: m.venue, side: "yes", price: priced.price, maxSpendUsd: priced.capacityUsd,
+            provenance: "ANALYTIC", structuralPayoff: { payGivenFail, payGivenWin: 0 },
+            associationGroup: `rival:${m.id}`,
+          });
+        }
+      }
       continue;
     }
 

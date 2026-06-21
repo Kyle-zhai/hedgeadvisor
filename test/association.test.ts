@@ -74,6 +74,21 @@ describe("robust hedge optimizer", () => {
     expect(r.strictWorstLossIfPrimaryFailsUsd).toBeGreaterThan(20);
   });
 
+  test("structural exclusive-rival leg is admitted at launch without calibration (modeled credit, not strict)", () => {
+    const rival: OptimizerCandidate = {
+      id: "rival-yes", label: "Brazil wins instead", venue: "kalshi", side: "yes", price: 0.2,
+      maxSpendUsd: 100, provenance: "ANALYTIC", structuralPayoff: { payGivenFail: 0.3, payGivenWin: 0 },
+    };
+    const ok = optimizeRobustHedge({ ...base, conservatism: 0.7, candidates: [rival] });
+    expect(ok.status).toBe("RECOMMEND"); // admitted WITHOUT settlement calibration
+    expect(ok.allocations[0].provenance).toBe("ANALYTIC");
+    expect(ok.modeledLossIfPrimaryFailsUsd).toBeLessThan(20); // certain conditional payoff reduces modeled loss
+    expect(ok.strictWorstLossIfPrimaryFailsUsd).toBeGreaterThan(20); // but premium can pay 0 in some fail states
+    // strictest posture wants GUARANTEED worst-loss reduction ⇒ partial-coverage structural legs excluded
+    const strict = optimizeRobustHedge({ ...base, conservatism: 1, candidates: [rival] });
+    expect(strict.status).toBe("NO_ACTION");
+  });
+
   test("hypotheses and statistically ambiguous candidates are rejected", () => {
     const hypothesis: OptimizerCandidate = {
       id: "llm-only", label: "LLM-only idea", venue: "kalshi", side: "no", price: 0.3,

@@ -96,6 +96,12 @@ export interface OptimizerCandidate {
   associationGroup?: string;
   /** Only verified structural logic may set this. LLM output must never set it. */
   structuralCoverage?: "ALL_ANCHOR_FAIL_STATES";
+  /** Structurally-DERIVED conditional payoff for legs that are logically certain but do NOT cover all
+   *  fail states (mutually-exclusive rival, subset/implication). Computed from the rules + current
+   *  prices, never from the LLM and never from settlement history — honest at launch without
+   *  calibration. The premium still increases strict worst-case loss (it can pay 0 in a fail state),
+   *  but the MODELED conditional payoff is certain. */
+  structuralPayoff?: { payGivenFail: number; payGivenWin: number };
 }
 
 export interface RobustOptimizerInput {
