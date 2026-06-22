@@ -7,10 +7,6 @@ import {
   devigDetailed,
   exclusiveCorr,
   subsetCorr,
-  complementEdge,
-  rivalEdge,
-  supersetEdge,
-  ladderEdge,
 } from "@/lib/correlation";
 
 const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
@@ -74,20 +70,5 @@ describe("structural correlations (derived, not fitted)", () => {
   });
   test("superset basket: Spain vs European bloc ≈ +0.332", () => {
     expect(subsetCorr(0.1525, 0.62)).toBeCloseTo(0.332, 2);
-  });
-  test("own NO is the exact complement: corr = -1", () => {
-    expect(complementEdge("Spain").rho).toBe(-1);
-  });
-  test("rival edge is negative (a real hedge)", () => {
-    const e = rivalEdge("Spain", "France", 0.1525, 0.1685);
-    expect(e.rho).toBeLessThan(0);
-    expect(e.rule).toBe("EXCLUSIVE");
-    expect(e.provenance).toBe("ANALYTIC");
-  });
-  test("superset edge is positive (a poor hedge)", () => {
-    expect(supersetEdge("Spain", "a European team wins", 0.1525, 0.62).rho).toBeGreaterThan(0);
-  });
-  test("same-team ladder rung is positive (not protection)", () => {
-    expect(ladderEdge("Spain", "Spain reaches the final", 0.1525, 0.3).rho).toBeGreaterThan(0);
   });
 });

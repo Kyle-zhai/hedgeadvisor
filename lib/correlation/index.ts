@@ -1,13 +1,5 @@
 export { devig, overround, devigPower, devigShin, devigDetailed, type DevigResult } from "./devig";
-export {
-  corrFromJoint,
-  exclusiveCorr,
-  subsetCorr,
-  complementEdge,
-  rivalEdge,
-  supersetEdge,
-  ladderEdge,
-} from "./structural";
+export { corrFromJoint, exclusiveCorr, subsetCorr } from "./structural";
 export {
   buildEventRelation,
   frechetBounds,
