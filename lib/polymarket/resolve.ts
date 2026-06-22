@@ -147,6 +147,22 @@ function teamQuery(free: string): string {
   return words.join(" ") || norm(free);
 }
 
+// Generic filler only (verbs, articles, comparators, years) — keeps ENTITY/CATEGORY/party words that
+// `teamQuery` strips. The aggressive strip isolates the entity for "{Entity} wins the {Category}"
+// markets (Spain / Newsom), but it deletes the discriminator for "which party/how-many" markets
+// ("Republican Party wins the House" → "house"). Scoring each outcome as max(aggressive, light) keeps
+// the entity-isolation cases AND recovers party/election/threshold discriminators. max only raises
+// scores when real tokens match, so it never changes the WC/nomination winners.
+const LIGHT_STOP = new Set([
+  "win", "wins", "winning", "won", "the", "a", "an", "to", "be", "will", "of", "in", "on", "by", "at", "is",
+  "for", "next", "than", "above", "below", "over", "under", "reach", "reaches", "hit", "hits", "beat", "beats",
+  "2024", "2025", "2026", "2027", "2028", "2029", "2030",
+]);
+function teamQueryLight(free: string): string {
+  const words = norm(free).split(" ").filter((w) => w && !LIGHT_STOP.has(w));
+  return words.join(" ") || norm(free);
+}
+
 export async function resolvePosition(query: string, slug: string): Promise<ResolveResult> {
   const bundle = await fetchEventBundle(slug);
   if (!bundle || bundle.markets.length === 0) {
@@ -162,8 +178,12 @@ export async function resolvePosition(query: string, slug: string): Promise<Reso
   if (exacts.length === 1) return { kind: "resolved", bundle, index: exacts[0].index };
 
   const tq = teamQuery(query);
+  const tql = teamQueryLight(query);
   const ranked = bundle.markets
-    .map((m, index) => ({ index, title: m.groupItemTitle ?? m.question, score: tokenSetScore(tq, m.groupItemTitle ?? m.question) }))
+    .map((m, index) => {
+      const label = m.groupItemTitle ?? m.question;
+      return { index, title: label, score: Math.max(tokenSetScore(tq, label), tokenSetScore(tql, label)) };
+    })
     .sort((a, b) => b.score - a.score);
 
   const top = ranked[0];

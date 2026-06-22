@@ -163,6 +163,8 @@ export interface DiscoverResult {
   universeSize?: number;
   semanticRecall?: boolean; // true ⇒ embeddings were used for Stage 1 recall
   candidates?: { title: string; score: number }[];
+  /** The resolved event for an ambiguous result, so a caller can re-pin a chosen candidate. */
+  eventSlug?: string;
   suggestions?: string[];
   pricedAt?: string;
   /** Point-in-time relation rows persisted before settlement (zero when DATABASE_URL is unset). */
@@ -201,7 +203,9 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     ? await resolvePosition(req.query, req.eventSlug)
     : await resolveAnyPosition(req.query);
   if (resolved.kind === "ambiguous") {
-    return { status: "ambiguous", candidates: resolved.candidates.map((c) => ({ title: c.title, score: Number(c.score.toFixed(2)) })) };
+    // Expose the resolved event so a caller (e.g. the collection cron) can re-pin the top candidate.
+    const eventSlug = (resolved as { eventSlug?: string }).eventSlug ?? req.eventSlug;
+    return { status: "ambiguous", eventSlug, candidates: resolved.candidates.map((c) => ({ title: c.title, score: Number(c.score.toFixed(2)) })) };
   }
   if (resolved.kind !== "resolved") return { status: "not_found", suggestions: resolved.suggestions };
 

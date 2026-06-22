@@ -53,10 +53,19 @@ export async function GET(req: Request) {
 
   const runJob = async (job: z.infer<typeof Job>) => {
     try {
-      const result = await discoverRelations({ ...job, stakeUsd: 20, conservatism: 0.5, maxLegs: 1 });
+      let result = await discoverRelations({ ...job, stakeUsd: 20, conservatism: 0.5, maxLegs: 1 });
+      // For COLLECTION (not a user surface) auto-disambiguate: cross-domain anchors often resolve to
+      // "ambiguous" with a clearly-leading candidate (e.g. "Republican Party" in a which-party market).
+      // Re-pin the top candidate to the resolved event so the job freezes a real anchor instead of no-op.
+      let disambiguatedTo: string | undefined;
+      if (result.status === "ambiguous" && result.candidates?.[0] && result.eventSlug) {
+        disambiguatedTo = result.candidates[0].title;
+        result = await discoverRelations({ query: disambiguatedTo, eventSlug: result.eventSlug, stakeUsd: 20, conservatism: 0.5, maxLegs: 1 });
+      }
       return {
         query: job.query,
         eventSlug: job.eventSlug,
+        disambiguatedTo,
         status: result.status,
         relations: result.relations?.length ?? 0,
         written: result.candidateSnapshotsWritten ?? 0,
