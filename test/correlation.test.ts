@@ -71,4 +71,8 @@ describe("structural correlations (derived, not fitted)", () => {
   test("superset basket: Spain vs European bloc ≈ +0.332", () => {
     expect(subsetCorr(0.1525, 0.62)).toBeCloseTo(0.332, 2);
   });
+  test("subset at an extreme-longshot marginal stays non-negative (joint clamped, not just marginals)", () => {
+    expect(subsetCorr(0.0003, 0.6)).toBeGreaterThanOrEqual(0);
+    expect(subsetCorr(0.0005, 0.9)).toBeGreaterThanOrEqual(0);
+  });
 });

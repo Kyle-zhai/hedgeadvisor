@@ -37,7 +37,7 @@ export default function HistoryPage() {
           maxLossAfterUsd: Math.abs(plan.maxLossUsd),
           estimatedCostUsd: plan.deployedUsd,
           status: "Analyzed",
-          href: `/plan?bet=${encodeURIComponent(plan.query)}&budget=${plan.budgetUsd}&bets=${plan.maxLegs}&s=${plan.sliderS}`,
+          href: `/hedge?q=${encodeURIComponent(plan.query)}`,
         }));
         const ids = new Set(records.map((record) => record.id));
         records = [...records, ...migrated.filter((record) => !ids.has(record.id))].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
@@ -117,7 +117,7 @@ export default function HistoryPage() {
       <div className="card">
         <div className="section-head"><h2>Saved analysis ledger</h2><span className="muted">{filtered.length} record{filtered.length === 1 ? "" : "s"}</span></div>
         {filtered.length === 0 ? (
-          <div className="empty-state"><div><strong>No matching saved analyses</strong><span className="muted">Run Protect, Plan, or Combo and completed analysis will appear here automatically.</span></div></div>
+          <div className="empty-state"><div><strong>No matching saved analyses</strong><span className="muted">Run Hedge or Combo and completed analysis will appear here automatically.</span></div></div>
         ) : (
           <div className="table-wrap"><table style={{ minWidth: 980 }}>
             <thead><tr><th>Saved</th><th>Type</th><th>Market</th><th>Position</th><th style={{ textAlign: "right" }}>Stake</th><th>Recommendation</th><th style={{ textAlign: "right" }}>Max loss before</th><th style={{ textAlign: "right" }}>Max loss after</th><th style={{ textAlign: "right" }}>Est. cost</th><th>Status</th><th></th></tr></thead>

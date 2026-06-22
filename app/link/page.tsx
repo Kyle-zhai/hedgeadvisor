@@ -145,9 +145,9 @@ export default function LinkPage() {
 
       <div className="card">
         <p className="sub" style={{ marginTop: 0 }}>
-          Enter a Polymarket bet. We find the same outcome on Kalshi and compare the price across venues, so you can place
-          your YES where it is cheapest net of fees. Related and narrative markets are surfaced as labeled context. This is
-          an execution comparison, not a hedge: we never recommend shorting your own bet on the other venue.
+          Enter a Polymarket bet. We find the same outcome on Kalshi and compare the mid price across venues, so you can place
+          your YES where the mid is cheaper (a mid comparison, before each venue's fees). Related and narrative markets are
+          surfaced as labeled context. This is an execution comparison, not a hedge: we never recommend shorting your own bet.
         </p>
         <form
           className="formrow"
@@ -229,8 +229,8 @@ export default function LinkPage() {
                 </span>
               </div>
               <p className="sub" style={{ marginTop: 0 }}>
-                The same outcome trades on both venues. Buy your <strong>YES</strong> where it is cheaper, net of fees. This is
-                an execution comparison: it places your bet at a better price, it does not short your position.
+                The same outcome trades on both venues. Buy your <strong>YES</strong> where the mid is cheaper (before fees). This
+                is an execution comparison: it places your bet at a better mid price, it does not short your position.
               </p>
               <div className="metric-strip" style={{ marginTop: 4 }}>
                 <div className="metric"><div className="label">YES on Polymarket</div><div className={`value ${cheaperYes === "polymarket" ? "pnl-pos" : ""}`}>{cents(pm.yesMid)}</div><div className="detail">your current venue</div></div>

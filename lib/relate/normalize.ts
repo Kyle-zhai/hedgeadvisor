@@ -31,10 +31,15 @@ export function normalizePolymarketEvent(bundle: EventBundle, category: string):
   // markets inside a Gamma event can co-occur, so normalizing their YES prices against each other
   // would fabricate probabilities and distort semantic ranking.
   const q = bundle.negRisk ? devigDetailed(bundle.yesPrices).q : bundle.yesPrices;
+  // q is aligned 1:1 with the FULL bundle.markets array (resolved outcomes included), so it MUST be
+  // indexed by the ORIGINAL position, not the post-filter index — otherwise a resolved outcome that
+  // precedes an unresolved one shifts every later probability onto the wrong outcome.
   return bundle.markets
-    .filter((m) => !m.resolved)
-    .map((m, i) => {
+    .map((m, origIdx) => ({ m, origIdx }))
+    .filter(({ m }) => !m.resolved)
+    .map(({ m, origIdx }) => {
       const label = m.groupItemTitle ?? m.question;
+      const p = q[origIdx] ?? m.midpointYes;
       return {
         id: `polymarket:${m.conditionId}`,
         venue: "polymarket" as const,
@@ -44,7 +49,7 @@ export function normalizePolymarketEvent(bundle: EventBundle, category: string):
         marketTitle: bundle.title.trim(),
         description: `${label} — ${bundle.title.trim()}`,
         resolutionCriteria: m.question,
-        probYes: q[i] ?? m.midpointYes,
+        probYes: p,
         category,
         eventFamily: eventFamily(bundle.title, category),
         // include the outcome label only for narrative multi-outcome events (so distinct contracts
@@ -52,7 +57,7 @@ export function normalizePolymarketEvent(bundle: EventBundle, category: string):
         predicate: predicateOf(bundle.title, m.question, eventFamily(bundle.title, category) === "broadcast_word" ? label : undefined),
         // Proxy: a real de-vigged mid in (0,1) implies a tradable book. TODO: thread true book depth +
         // event end-time through EventBundle/MarketRef for an exact liquidity/time-window gate.
-        liquidityOk: Number.isFinite(q[i] ?? m.midpointYes) && (q[i] ?? m.midpointYes) > 0 && (q[i] ?? m.midpointYes) < 1,
+        liquidityOk: Number.isFinite(p) && p > 0 && p < 1,
         endDateMs: null,
         url: `https://polymarket.com/event/${bundle.slug}`,
         entityTokens: entityTokens(label),

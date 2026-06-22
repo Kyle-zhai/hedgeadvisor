@@ -88,8 +88,7 @@ export default function ComboPage() {
     <>
       <div className="topbar">
         <div className="tabs">
-          <a className="tab" href="/protect">Protect</a>
-          <a className="tab" href="/plan">Build plan</a>
+          <a className="tab" href="/hedge">Hedge</a>
           <a className="tab active" href="/combo">Combo check</a>
         </div>
         <div className="right">

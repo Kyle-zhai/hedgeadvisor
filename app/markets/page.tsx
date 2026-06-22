@@ -118,7 +118,7 @@ export default function MarketsPage() {
                   <td style={{ textAlign: "right" }}>{money(market.liquidity)}</td>
                   <td style={{ textAlign: "right" }}>{money(market.volume24h)}</td>
                   <td>{market.endDate ? new Date(market.endDate).toLocaleDateString() : "Open"}</td>
-                  <td style={{ textAlign: "right" }}><a className="rowbtn" href={`/protect?q=${encodeURIComponent(market.outcome)}`}><ShieldCheck size={14} /> Protect</a></td>
+                  <td style={{ textAlign: "right" }}><a className="rowbtn" href={`/hedge?q=${encodeURIComponent(market.outcome)}`}><ShieldCheck size={14} /> Hedge</a></td>
                 </tr>
               ))}
             </tbody>

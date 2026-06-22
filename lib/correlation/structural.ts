@@ -14,11 +14,15 @@ function clampP(p: number): number {
 
 /** General correlation from marginals + joint. */
 export function corrFromJoint(pX: number, pY: number, pXY: number): number {
+  // Clamp ONLY the denominator's marginals for numerical stability (avoid div-by-zero near 0/1). The
+  // numerator keeps the RAW marginals so the sign stays correct at extreme marginals: clamping the
+  // marginal UP while leaving the joint (e.g. a subset's min) untouched would otherwise push the
+  // numerator below zero and flip a true subset (φ >= 0) to negative.
   const x = clampP(pX);
   const y = clampP(pY);
   const denom = Math.sqrt(x * (1 - x) * y * (1 - y));
   if (denom <= 0) return 0;
-  return (pXY - x * y) / denom;
+  return (pXY - pX * pY) / denom;
 }
 
 /** Two mutually-exclusive outcomes (e.g. Spain wins vs France wins): joint = 0. */

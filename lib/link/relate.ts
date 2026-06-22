@@ -68,9 +68,9 @@ function priceNote(pmYes: number | null, kYes: number | null): string | undefine
   const pm = Math.round(pmYes * 100);
   const k = Math.round(kYes * 100);
   const diff = Math.abs(pm - k);
-  if (diff <= 1) return `Both venues price YES ≈ ${pm}¢ — aligned.`;
+  if (diff <= 1) return `Both venues price YES ≈ ${pm}¢ (mids aligned).`;
   const cheaper = k < pm ? "Kalshi" : "Polymarket";
-  return `Polymarket ${pm}¢ vs Kalshi ${k}¢ — ${diff}¢ apart, ${cheaper} cheaper for YES.`;
+  return `Polymarket ${pm}¢ vs Kalshi ${k}¢: ${diff}¢ apart on the mid, ${cheaper} cheaper for YES (before fees).`;
 }
 
 function toLink(

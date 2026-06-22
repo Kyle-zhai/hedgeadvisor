@@ -128,7 +128,10 @@ export default function HedgePage() {
   }, []);
 
   useEffect(() => {
-    run(query, conservatism);
+    // Seed the search from ?q= (e.g. the Markets "Hedge" row link or a saved History record).
+    const urlQ = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("q")?.trim() : "";
+    if (urlQ) setQuery(urlQ);
+    run(urlQ || query, conservatism);
     return () => requestRef.current?.abort();
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
