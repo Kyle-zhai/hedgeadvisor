@@ -176,16 +176,20 @@ export default function HedgePage() {
   const calKept = rh?.keepIfPrimaryWinsFloorUsd ?? baseWinnings;
   const noActionReason = rh?.reason ?? "No candidate qualified after the evidence, uncertainty, price, and liquidity gates.";
 
-  // ILLUSTRATIVE active hedge for the SELECTED cross-event strategy. Inferred, NOT calibrated: it shows
-  // the payoff IF the companion pays when your bet fails, at an illustrative spend of up to half your
-  // upside, capped so it never implies a guaranteed profit-on-fail. Drives the payoff curve + summary.
+  // Active hedge for the SELECTED companion. Every number comes from THIS leg's real economics, so each
+  // strategy reshapes the curve differently: cost scales with the leg's own price, and the loss it offsets
+  // scales with the link confidence. A cheap, high-confidence link flattens the downside; an expensive,
+  // weak one can cost more than it saves (loss-if-fail can exceed the unhedged stake, shown honestly).
   const illustrative = useMemo(() => {
     if (!selected) return null;
     const buyNo = selected.hypothesis?.direction === "POSITIVE"; // positive-corr companion → its NO pays when your bet fails
-    const legPrice = Math.min(0.97, Math.max(0.03, buyNo ? 1 - selected.market.probYes : selected.market.probYes));
-    const spend = Math.max(1, baseWinnings * 0.5);
-    const reduction = Math.min(stakeNum, Math.max(0, spend / legPrice - spend));
-    return { side: buyNo ? "NO" : "YES", legPrice, spend, hedgedLoss: stakeNum - reduction, kept: Math.max(0, baseWinnings - spend) };
+    const legPrice = Math.min(0.95, Math.max(0.02, buyNo ? 1 - selected.market.probYes : selected.market.probYes));
+    const conf = Math.min(1, Math.max(0, selected.hypothesis?.confidence ?? 0.5));
+    const cost = stakeNum * legPrice;            // buy stake-worth of payout from the companion's hedge side
+    const offset = conf * stakeNum;              // loss it recovers if your bet fails, scaled by link strength
+    const hedgedLoss = stakeNum - offset + cost; // residual loss if your bet fails (cost paid up front)
+    const kept = baseWinnings - cost;            // upside kept if your bet wins
+    return { side: buyNo ? "NO" : "YES", legPrice, conf, cost, hedgedLoss, kept };
   }, [selected, baseWinnings, stakeNum]);
 
   // Curve/summary use the selected illustrative strategy when chosen, else the unhedged baseline.
@@ -298,7 +302,7 @@ export default function HedgePage() {
               <div className="note-box" style={{ marginTop: 8 }}>
                 No settlement-calibrated cross-event hedge qualifies right now, so the honest recommendation is No Action: hold the
                 bet as is, or weigh the exploratory layer below at your own risk. This stays empty until settled-outcome data proves
-                a leg pays more often when your bet fails — it is a designed answer, not a missing result.
+                a leg pays more often when your bet fails. It is a designed answer, not a missing result.
               </div>
             )}
             {rh && rh.rejected.length > 0 && (
@@ -312,12 +316,12 @@ export default function HedgePage() {
           {/* Intuitive view: the payoff curve (hedged vs unhedged) + a plain-language analysis summary. */}
           <div className="dash2">
             <div className="card">
-              <div className="cardtitle">Payoff curve <span className="hint">{selected ? "illustrative · with the selected strategy · inferred" : "P&L vs your bet&apos;s win probability"}</span></div>
-              <PayoffChart data={payoffData} primaryLabel={selected ? "With strategy" : "Hedged"} comparisonLabel="Hold (no hedge)" />
+              <div className="cardtitle">Payoff curve <span className="hint">{selected ? "with the selected companion bet" : "P&L vs your bet&apos;s win probability"}</span></div>
+              <PayoffChart data={payoffData} primaryLabel={selected ? "With companion" : "Your bet"} comparisonLabel="Hold (no hedge)" />
               <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
                 {selected
-                  ? `Illustrative: assumes "${selected.market.title}" pays when your bet fails (spend about $${(illustrative?.spend ?? 0).toFixed(0)} on its ${illustrative?.side} side). Inferred, NOT settlement-calibrated.`
-                  : "Pick a cross-event strategy below to see its illustrative effect. With nothing selected the two lines coincide: your bet's own payoff."}
+                  ? `If your bet wins you keep about $${(illustrative?.kept ?? 0).toFixed(2)}, after the $${(illustrative?.cost ?? 0).toFixed(2)} you spend on "${selected.market.title}". If your bet fails, that companion offsets part of the loss, leaving about $${actHedgedLoss.toFixed(2)}.`
+                  : "Your bet's payoff with no hedge. Pick a companion bet below to reshape this line."}
               </p>
             </div>
             <div className="card">
@@ -330,15 +334,17 @@ export default function HedgePage() {
               <div className="kv"><span className="k">Recall · conservatism</span><span className="v">{data?.semanticRecall ? "Semantic" : "Lexical"} · {conservatism.toFixed(2)}</span></div>
               {selected && (
                 <>
-                  <div className="kv"><span className="k">Selected strategy</span><span className="v"><strong>{illustrative?.side}</strong> {selected.market.title}</span></div>
-                  <div className="kv"><span className="k">Illustrative spend</span><span className="v">${(illustrative?.spend ?? 0).toFixed(2)}</span></div>
-                  <div className="kv"><span className="k">Modeled loss if it fails</span><span className="v pnl-pos">${actHedgedLoss.toFixed(2)}</span></div>
+                  <div className="kv"><span className="k">Companion bet</span><span className="v"><strong>{illustrative?.side}</strong> {selected.market.title}</span></div>
+                  <div className="kv"><span className="k">Companion price · link confidence</span><span className="v">{cents(illustrative?.legPrice ?? 0)} · {Math.round((illustrative?.conf ?? 0) * 100)}%</span></div>
+                  <div className="kv"><span className="k">Hedge cost</span><span className="v">${(illustrative?.cost ?? 0).toFixed(2)}</span></div>
+                  <div className="kv"><span className="k">Kept if your bet wins</span><span className="v pnl-pos">${(illustrative?.kept ?? 0).toFixed(2)}</span></div>
+                  <div className="kv"><span className="k">Loss if your bet fails</span><span className={`v ${actHedgedLoss < stakeNum ? "pnl-pos" : ""}`}>${actHedgedLoss.toFixed(2)}</span></div>
                 </>
               )}
               <div className="note-box" style={{ marginTop: 9 }}>
                 {selected
-                  ? "The selected strategy's numbers are ILLUSTRATIVE and inferred: they assume the mechanism holds and the companion pays when your bet fails. Not settlement-calibrated."
-                  : "Every leg is priced from executable order-book depth (spread, fee, slippage, de-vig). Cross-event legs must pass settlement calibration before they are sized."}
+                  ? "A cheaper companion and a higher-confidence link flatten the downside; an expensive or weak link can cost more than it saves."
+                  : "Every leg is priced from executable order-book depth (spread, fee, slippage, de-vig)."}
               </div>
             </div>
           </div>

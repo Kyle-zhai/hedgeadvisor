@@ -57,7 +57,7 @@ export function PayoffChart({ data, primaryLabel = "Protected", comparisonLabel 
           <Legend iconType="plainline" wrapperStyle={{ fontSize: 10, color: INK_3 }} />
           <ReferenceLine y={0} stroke="#9ba09c" />
           <Line name={comparisonLabel} type="linear" dataKey="unprotected" stroke="#8b9194" strokeWidth={2} dot={false} />
-          <Line name={primaryLabel} type="monotone" dataKey="protected" stroke={BLUE} strokeWidth={2.4} strokeDasharray="6 4" dot={false} />
+          <Line name={primaryLabel} type="linear" dataKey="protected" stroke={BLUE} strokeWidth={2.4} strokeDasharray="6 4" dot={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
