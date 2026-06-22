@@ -1,5 +1,12 @@
 import { z } from "zod";
 import type { MarketRuleInput, RelationHypothesis } from "./types";
+import {
+  chatCompletionWithFallback,
+  extractJsonContent,
+  relationModelChain,
+  relationThinkingEnabled,
+  type ModelAttempt,
+} from "./modelFallback";
 
 const NodeSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
@@ -84,11 +91,13 @@ export interface QwenRelationResult {
   model: string;
   hypothesis?: RelationHypothesis;
   reason?: string;
+  attempts?: ModelAttempt[];
 }
 
 export interface QwenRelationOptions {
   apiKey?: string;
   model?: string;
+  models?: string[];
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -119,51 +128,53 @@ export async function analyzeRelationWithQwen(
   // Use || not ?? so an EMPTY-STRING env var (e.g. a non-existent GitHub secret mapped to "") is
   // treated as absent and falls through — ?? would keep "" and wrongly disable Qwen.
   const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY;
-  const model = options.model || process.env.QWEN_RELATION_MODEL || "qwen-plus";
+  const models = relationModelChain(options.model, options.models);
+  const model = models[0] ?? "MiniMax-M2.5";
   if (!apiKey) return { status: "disabled", model, reason: "DASHSCOPE_API_KEY/QWEN_API_KEY is not configured" };
   const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
-  const controller = new AbortController();
   const configuredTimeout = Number(process.env.QWEN_RELATION_TIMEOUT_MS ?? 30_000);
   const timeoutMs = options.timeoutMs ?? (Number.isFinite(configuredTimeout)
     ? Math.min(120_000, Math.max(5_000, configuredTimeout))
     : 30_000);
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetchImpl(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        enable_thinking: false,
-        max_tokens: 3000,
-        messages: [
-          { role: "system", content: SYSTEM },
-          {
-            role: "user",
-            content: `Classify these contracts and return JSON.\nANCHOR:\n${JSON.stringify(anchor)}\nCANDIDATE:\n${JSON.stringify(candidate)}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
-    if (!res.ok) return { status: "error", model, reason: `Qwen HTTP ${res.status}` };
-    const raw = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const content = raw.choices?.[0]?.message?.content;
-    if (!content) return { status: "error", model, reason: "Qwen returned no content" };
-    const decoded = canonicalizeRelationJson(JSON.parse(content) as unknown);
-    const parsed = RelationSchema.safeParse(decoded);
-    if (!parsed.success) {
+  const decode = (content: string) => {
+    try {
+      const decoded = canonicalizeRelationJson(JSON.parse(extractJsonContent(content)) as unknown);
+      const parsed = RelationSchema.safeParse(decoded);
+      if (parsed.success) return { parsed } as const;
       const issues = parsed.error.issues.slice(0, 4).map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`).join("; ");
       const keys = decoded && typeof decoded === "object" && !Array.isArray(decoded) ? Object.keys(decoded).slice(0, 8).join(",") : typeof decoded;
-      return { status: "error", model, reason: `Qwen output failed schema validation (${issues}); top-level keys: ${keys}` };
+      return { error: `output failed schema validation (${issues}); top-level keys: ${keys}` } as const;
+    } catch (error) {
+      return { error: `invalid JSON (${error instanceof Error ? error.message : "parse failed"})` } as const;
     }
-    return { status: "ok", model, hypothesis: parsed.data };
-  } catch (err) {
-    return { status: "error", model, reason: err instanceof Error ? err.message : "Qwen request failed" };
-  } finally {
-    clearTimeout(timer);
+  };
+  const completion = await chatCompletionWithFallback({
+    apiKey,
+    baseUrl,
+    fetchImpl,
+    timeoutMs,
+    models,
+    bodyForModel: (attemptModel) => ({
+      model: attemptModel,
+      temperature: 0,
+      enable_thinking: relationThinkingEnabled(attemptModel),
+      max_tokens: 3000,
+      messages: [
+        { role: "system", content: SYSTEM },
+        {
+          role: "user",
+          content: `Classify these contracts and return JSON.\nANCHOR:\n${JSON.stringify(anchor)}\nCANDIDATE:\n${JSON.stringify(candidate)}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+    }),
+    validateContent: (content) => decode(content).error,
+  });
+  if (completion.status !== "ok" || !completion.content) {
+    return { status: "error", model: completion.model, reason: completion.reason, attempts: completion.attempts };
   }
+  const decoded = decode(completion.content);
+  if (!decoded.parsed) return { status: "error", model: completion.model, reason: decoded.error, attempts: completion.attempts };
+  return { status: "ok", model: completion.model, hypothesis: decoded.parsed.data, attempts: completion.attempts };
 }

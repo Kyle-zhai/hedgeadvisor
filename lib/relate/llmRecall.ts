@@ -1,9 +1,11 @@
 import type { NormalizedMarket } from "./types";
 import { lexicalSimilarity, metadataCompatible } from "./candidates";
+import { chatCompletionWithFallback, extractJsonContent, relationModelChain, relationThinkingEnabled } from "@/lib/association/modelFallback";
 
 interface RecallOptions {
   apiKey?: string;
   model?: string;
+  models?: string[];
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -18,7 +20,7 @@ export async function recallCandidatesWithQwen(
 ): Promise<NormalizedMarket[] | null> {
   const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY; // || so empty "" falls through
   if (!apiKey || limit <= 0) return null;
-  const model = options.model || process.env.QWEN_RELATION_MODEL || "qwen-plus";
+  const models = relationModelChain(options.model, options.models);
   const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
   const eligible = universe.filter((candidate) => candidate.liquidityOk && metadataCompatible(anchor, candidate, true));
   const lexical = [...eligible].sort((a, b) => lexicalSimilarity(anchor, b) - lexicalSimilarity(anchor, a));
@@ -32,47 +34,52 @@ export async function recallCandidatesWithQwen(
   }
   if (!pool.length) return [];
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 45_000);
-  try {
-    const response = await (options.fetchImpl ?? fetch)(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        enable_thinking: false,
-        max_tokens: 2000, // a long candidateIds list for big pools must not truncate (→ invalid JSON)
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: "Shortlist prediction-market contracts that may have a real logical, causal, institutional, behavioral, informational, economic, narrative, temporal, or common-cause mechanism with the anchor. Find non-obvious cross-entity and cross-domain candidates. Exclude mere word/date overlap. Return JSON only, exactly {\"candidateIds\":[\"id\"]}. This is recall only; do not estimate correlation or recommend trades." },
-          { role: "user", content: JSON.stringify({
-            anchor: { title: anchor.title, marketTitle: anchor.marketTitle, rules: anchor.resolutionCriteria },
-            limit,
-            candidates: pool.map((candidate) => ({
-              id: candidate.id,
-              title: candidate.title,
-              marketTitle: candidate.marketTitle,
-              rules: candidate.resolutionCriteria.slice(0, 240),
-              category: candidate.category,
-            })),
-          }) },
-        ],
-      }),
-    });
-    if (!response.ok) { console.error(`[llmRecall] HTTP ${response.status}: ${(await response.text().catch(() => "")).slice(0, 200)}`); return null; }
-    const raw = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const decoded = JSON.parse(raw.choices?.[0]?.message?.content ?? "{}") as { candidateIds?: unknown };
-    if (!Array.isArray(decoded.candidateIds)) { console.error(`[llmRecall] no candidateIds array; keys=${Object.keys(decoded).join(",")}`); return null; }
-    const ids = new Set(decoded.candidateIds.filter((id): id is string => typeof id === "string").slice(0, limit));
-    const matched = pool.filter((candidate) => ids.has(candidate.id)).slice(0, limit);
-    console.error(`[llmRecall] pool=${pool.length} modelReturnedIds=${decoded.candidateIds.length} matchedPoolIds=${matched.length}`);
-    return matched;
-  } catch (e) {
-    console.error("[llmRecall] failed:", e instanceof Error ? e.message : e);
+  const decode = (content: string) => {
+    try {
+      const decoded = JSON.parse(extractJsonContent(content)) as { candidateIds?: unknown };
+      return Array.isArray(decoded.candidateIds) ? ({ decoded } as const) : ({ error: "no candidateIds array" } as const);
+    } catch (error) {
+      return { error: `invalid JSON: ${error instanceof Error ? error.message : "parse failed"}` } as const;
+    }
+  };
+  const completion = await chatCompletionWithFallback({
+    apiKey,
+    baseUrl,
+    fetchImpl: options.fetchImpl ?? fetch,
+    timeoutMs: options.timeoutMs ?? 45_000,
+    models,
+    bodyForModel: (attemptModel) => ({
+      model: attemptModel,
+      temperature: 0,
+      enable_thinking: relationThinkingEnabled(attemptModel),
+      max_tokens: 2000, // a long candidateIds list for big pools must not truncate (→ invalid JSON)
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "Shortlist prediction-market contracts that may have a real logical, causal, institutional, behavioral, informational, economic, narrative, temporal, or common-cause mechanism with the anchor. Find non-obvious cross-entity and cross-domain candidates. Exclude mere word/date overlap. Return JSON only, exactly {\"candidateIds\":[\"id\"]}. This is recall only; do not estimate correlation or recommend trades." },
+        { role: "user", content: JSON.stringify({
+          anchor: { title: anchor.title, marketTitle: anchor.marketTitle, rules: anchor.resolutionCriteria },
+          limit,
+          candidates: pool.map((candidate) => ({
+            id: candidate.id,
+            title: candidate.title,
+            marketTitle: candidate.marketTitle,
+            rules: candidate.resolutionCriteria.slice(0, 240),
+            category: candidate.category,
+          })),
+        }) },
+      ],
+    }),
+    validateContent: (content) => decode(content).error,
+  });
+  if (completion.status !== "ok" || !completion.content) {
+    console.error(`[llmRecall] all models failed: ${completion.reason}`);
     return null;
-  } finally {
-    clearTimeout(timer);
   }
+  const result = decode(completion.content);
+  if (!result.decoded || !Array.isArray(result.decoded.candidateIds)) return null;
+  const candidateIds = result.decoded.candidateIds;
+  const ids = new Set(candidateIds.filter((id): id is string => typeof id === "string").slice(0, limit));
+  const matched = pool.filter((candidate) => ids.has(candidate.id)).slice(0, limit);
+  console.error(`[llmRecall] model=${completion.model} pool=${pool.length} modelReturnedIds=${candidateIds.length} matchedPoolIds=${matched.length}`);
+  return matched;
 }

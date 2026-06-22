@@ -55,7 +55,7 @@ export async function buildHybridHedgeRecommendation(input: HybridAssociationInp
       )
     : input.candidates.map((candidate) => ({
         candidateId: candidate.id,
-        result: { status: "disabled", model: process.env.QWEN_RELATION_MODEL ?? "qwen-plus", reason: "LLM analysis disabled by request" },
+        result: { status: "disabled", model: process.env.QWEN_RELATION_MODELS?.split(",")[0]?.trim() ?? process.env.QWEN_RELATION_MODEL ?? "MiniMax-M2.5", reason: "LLM analysis disabled by request" },
       }));
 
   const optimization = optimizeRobustHedge({

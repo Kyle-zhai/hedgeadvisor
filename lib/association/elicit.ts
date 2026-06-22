@@ -10,6 +10,7 @@
  * is admitted only to the exploratory layer, never the settlement-calibrated trustworthy layer.
  */
 import { z } from "zod";
+import { chatCompletionWithFallback, extractJsonContent, relationModelChain, relationThinkingEnabled, type ModelAttempt } from "./modelFallback";
 
 const ElicitSchema = z.object({
   pGivenAnchorWins: z.number().min(0).max(1),
@@ -26,11 +27,13 @@ export interface ConditionalElicitResult {
   confidence?: number;
   reason?: string;
   failReason?: string;
+  attempts?: ModelAttempt[];
 }
 
 export interface ElicitOptions {
   apiKey?: string;
   model?: string;
+  models?: string[];
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -54,41 +57,46 @@ export async function elicitConditionalWithQwen(
 ): Promise<ConditionalElicitResult> {
   // || not ?? so an empty-string env var is treated as absent (see qwen.ts).
   const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY;
-  const model = options.model || process.env.QWEN_RELATION_MODEL || "qwen-plus";
+  const models = relationModelChain(options.model, options.models);
+  const model = models[0] ?? "MiniMax-M2.5";
   if (!apiKey) return { status: "disabled", model, failReason: "DASHSCOPE_API_KEY/QWEN_API_KEY is not configured" };
   const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
-  const controller = new AbortController();
   const configured = Number(process.env.QWEN_RELATION_TIMEOUT_MS ?? 30_000);
   const timeoutMs = options.timeoutMs ?? (Number.isFinite(configured) ? Math.min(120_000, Math.max(5_000, configured)) : 30_000);
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetchImpl(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        enable_thinking: false,
-        max_tokens: 800,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: `ANCHOR outcome: ${anchorTitle}\nCANDIDATE outcome: ${candidateTitle}\nReturn JSON only.` },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
-    if (!res.ok) return { status: "error", model, failReason: `Qwen HTTP ${res.status}` };
-    const raw = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const content = raw.choices?.[0]?.message?.content;
-    if (!content) return { status: "error", model, failReason: "Qwen returned no content" };
-    const parsed = ElicitSchema.safeParse(JSON.parse(content) as unknown);
-    if (!parsed.success) return { status: "error", model, failReason: `schema: ${parsed.error.issues.slice(0, 2).map((i) => i.message).join("; ")}` };
-    return { status: "ok", model, ...parsed.data };
-  } catch (err) {
-    return { status: "error", model, failReason: err instanceof Error ? err.message : "Qwen request failed" };
-  } finally {
-    clearTimeout(timer);
+  const decode = (content: string) => {
+    try {
+      const parsed = ElicitSchema.safeParse(JSON.parse(extractJsonContent(content)) as unknown);
+      return parsed.success
+        ? ({ parsed } as const)
+        : ({ error: `schema: ${parsed.error.issues.slice(0, 2).map((issue) => issue.message).join("; ")}` } as const);
+    } catch (error) {
+      return { error: `invalid JSON: ${error instanceof Error ? error.message : "parse failed"}` } as const;
+    }
+  };
+  const completion = await chatCompletionWithFallback({
+    apiKey,
+    baseUrl,
+    fetchImpl,
+    timeoutMs,
+    models,
+    bodyForModel: (attemptModel) => ({
+      model: attemptModel,
+      temperature: 0,
+      enable_thinking: relationThinkingEnabled(attemptModel),
+      max_tokens: 800,
+      messages: [
+        { role: "system", content: SYSTEM },
+        { role: "user", content: `ANCHOR outcome: ${anchorTitle}\nCANDIDATE outcome: ${candidateTitle}\nReturn JSON only.` },
+      ],
+      response_format: { type: "json_object" },
+    }),
+    validateContent: (content) => decode(content).error,
+  });
+  if (completion.status !== "ok" || !completion.content) {
+    return { status: "error", model: completion.model, failReason: completion.reason, attempts: completion.attempts };
   }
+  const decoded = decode(completion.content);
+  if (!decoded.parsed) return { status: "error", model: completion.model, failReason: decoded.error, attempts: completion.attempts };
+  return { status: "ok", model: completion.model, ...decoded.parsed.data, attempts: completion.attempts };
 }

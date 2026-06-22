@@ -70,4 +70,6 @@ export interface PairClassification {
   estimateRho?: number; // a stated correlation for the Fréchet-clamped estimate path (rules only)
   /** The Qwen textual hypothesis, when the LLM path classified this pair. Never an exact joint. */
   hypothesis?: RelationHypothesis;
+  /** Actual model that produced the hypothesis after ordered failover. */
+  llmModel?: string;
 }

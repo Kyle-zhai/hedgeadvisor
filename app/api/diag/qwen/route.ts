@@ -8,7 +8,7 @@ import { analyzeRelationWithQwen } from "@/lib/association";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -23,6 +23,7 @@ export async function GET(req: Request) {
     status: res.status, // ok | disabled | error
     model: res.model,
     reason: res.reason ?? null, // schema-validation detail / HTTP code / timeout message
+    attempts: res.attempts ?? [],
     hasGraph: Boolean(res.hypothesis?.mechanismGraph),
     relation: res.hypothesis?.relation ?? null,
     portability: res.hypothesis?.mechanismGraph?.portability ?? null,

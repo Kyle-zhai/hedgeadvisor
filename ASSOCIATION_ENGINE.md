@@ -45,12 +45,17 @@ Qwen is optional and disabled safely when the key is empty:
 
 ```env
 DASHSCOPE_API_KEY=
-QWEN_RELATION_MODEL=qwen-plus
+QWEN_RELATION_MODELS=MiniMax-M2.5,qwen3.6-flash,qwen3-max-preview
+QWEN_RELATION_MODEL=MiniMax-M2.5
 QWEN_EMBED_MODEL=text-embedding-v4
 QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 HEDGE_RELATE_PM_TOP_EVENTS=24
 HEDGE_RELATE_KALSHI_TOP_EVENTS=24
 ```
+
+`QWEN_RELATION_MODELS` is ordered. The engine records the actual successful model and falls through
+on exhausted quota, rate limits, unavailable models, timeouts, malformed JSON, or schema-invalid
+output. A shared-key `401` stops immediately because another model cannot repair authentication.
 
 Historical mechanism calibration is enabled per settlement job. `anchorEntities` can restrict an
 expensive Qwen backfill to selected anchor outcomes; omit it to process all resolved outcomes.

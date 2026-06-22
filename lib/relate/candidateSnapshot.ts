@@ -44,7 +44,7 @@ export async function persistCandidateSnapshots(
         candidateTemplate: `${graph.candidateEventClass}:${candidate.predicate}:${role}:${signature ?? "instance"}`,
         candidateSide: side,
         hypothesis: cls.hypothesis,
-        llmModel: process.env.QWEN_RELATION_MODEL ?? "qwen-plus",
+        llmModel: cls.llmModel ?? process.env.QWEN_RELATION_MODELS?.split(",")[0]?.trim() ?? process.env.QWEN_RELATION_MODEL ?? "MiniMax-M2.5",
       });
       const price = side === "yes" ? candidate.probYes : 1 - candidate.probYes;
       if (!(price > 0 && price < 1)) continue;

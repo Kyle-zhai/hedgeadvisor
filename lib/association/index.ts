@@ -1,6 +1,7 @@
 export * from "./types";
 export { countConditionalObservations, calibrateConditionalPayoff, regularizedBeta, betaQuantile } from "./calibration";
 export { analyzeRelationWithQwen, type QwenRelationOptions, type QwenRelationResult } from "./qwen";
+export { DEFAULT_RELATION_MODEL_CHAIN, relationModelChain, relationThinkingEnabled, type ModelAttempt } from "./modelFallback";
 export { elicitConditionalWithQwen, type ConditionalElicitResult, type ElicitOptions } from "./elicit";
 export { optimizeRobustHedge } from "./optimizer";
 export {

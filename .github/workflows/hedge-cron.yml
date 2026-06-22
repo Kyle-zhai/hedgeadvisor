@@ -47,6 +47,7 @@ jobs:
       HEDGE_HISTORICAL_BACKFILL_JOBS_JSON: ${{ vars.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON }}
       QWEN_BASE_URL: ${{ vars.QWEN_BASE_URL }}
       QWEN_RELATION_MODEL: ${{ vars.QWEN_RELATION_MODEL }}
+      QWEN_RELATION_MODELS: ${{ vars.QWEN_RELATION_MODELS }}
       QWEN_EMBED_MODEL: ${{ vars.QWEN_EMBED_MODEL }}
       QWEN_RELATION_TIMEOUT_MS: ${{ vars.QWEN_RELATION_TIMEOUT_MS }}
       HEDGE_ENABLE_SEMANTIC_EMBEDDINGS: ${{ vars.HEDGE_ENABLE_SEMANTIC_EMBEDDINGS }}
@@ -126,17 +127,20 @@ jobs:
           printf '%s' "$body" | grep -oE '"error":"[^"]{0,80}' | head -1 || true
           echo "::endgroup::"
 
-      - name: Qwen REALISTIC probe (manual only — mimics the app's exact request)
+      - name: Primary LLM REALISTIC probe (manual only — mimics the app's exact request)
         if: github.event_name == 'workflow_dispatch'
         env:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           QWEN_RELATION_MODEL: ${{ vars.QWEN_RELATION_MODEL }}
+          QWEN_RELATION_MODELS: ${{ vars.QWEN_RELATION_MODELS }}
           QWEN_BASE_URL: ${{ vars.QWEN_BASE_URL }}
         run: |
           MODEL="${QWEN_RELATION_MODEL:-qwen-plus}"
           BASE="${QWEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}"
-          # same shape the app sends: json_object format, enable_thinking:false, max_tokens 3000
-          PAYLOAD='{"model":"'"$MODEL"'","temperature":0,"enable_thinking":false,"max_tokens":3000,"messages":[{"role":"system","content":"You classify prediction-market relations and return JSON only with keys relation,direction,mechanism,sharedEntities,counterexamples,confidence,requiresCalibration,mechanismGraph."},{"role":"user","content":"ANCHOR: France wins the 2026 World Cup. CANDIDATE: France national-team head coach departs by end of 2026. Classify and return the JSON object."}],"response_format":{"type":"json_object"}}'
+          THINKING=false
+          case "$MODEL" in MiniMax-*) THINKING=true ;; esac
+          # same shape the app sends; Bailian's MiniMax-M2.5 is thinking-only.
+          PAYLOAD='{"model":"'"$MODEL"'","temperature":0,"enable_thinking":'"$THINKING"',"max_tokens":3000,"messages":[{"role":"system","content":"You classify prediction-market relations and return JSON only with keys relation,direction,mechanism,sharedEntities,counterexamples,confidence,requiresCalibration,mechanismGraph."},{"role":"user","content":"ANCHOR: France wins the 2026 World Cup. CANDIDATE: France national-team head coach departs by end of 2026. Classify and return the JSON object."}],"response_format":{"type":"json_object"}}'
           echo "endpoint: ${BASE%/}  model: $MODEL"
           out=$(curl -s -o /tmp/qr.json -w 'HTTP=%{http_code} time=%{time_total}s' --max-time 90 \
             -H "Authorization: Bearer ${QWEN_API_KEY}" -H "content-type: application/json" \
@@ -146,17 +150,17 @@ jobs:
           echo "mechanismGraph in response: $(grep -c mechanismGraph /tmp/qr.json 2>/dev/null)"
           grep -oE '"(message|code|type)":[ ]?"[^"]{0,180}"' /tmp/qr.json 2>/dev/null | head -3 || echo "(no error fields)"
 
-      - name: Real-code Qwen classifier diagnostic (manual only — shows the actual status+reason)
+      - name: Real-code LLM classifier diagnostic (manual only — shows model attempts)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          echo "/api/diag/qwen (runs analyzeRelationWithQwen incl. Zod validation):"
-          curl -s --max-time 90 -H "authorization: Bearer ${CRON_SECRET}" "http://localhost:3000/api/diag/qwen"
+          echo "/api/diag/qwen (runs ordered model fallback incl. Zod validation):"
+          curl -s --max-time 180 -H "authorization: Bearer ${CRON_SECRET}" "http://localhost:3000/api/diag/qwen"
           echo
 
       - name: Server log (qwen/error lines, secret-filtered)
         if: always()
         run: |
-          grep -aiE "qwen|dashscope|mechanism|classif|ECONNREFUSED|ETIMEDOUT|timeout|fetch failed|aborted|unauthorized|status (4|5)[0-9][0-9]" server.log 2>/dev/null \
+          grep -aiE "qwen|minimax|dashscope|mechanism|classif|ECONNREFUSED|ETIMEDOUT|timeout|fetch failed|aborted|unauthorized|status (4|5)[0-9][0-9]" server.log 2>/dev/null \
             | grep -aviE "api[-_]?key|authorization|bearer|password|postgres" | tail -40 || echo "(no qwen/error lines in server.log)"
 
       - name: Stop server

@@ -208,4 +208,49 @@ describe("Qwen relationship adapter", () => {
     expect(r.hypothesis?.requiresCalibration).toBe(true);
     expect(r.hypothesis?.mechanismGraph?.candidateEventClass).toBe("broadcast_language_occurrence");
   });
+
+  test("falls through quota failures in the configured model order", async () => {
+    const valid = {
+      relation: "CAUSAL", direction: "POSITIVE", mechanism: "A shared event can affect both outcomes.",
+      sharedEntities: ["Spain"], counterexamples: ["The broadcast may use different wording."],
+      confidence: 0.6, requiresCalibration: true,
+      mechanismGraph: {
+        anchorEventClass: "national_team_title", candidateEventClass: "broadcast_language_occurrence",
+        mechanismType: "NARRATIVE", scope: "ENTITY_SPECIFIC", timeOrder: "OVERLAPPING", portability: "EVENT_CLASS",
+        nodes: [
+          { id: "anchor_event", label: "Spain wins", kind: "EVENT" },
+          { id: "candidate_event", label: "Champion is spoken", kind: "OBSERVABLE" },
+        ],
+        edges: [{ from: "anchor_event", to: "candidate_event", kind: "SIGNALS" }], sharedDrivers: ["match narrative"],
+      },
+    };
+    const seen: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const model = (JSON.parse(String(init?.body)) as { model: string }).model;
+      seen.push(model);
+      if (model === "MiniMax-M2.5") return new Response(JSON.stringify({ code: "AllocationQuota.FreeTierOnly" }), { status: 403 });
+      if (model === "qwen3.6-flash") return new Response(JSON.stringify({ code: "Throttling.RateQuota" }), { status: 429 });
+      return new Response(JSON.stringify({ choices: [{ message: { content: `<think>ignored</think>${JSON.stringify(valid)}` } }] }), { status: 200 });
+    });
+    const r = await analyzeRelationWithQwen(anchor, candidate, {
+      apiKey: "test",
+      models: ["MiniMax-M2.5", "qwen3.6-flash", "qwen3-max-preview"],
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(r.status).toBe("ok");
+    expect(r.model).toBe("qwen3-max-preview");
+    expect(seen).toEqual(["MiniMax-M2.5", "qwen3.6-flash", "qwen3-max-preview"]);
+    expect(r.attempts).toHaveLength(3);
+  });
+
+  test("does not retry another model when the shared API key is unauthorized", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ code: "InvalidApiKey" }), { status: 401 }));
+    const r = await analyzeRelationWithQwen(anchor, candidate, {
+      apiKey: "bad",
+      models: ["MiniMax-M2.5", "qwen3.6-flash"],
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(r.status).toBe("error");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

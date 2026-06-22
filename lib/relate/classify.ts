@@ -117,7 +117,7 @@ async function llmClassify(pair: CandidatePair): Promise<PairClassification | nu
     if (res.status === "error") console.error(`[llmClassify] ${pair.a.title}↔${pair.b.title}: ${res.reason}`);
     return null; // disabled/error ⇒ fall through to heuristic
   }
-  return hypothesisToClassification(res.hypothesis);
+  return { ...hypothesisToClassification(res.hypothesis), llmModel: res.model };
 }
 
 /** Classify one candidate pair: rules → LLM → heuristic. */
