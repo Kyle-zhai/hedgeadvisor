@@ -3,6 +3,7 @@
 import { ArrowSquareOut, ShieldCheck, MagnifyingGlass } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VenueTag from "@/components/VenueTag";
+import { PayoffChart } from "@/components/SignalCharts";
 
 // The single hedge surface (merged from the former /protect + /discover, 2026-06-21). A hedge here is
 // POSITIVE-SUM, never a short of your own bet: each leg is a standalone positive bet on a DIFFERENT
@@ -66,6 +67,7 @@ interface DiscoverResult {
   semanticRecall?: boolean;
   candidates?: { title: string; score: number }[];
   suggestions?: string[];
+  llm?: { classification?: { candidates?: number; rule?: number; llm?: number; heuristic?: number } };
   error?: string;
 }
 
@@ -168,6 +170,15 @@ export default function HedgePage() {
   const hedgeSpend = rh?.spendUsd ?? 0;
   const keptIfWin = rh?.keepIfPrimaryWinsFloorUsd ?? (anchor ? stakeNum * (1 - anchor.probYes) / Math.max(0.01, anchor.probYes) : 0);
   const noActionReason = rh?.reason ?? "No candidate qualified after the evidence, uncertainty, price, and liquidity gates.";
+  // Expected-P&L payoff curve: P&L as your bet moves from a certain loss (0%) to a certain win (100%),
+  // unhedged vs hedged. Linear in the win probability for a fixed position; when there is no hedge the
+  // two lines coincide. grossWinnings adds back the hedge cost so the unhedged line is the raw upside.
+  const grossWinnings = keptIfWin + hedgeSpend;
+  const payoffData = [0, 0.25, 0.5, 0.75, 1].map((p) => ({
+    probability: `${Math.round(p * 100)}%`,
+    unprotected: Number((p * grossWinnings - (1 - p) * currentMaxLoss).toFixed(2)),
+    protected: Number((p * keptIfWin - (1 - p) * hedgedMaxLoss).toFixed(2)),
+  }));
 
   return (
     <div className="page">
@@ -279,6 +290,30 @@ export default function HedgePage() {
                 <div style={{ marginTop: 6 }}>{rh.rejected.slice(0, 8).map((r) => <div key={r.candidateId} className="muted" style={{ fontSize: 12 }}>· {r.candidateId}: {r.reason}</div>)}</div>
               </details>
             )}
+          </div>
+
+          {/* Intuitive view: the payoff curve (hedged vs unhedged) + a plain-language analysis summary. */}
+          <div className="dash2">
+            <div className="card">
+              <div className="cardtitle">Payoff curve <span className="hint">P&L vs your bet&apos;s win probability · hedged vs unhedged</span></div>
+              <PayoffChart data={payoffData} primaryLabel="Hedged" comparisonLabel="Unhedged" />
+              <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
+                Expected P&L as your bet moves from a certain loss (0%) to a certain win (100%).
+                {hasHedge ? " The hedged line gives up a little upside to cut the downside." : " With No Action the two lines coincide; nothing changes your bet's own payoff."}
+              </p>
+            </div>
+            <div className="card">
+              <div className="cardtitle">Analysis summary</div>
+              <div className="kv"><span className="k">Your bet price (YES)</span><span className="v">{cents(anchor.probYes)}</span></div>
+              <div className="kv"><span className="k">Stake at risk</span><span className="v">${stakeNum.toFixed(2)}</span></div>
+              <div className="kv"><span className="k">Universe scanned</span><span className="v">{data?.universeSize ?? 0} markets</span></div>
+              <div className="kv"><span className="k">Relations classified</span><span className="v">{data?.relations?.length ?? 0}</span></div>
+              <div className="kv"><span className="k">Cross-event (LLM)</span><span className="v">{data?.llm?.classification?.llm ?? 0}</span></div>
+              <div className="kv"><span className="k">Recall · conservatism</span><span className="v">{data?.semanticRecall ? "Semantic" : "Lexical"} · {conservatism.toFixed(2)}</span></div>
+              <div className="note-box" style={{ marginTop: 9 }}>
+                Every leg is priced from executable order-book depth (spread, fee, slippage, de-vig). Cross-event legs must pass settlement calibration before they are sized.
+              </div>
+            </div>
           </div>
 
           {/* Layer 2 — mechanism hypotheses only. They suggest a side to investigate but carry no
