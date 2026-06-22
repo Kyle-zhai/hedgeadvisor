@@ -4,6 +4,8 @@ import { discoverRelations } from "@/lib/relate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// MiniMax-M2.5 is thinking-only; discovery can perform recall and classification sequentially.
+export const maxDuration = 300;
 
 const Body = z.object({
   query: z.string().min(1).max(160),

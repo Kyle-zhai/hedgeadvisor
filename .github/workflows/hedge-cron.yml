@@ -118,7 +118,8 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           echo "::group::/api/discover probe — does Qwen classify + emit mechanism graphs on the runner?"
-          body=$(curl -s --max-time 150 -X POST "http://localhost:3000/api/discover" \
+          # MiniMax may run two sequential thinking stages here (recall, then classification).
+          body=$(curl -s --max-time 300 -X POST "http://localhost:3000/api/discover" \
             -H "content-type: application/json" \
             -d '{"query":"France wins the World Cup","eventSlug":"world-cup-winner","topK":12}')
           echo "response bytes:             $(printf '%s' "$body" | wc -c | tr -d ' ')"
