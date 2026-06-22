@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { historicalPointAtOrBefore } from "@/lib/relate/historicalBackfill";
+import { historicalPairCutoffMs, historicalPointAtOrBefore } from "@/lib/relate/historicalBackfill";
 
 describe("historical provider backfill", () => {
   test("selects the last genuine point before cutoff and never falls forward", () => {
@@ -12,5 +12,10 @@ describe("historical provider backfill", () => {
     const history = [{ t: 100, p: 0 }, { t: 200, p: 1 }, { t: 300, p: 0.55 }];
     expect(historicalPointAtOrBefore(history, 250_000)).toBeNull();
   });
-});
 
+  test("places a joint cutoff before the first leg resolves", () => {
+    const hour = 3_600_000;
+    expect(historicalPairCutoffMs(1_000 * hour, 1_500 * hour, 24)).toBe(976 * hour);
+    expect(historicalPairCutoffMs(1_500 * hour, 1_000 * hour, 24)).toBe(976 * hour);
+  });
+});

@@ -66,6 +66,12 @@ export function historicalPointAtOrBefore(history: Array<{ t: number; p: number 
   return best;
 }
 
+/** A joint snapshot must predate both resolutions. Using the later resolution would leak the
+ * already-known outcome of whichever leg settled first. */
+export function historicalPairCutoffMs(anchorResolvedAtMs: number, candidateResolvedAtMs: number, leadHours: number): number {
+  return Math.min(anchorResolvedAtMs, candidateResolvedAtMs) - leadHours * 3_600_000;
+}
+
 function pickByIdOrLabel<T extends { id: string; label: string }>(rows: T[], ref: HistoricalMarketRef): T | null {
   if (ref.marketId) return rows.find((row) => row.id === ref.marketId) ?? null;
   if (!ref.label) return null;
@@ -125,7 +131,7 @@ export async function runHistoricalBackfillJob(job: HistoricalBackfillJob): Prom
     if (!anchor || !candidate) return { id: job.id, status: "skipped", reason: "market not found, unresolved, or missing true resolution time" };
     const resolvedAtMs = Math.max(anchor.resolvedAtMs, candidate.resolvedAtMs);
     const leadHours = Math.min(24 * 365, Math.max(24, job.leadHours ?? 168));
-    const cutoffMs = resolvedAtMs - leadHours * 3_600_000;
+    const cutoffMs = historicalPairCutoffMs(anchor.resolvedAtMs, candidate.resolvedAtMs, leadHours);
     const anchorPoint = historicalPointAtOrBefore(anchor.history, cutoffMs);
     const candidatePoint = historicalPointAtOrBefore(candidate.history, cutoffMs);
     if (!anchorPoint || !candidatePoint) return { id: job.id, status: "skipped", reason: "no genuine pre-resolution price for one or both markets" };
