@@ -152,32 +152,49 @@ export default function HedgePage() {
   }, []);
 
   const anchor = data?.anchor;
-  // Only structural or settlement-proven allocations can appear in the optimizer result. LLM
-  // hypotheses remain a separate, unsized discovery list.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Calibrated/structural legs only appear in the optimizer result (the trustworthy OPTIMAL card).
   const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED"), [data]);
   const llmRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod === "llm"), [data]);
-  const exploratory = useMemo(() => llmRels.filter((r) => r.hypothesis?.direction === "POSITIVE" || r.hypothesis?.direction === "NEGATIVE"), [llmRels]);
-  const directionUnknownCount = llmRels.length - exploratory.length;
   const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
+  // Top CROSS-EVENT positive-sum strategy candidates: a companion bet on a DIFFERENT entity/domain
+  // (never a same-event rival or the anchor's own progression) with an inferred hedge direction.
+  const strategies = useMemo(() => llmRels.filter((r) =>
+    (r.hypothesis?.direction === "POSITIVE" || r.hypothesis?.direction === "NEGATIVE")
+    && r.mechanismGraph?.scope !== "SAME_ENTITY" && r.mechanismGraph?.scope !== "ENTITY_SPECIFIC").slice(0, 5), [llmRels]);
+  const selected = useMemo(() => strategies.find((s) => s.market.id === selectedId) ?? null, [strategies, selectedId]);
 
-  // The recommendation card is ALWAYS rendered when there is an anchor — config when a qualifying
-  // hedge exists, an explicit No Action otherwise — so the core area never silently disappears.
   const rh = data?.robustHedge;
-  const hasHedge = optimalLegs.length > 0;
+  const hasHedge = optimalLegs.length > 0; // calibrated, trustworthy legs drive the OPTIMAL verdict
   const stakeNum = Number(stakeUsd) > 0 ? Number(stakeUsd) : 20;
+  const anchorPrice = anchor?.probYes ?? 0.5;
+  const baseWinnings = stakeNum * (1 - anchorPrice) / Math.max(0.01, anchorPrice); // unhedged upside if the bet wins
   const currentMaxLoss = stakeNum; // unhedged: you lose your stake if the bet fails
-  const hedgedMaxLoss = rh?.modeledLossIfPrimaryFailsUsd ?? stakeNum; // = stake when no hedge applies
-  const hedgeSpend = rh?.spendUsd ?? 0;
-  const keptIfWin = rh?.keepIfPrimaryWinsFloorUsd ?? (anchor ? stakeNum * (1 - anchor.probYes) / Math.max(0.01, anchor.probYes) : 0);
+  // OPTIMAL card metrics — calibrated only, NOT affected by an exploratory selection.
+  const calHedgedLoss = rh?.modeledLossIfPrimaryFailsUsd ?? stakeNum;
+  const calSpend = rh?.spendUsd ?? 0;
+  const calKept = rh?.keepIfPrimaryWinsFloorUsd ?? baseWinnings;
   const noActionReason = rh?.reason ?? "No candidate qualified after the evidence, uncertainty, price, and liquidity gates.";
-  // Expected-P&L payoff curve: P&L as your bet moves from a certain loss (0%) to a certain win (100%),
-  // unhedged vs hedged. Linear in the win probability for a fixed position; when there is no hedge the
-  // two lines coincide. grossWinnings adds back the hedge cost so the unhedged line is the raw upside.
-  const grossWinnings = keptIfWin + hedgeSpend;
+
+  // ILLUSTRATIVE active hedge for the SELECTED cross-event strategy. Inferred, NOT calibrated: it shows
+  // the payoff IF the companion pays when your bet fails, at an illustrative spend of up to half your
+  // upside, capped so it never implies a guaranteed profit-on-fail. Drives the payoff curve + summary.
+  const illustrative = useMemo(() => {
+    if (!selected) return null;
+    const buyNo = selected.hypothesis?.direction === "POSITIVE"; // positive-corr companion → its NO pays when your bet fails
+    const legPrice = Math.min(0.97, Math.max(0.03, buyNo ? 1 - selected.market.probYes : selected.market.probYes));
+    const spend = Math.max(1, baseWinnings * 0.5);
+    const reduction = Math.min(stakeNum, Math.max(0, spend / legPrice - spend));
+    return { side: buyNo ? "NO" : "YES", legPrice, spend, hedgedLoss: stakeNum - reduction, kept: Math.max(0, baseWinnings - spend) };
+  }, [selected, baseWinnings, stakeNum]);
+
+  // Curve/summary use the selected illustrative strategy when chosen, else the unhedged baseline.
+  const actHedgedLoss = illustrative?.hedgedLoss ?? stakeNum;
+  const actKept = illustrative?.kept ?? baseWinnings;
   const payoffData = [0, 0.25, 0.5, 0.75, 1].map((p) => ({
     probability: `${Math.round(p * 100)}%`,
-    unprotected: Number((p * grossWinnings - (1 - p) * currentMaxLoss).toFixed(2)),
-    protected: Number((p * keptIfWin - (1 - p) * hedgedMaxLoss).toFixed(2)),
+    unprotected: Number((p * baseWinnings - (1 - p) * stakeNum).toFixed(2)),
+    protected: Number((p * actKept - (1 - p) * actHedgedLoss).toFixed(2)),
   }));
 
   return (
@@ -258,9 +275,9 @@ export default function HedgePage() {
             <p className="sub" style={{ marginTop: 6 }}>{hasHedge ? rh?.reason : noActionReason}</p>
             <div className="metric-strip" style={{ marginTop: 4 }}>
               <div className="metric"><div className="label">Current max loss</div><div className="value pnl-neg">${currentMaxLoss.toFixed(2)}</div><div className="detail">unhedged, if your bet fails</div></div>
-              <div className="metric"><div className="label">Hedged max loss</div><div className={`value ${hasHedge ? "pnl-pos" : ""}`}>${hedgedMaxLoss.toFixed(2)}</div><div className="detail">{hasHedge ? "after the hedge" : "no hedge applied"}</div></div>
-              <div className="metric"><div className="label">Hedge spend</div><div className="value">${hedgeSpend.toFixed(2)}</div><div className="detail">{rh ? `budget $${rh.budgetUsd.toFixed(2)}` : "nothing to buy"}</div></div>
-              <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${keptIfWin.toFixed(2)}</div><div className="detail">winnings, after any cost</div></div>
+              <div className="metric"><div className="label">Hedged max loss</div><div className={`value ${hasHedge ? "pnl-pos" : ""}`}>${calHedgedLoss.toFixed(2)}</div><div className="detail">{hasHedge ? "after the hedge" : "no hedge applied"}</div></div>
+              <div className="metric"><div className="label">Hedge spend</div><div className="value">${calSpend.toFixed(2)}</div><div className="detail">{rh ? `budget $${rh.budgetUsd.toFixed(2)}` : "nothing to buy"}</div></div>
+              <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${calKept.toFixed(2)}</div><div className="detail">winnings, after any cost</div></div>
             </div>
             {hasHedge ? (
               <div className="table-wrap" style={{ marginTop: 8 }}>
@@ -295,11 +312,12 @@ export default function HedgePage() {
           {/* Intuitive view: the payoff curve (hedged vs unhedged) + a plain-language analysis summary. */}
           <div className="dash2">
             <div className="card">
-              <div className="cardtitle">Payoff curve <span className="hint">P&L vs your bet&apos;s win probability · hedged vs unhedged</span></div>
-              <PayoffChart data={payoffData} primaryLabel="Hedged" comparisonLabel="Unhedged" />
+              <div className="cardtitle">Payoff curve <span className="hint">{selected ? "illustrative · with the selected strategy · inferred" : "P&L vs your bet&apos;s win probability"}</span></div>
+              <PayoffChart data={payoffData} primaryLabel={selected ? "With strategy" : "Hedged"} comparisonLabel="Hold (no hedge)" />
               <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
-                Expected P&L as your bet moves from a certain loss (0%) to a certain win (100%).
-                {hasHedge ? " The hedged line gives up a little upside to cut the downside." : " With No Action the two lines coincide; nothing changes your bet's own payoff."}
+                {selected
+                  ? `Illustrative: assumes "${selected.market.title}" pays when your bet fails (spend about $${(illustrative?.spend ?? 0).toFixed(0)} on its ${illustrative?.side} side). Inferred, NOT settlement-calibrated.`
+                  : "Pick a cross-event strategy below to see its illustrative effect. With nothing selected the two lines coincide: your bet's own payoff."}
               </p>
             </div>
             <div className="card">
@@ -310,48 +328,66 @@ export default function HedgePage() {
               <div className="kv"><span className="k">Relations classified</span><span className="v">{data?.relations?.length ?? 0}</span></div>
               <div className="kv"><span className="k">Cross-event (LLM)</span><span className="v">{data?.llm?.classification?.llm ?? 0}</span></div>
               <div className="kv"><span className="k">Recall · conservatism</span><span className="v">{data?.semanticRecall ? "Semantic" : "Lexical"} · {conservatism.toFixed(2)}</span></div>
+              {selected && (
+                <>
+                  <div className="kv"><span className="k">Selected strategy</span><span className="v"><strong>{illustrative?.side}</strong> {selected.market.title}</span></div>
+                  <div className="kv"><span className="k">Illustrative spend</span><span className="v">${(illustrative?.spend ?? 0).toFixed(2)}</span></div>
+                  <div className="kv"><span className="k">Modeled loss if it fails</span><span className="v pnl-pos">${actHedgedLoss.toFixed(2)}</span></div>
+                </>
+              )}
               <div className="note-box" style={{ marginTop: 9 }}>
-                Every leg is priced from executable order-book depth (spread, fee, slippage, de-vig). Cross-event legs must pass settlement calibration before they are sized.
+                {selected
+                  ? "The selected strategy's numbers are ILLUSTRATIVE and inferred: they assume the mechanism holds and the companion pays when your bet fails. Not settlement-calibrated."
+                  : "Every leg is priced from executable order-book depth (spread, fee, slippage, de-vig). Cross-event legs must pass settlement calibration before they are sized."}
               </div>
             </div>
           </div>
 
-          {/* Layer 2 — mechanism hypotheses only. They suggest a side to investigate but carry no
-              conditional payoff, spend, or loss-reduction claim until historical calibration passes. */}
-          {(exploratory.length > 0 || directionUnknownCount > 0) && (
-            <div className="card" style={{ background: "var(--bg-subtle)" }}>
-              <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                Exploratory · inferred <span className="badge PARTIAL">LOW CONFIDENCE</span>
-              </div>
-              <p className="sub" style={{ marginTop: 6, color: "var(--ink-2)" }}>
-                Cross-event and cross-domain mechanisms surfaced by the model. The side below is a qualitative hypothesis only:
-                no payoff probability, spend, or loss reduction is assigned until settled historical evidence passes calibration.
-              </p>
-
-              {exploratory.length > 0 && (
-                <div className="table-wrap" style={{ marginTop: 4 }}>
-                  <table style={{ minWidth: 640 }}>
-                    <thead><tr><th>Cross-event market</th><th>Mechanism</th><th>Side to investigate</th><th>Classification confidence</th><th></th></tr></thead>
-                    <tbody>{exploratory.map((r) => (
-                      <tr key={r.market.id}>
-                        <td><strong>{r.market.title}</strong> <VenueTag venue={r.market.venue} short /><div style={{ color: "var(--ink-2)", fontSize: 12 }}>{r.market.marketTitle} · {cents(r.market.probYes)}</div></td>
-                        <td style={{ color: "var(--ink-2)" }}>{r.mechanismGraph?.mechanismType ?? "mechanism"}{r.mechanismGraph?.scope ? ` · ${r.mechanismGraph.scope}` : ""}</td>
-                        <td>{r.hypothesis?.direction === "POSITIVE" ? "Inspect NO" : "Inspect YES"}</td>
-                        <td style={{ color: "var(--ink-2)" }}>{Math.round((r.hypothesis?.confidence ?? 0) * 100)}% · relation label only</td>
-                        <td style={{ textAlign: "right" }}><a className="ghostbtn" target="_blank" rel="noreferrer" href={r.market.url}><ArrowSquareOut size={13} /></a></td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              )}
-
-              {directionUnknownCount > 0 && (
-                <div className="note-box" style={{ marginTop: exploratory.length > 0 ? 10 : 4 }}>
-                  {directionUnknownCount} additional mechanism{directionUnknownCount === 1 ? " has" : "s have"} no defensible payoff direction and therefore no suggested side.
-                </div>
-              )}
+          {/* Top cross-event strategies — selectable; choosing one updates the payoff curve + summary above.
+              Inferred / low-confidence: a companion bet on a DIFFERENT event, never a same-event rival. */}
+          <div className="card" style={{ background: "var(--bg-subtle)" }}>
+            <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              Cross-event strategies <span className="badge PARTIAL">LOW CONFIDENCE</span>
+              <span className="hint" style={{ marginLeft: "auto" }}>select one to preview its illustrative payoff above</span>
             </div>
-          )}
+            <p className="sub" style={{ marginTop: 6, color: "var(--ink-2)" }}>
+              Positive-sum companion bets on a DIFFERENT event that the model thinks tend to pay when your bet fails. These are
+              inferred mechanism hypotheses, not settlement-calibrated; the payoff numbers they drive above are illustrative.
+            </p>
+            {strategies.length > 0 ? (
+              <div className="table-wrap" style={{ marginTop: 4 }}>
+                <table style={{ minWidth: 680 }}>
+                  <thead><tr><th></th><th>#</th><th>Companion bet (cross-event)</th><th>Mechanism</th><th>Buy</th><th style={{ textAlign: "right" }}>Conf.</th><th></th></tr></thead>
+                  <tbody>
+                    <tr style={{ cursor: "pointer" }} onClick={() => setSelectedId(null)}>
+                      <td><input type="radio" name="strategy" checked={!selected} onChange={() => setSelectedId(null)} aria-label="Hold, no hedge" /></td>
+                      <td className="muted">0</td><td colSpan={4}><strong>Hold</strong> — your bet as is, no companion</td><td></td>
+                    </tr>
+                    {strategies.map((r, i) => {
+                      const buyNo = r.hypothesis?.direction === "POSITIVE";
+                      const isSel = selectedId === r.market.id;
+                      return (
+                        <tr key={r.market.id} style={{ cursor: "pointer", background: isSel ? "var(--accent-soft, #eef3ff)" : undefined }} onClick={() => setSelectedId(r.market.id)}>
+                          <td><input type="radio" name="strategy" checked={isSel} onChange={() => setSelectedId(r.market.id)} aria-label={`Select ${r.market.title}`} /></td>
+                          <td className="muted">{i + 1}</td>
+                          <td><strong>{r.market.title}</strong> <VenueTag venue={r.market.venue} short /><div style={{ color: "var(--ink-2)", fontSize: 12 }}>{r.market.marketTitle} · {cents(r.market.probYes)}</div></td>
+                          <td style={{ color: "var(--ink-2)" }}>{r.mechanismGraph?.mechanismType ?? "mechanism"}{r.mechanismGraph?.scope ? ` · ${r.mechanismGraph.scope}` : ""}</td>
+                          <td><strong>{buyNo ? "NO" : "YES"}</strong></td>
+                          <td style={{ textAlign: "right", color: "var(--ink-2)" }}>{Math.round((r.hypothesis?.confidence ?? 0) * 100)}%</td>
+                          <td style={{ textAlign: "right" }}><a className="ghostbtn" target="_blank" rel="noreferrer" href={r.market.url} onClick={(e) => e.stopPropagation()}><ArrowSquareOut size={13} /></a></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="note-box" style={{ marginTop: 4 }}>
+                No cross-event strategy surfaced for this bet yet. For a single-nation tournament winner there is often no clean
+                positive-sum cross-event hedge; cross-domain bets (politics, macro, crypto) tend to surface more.
+              </div>
+            )}
+          </div>
 
           {/* Descriptive reference: the full structural φ map (not actionable on its own). */}
           {structuralRels.length > 0 && (
