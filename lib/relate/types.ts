@@ -8,6 +8,7 @@
  */
 import type { RelationType } from "@/lib/correlation";
 import type { RelationHypothesis } from "@/lib/association";
+import type { ModelAttempt } from "@/lib/association/modelFallback";
 
 export type Venue = "polymarket" | "kalshi";
 
@@ -72,4 +73,8 @@ export interface PairClassification {
   hypothesis?: RelationHypothesis;
   /** Actual model that produced the hypothesis after ordered failover. */
   llmModel?: string;
+  /** Observability only: model attempts are never used as relationship evidence. */
+  llmAttempts?: ModelAttempt[];
+  llmCacheHit?: boolean;
+  llmFailureReason?: string;
 }

@@ -8,6 +8,7 @@ export interface ModelAttempt {
   model: string;
   status: "ok" | "error";
   reason?: string;
+  durationMs?: number;
 }
 
 export interface ChatFallbackOptions {
@@ -75,6 +76,7 @@ export async function chatCompletionWithFallback(options: ChatFallbackOptions): 
   if (!models.length) return { status: "error", model: "", reason: "No relation models configured", attempts };
 
   for (const model of models) {
+    const startedAt = Date.now();
     const controller = new AbortController();
     // Bailian's MiniMax-M2.5 is thinking-only and does not support thinking_budget. Give it enough
     // time to reach the final JSON while keeping faster fallback models on the configured timeout.
@@ -90,25 +92,25 @@ export async function chatCompletionWithFallback(options: ChatFallbackOptions): 
       if (!response.ok) {
         const code = errorCode(await response.text().catch(() => ""));
         const reason = `HTTP ${response.status}${code ? ` (${code})` : ""}`;
-        attempts.push({ model, status: "error", reason });
+        attempts.push({ model, status: "error", reason, durationMs: Date.now() - startedAt });
         if (response.status === 401) return { status: "error", model, reason, attempts };
         continue;
       }
       const raw = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
       const content = raw.choices?.[0]?.message?.content;
       if (!content) {
-        attempts.push({ model, status: "error", reason: "returned no content" });
+        attempts.push({ model, status: "error", reason: "returned no content", durationMs: Date.now() - startedAt });
         continue;
       }
       const contentError = options.validateContent?.(content, model);
       if (contentError) {
-        attempts.push({ model, status: "error", reason: contentError });
+        attempts.push({ model, status: "error", reason: contentError, durationMs: Date.now() - startedAt });
         continue;
       }
-      attempts.push({ model, status: "ok" });
+      attempts.push({ model, status: "ok", durationMs: Date.now() - startedAt });
       return { status: "ok", model, content, attempts };
     } catch (error) {
-      attempts.push({ model, status: "error", reason: error instanceof Error ? error.message : "request failed" });
+      attempts.push({ model, status: "error", reason: error instanceof Error ? error.message : "request failed", durationMs: Date.now() - startedAt });
     } finally {
       clearTimeout(timer);
     }

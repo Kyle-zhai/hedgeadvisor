@@ -1,6 +1,17 @@
 import type { NormalizedMarket } from "./types";
 import { lexicalSimilarity, metadataCompatible } from "./candidates";
 import { chatCompletionWithFallback, extractJsonContent, relationModelChain, relationThinkingEnabled } from "@/lib/association/modelFallback";
+import type { ModelAttempt } from "@/lib/association/modelFallback";
+import { llmCacheKey, loadLlmCache, recordLlmRun, storeLlmCache } from "@/lib/association/llmCache";
+
+export interface RecallDiagnostics {
+  status: "ok" | "error" | "disabled";
+  model?: string;
+  cached: boolean;
+  attempts?: ModelAttempt[];
+  selected: number;
+  pool: number;
+}
 
 interface RecallOptions {
   apiKey?: string;
@@ -9,6 +20,8 @@ interface RecallOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  cache?: boolean;
+  onDiagnostics?: (diagnostics: RecallDiagnostics) => void;
 }
 
 /** One batched LLM shortlist when paid embeddings are disabled. Recall only, never evidence. */
@@ -18,8 +31,12 @@ export async function recallCandidatesWithQwen(
   limit: number,
   options: RecallOptions = {},
 ): Promise<NormalizedMarket[] | null> {
+  const startedAt = Date.now();
   const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY; // || so empty "" falls through
-  if (!apiKey || limit <= 0) return null;
+  if (!apiKey || limit <= 0) {
+    options.onDiagnostics?.({ status: "disabled", cached: false, selected: 0, pool: 0 });
+    return null;
+  }
   const models = relationModelChain(options.model, options.models);
   const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
   const eligible = universe.filter((candidate) => candidate.liquidityOk && metadataCompatible(anchor, candidate, true));
@@ -33,6 +50,27 @@ export async function recallCandidatesWithQwen(
     pool.push(candidate);
   }
   if (!pool.length) return [];
+
+  const useCache = options.cache ?? !options.fetchImpl;
+  const trackMetrics = !options.fetchImpl;
+  const cacheKey = llmCacheKey("recall", "recall-v2", {
+    anchor: { id: anchor.id, title: anchor.title, marketTitle: anchor.marketTitle, rules: anchor.resolutionCriteria },
+    limit,
+    models,
+    pool: pool.map((candidate) => ({ id: candidate.id, title: candidate.title, marketTitle: candidate.marketTitle, rules: candidate.resolutionCriteria })),
+  });
+  if (useCache) {
+    const cached = await loadLlmCache<{ candidateIds?: unknown }>(cacheKey);
+    if (cached && Array.isArray(cached.value.candidateIds)) {
+      const ids = new Set(cached.value.candidateIds.filter((id): id is string => typeof id === "string").slice(0, limit));
+      const matched = pool.filter((candidate) => ids.has(candidate.id)).slice(0, limit);
+      const attempts: ModelAttempt[] = [{ model: cached.model, status: "ok", durationMs: 0 }];
+      const diagnostics = { status: "ok" as const, model: cached.model, cached: true, attempts, selected: matched.length, pool: pool.length };
+      options.onDiagnostics?.(diagnostics);
+      if (trackMetrics) await recordLlmRun({ operation: "recall", cacheHit: true, status: "ok", model: cached.model, attempts, latencyMs: Date.now() - startedAt });
+      return matched;
+    }
+  }
 
   const decode = (content: string) => {
     try {
@@ -73,6 +111,8 @@ export async function recallCandidatesWithQwen(
   });
   if (completion.status !== "ok" || !completion.content) {
     console.error(`[llmRecall] all models failed: ${completion.reason}`);
+    options.onDiagnostics?.({ status: "error", model: completion.model, cached: false, attempts: completion.attempts, selected: 0, pool: pool.length });
+    if (trackMetrics) await recordLlmRun({ operation: "recall", cacheHit: false, status: "error", model: completion.model, attempts: completion.attempts, latencyMs: Date.now() - startedAt });
     return null;
   }
   const result = decode(completion.content);
@@ -80,6 +120,9 @@ export async function recallCandidatesWithQwen(
   const candidateIds = result.decoded.candidateIds;
   const ids = new Set(candidateIds.filter((id): id is string => typeof id === "string").slice(0, limit));
   const matched = pool.filter((candidate) => ids.has(candidate.id)).slice(0, limit);
+  if (useCache) await storeLlmCache(cacheKey, "recall", { candidateIds: [...ids] }, completion.model);
+  options.onDiagnostics?.({ status: "ok", model: completion.model, cached: false, attempts: completion.attempts, selected: matched.length, pool: pool.length });
+  if (trackMetrics) await recordLlmRun({ operation: "recall", cacheHit: false, status: "ok", model: completion.model, attempts: completion.attempts, latencyMs: Date.now() - startedAt });
   console.error(`[llmRecall] model=${completion.model} pool=${pool.length} modelReturnedIds=${candidateIds.length} matchedPoolIds=${matched.length}`);
   return matched;
 }

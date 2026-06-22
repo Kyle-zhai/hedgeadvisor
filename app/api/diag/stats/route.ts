@@ -37,12 +37,15 @@ export async function GET(req: Request) {
 
   // Leakage-safe backtest rows: settled observation that JOINs a snapshot frozen before resolution.
   const backtestEligible = (await sql`
-    SELECT count(*)::int AS rows, count(DISTINCT o.relation_key)::int AS relation_keys
-    FROM association_observation o
-    JOIN association_candidate_snapshot s
-      ON s.relation_key = o.relation_key AND s.anchor_market_id = o.anchor_market_id
-     AND s.candidate_market_id = o.candidate_market_id AND s.observed_at <= o.resolved_at
-    WHERE o.resolved_at IS NOT NULL
+    SELECT count(*)::int AS rows, count(DISTINCT relation_key)::int AS relation_keys
+    FROM (
+      SELECT DISTINCT o.relation_key, o.sample_key
+      FROM association_observation o
+      JOIN association_candidate_snapshot s
+        ON s.relation_key = o.relation_key AND s.anchor_market_id = o.anchor_market_id
+       AND s.candidate_market_id = o.candidate_market_id AND s.observed_at <= o.resolved_at
+      WHERE o.resolved_at IS NOT NULL
+    ) eligible
   `)[0];
 
   // Frozen pairs still waiting for their markets to settle.
@@ -67,5 +70,44 @@ export async function GET(req: Request) {
     GROUP BY relation_key ORDER BY pairs DESC, snapshots DESC LIMIT 15
   `;
 
-  return NextResponse.json({ overview, backtestEligible, pendingFrozenPairs: pendingFrozen, topFrozenRelations });
+  const llmCache = (await sql`
+    SELECT count(*) FILTER (WHERE expires_at > now())::int AS active_entries,
+           COALESCE(sum(hits) FILTER (WHERE expires_at > now()), 0)::int AS hits,
+           max(last_hit_at)::text AS last_hit_at
+    FROM llm_relation_cache
+  `)[0];
+  const llmRuns24h = await sql`
+    SELECT operation, model, status, cache_hit,
+           count(*)::int AS runs,
+           round(avg(latency_ms))::int AS avg_latency_ms,
+           count(*) FILTER (WHERE jsonb_array_length(COALESCE(attempts, '[]'::jsonb)) > 1)::int AS fallback_runs
+    FROM llm_relation_run
+    WHERE created_at >= now() - interval '24 hours'
+    GROUP BY operation, model, status, cache_hit
+    ORDER BY operation, runs DESC
+  `;
+  const readinessRows = await sql`
+    SELECT relation_key,
+           count(DISTINCT COALESCE(cluster_key, sample_key))::int AS independent_clusters
+    FROM association_observation
+    WHERE resolved_at IS NOT NULL
+    GROUP BY relation_key
+  ` as Array<{ relation_key: string; independent_clusters: number }>;
+  const clusterRows = await sql`
+    SELECT DISTINCT COALESCE(cluster_key, sample_key) AS cluster
+    FROM association_observation WHERE resolved_at IS NOT NULL
+  ` as Array<{ cluster: string }>;
+  const n = new Set(clusterRows.map((row) => row.cluster)).size;
+  const calibrationReadiness = {
+    independentClusters: n,
+    phase: n >= 500 ? "stable_optimization" : n >= 300 ? "strong_calibration" : n >= 100 ? "initial_recalibration" : "collecting",
+    nextMilestone: n < 100 ? 100 : n < 300 ? 300 : n < 500 ? 500 : n < 1000 ? 1000 : null,
+    remaining: n < 100 ? 100 - n : n < 300 ? 300 - n : n < 500 ? 500 - n : n < 1000 ? 1000 - n : 0,
+    relationKeysAt20: readinessRows.filter((row) => row.independent_clusters >= 20).length,
+    relationKeysAt100: readinessRows.filter((row) => row.independent_clusters >= 100).length,
+    relationKeysAt300: readinessRows.filter((row) => row.independent_clusters >= 300).length,
+    relationKeysAt500: readinessRows.filter((row) => row.independent_clusters >= 500).length,
+  };
+
+  return NextResponse.json({ overview, backtestEligible, pendingFrozenPairs: pendingFrozen, calibrationReadiness, llm: { cache: llmCache, runs24h: llmRuns24h }, topFrozenRelations });
 }

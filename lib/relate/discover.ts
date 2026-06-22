@@ -17,7 +17,7 @@ import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
 import { buildOptimizerCandidates } from "./toOptimizerCandidates";
 import { persistCandidateSnapshots } from "./candidateSnapshot";
-import { recallCandidatesWithQwen } from "./llmRecall";
+import { recallCandidatesWithQwen, type RecallDiagnostics } from "./llmRecall";
 import { optimizeRobustHedge, type RobustOptimizerResult } from "@/lib/association";
 import type { MechanismGraph } from "@/lib/association";
 import type { CandidatePair, NormalizedMarket } from "./types";
@@ -167,6 +167,20 @@ export interface DiscoverResult {
   pricedAt?: string;
   /** Point-in-time relation rows persisted before settlement (zero when DATABASE_URL is unset). */
   candidateSnapshotsWritten?: number;
+  /** Operational telemetry only; never enters correlation, calibration, or sizing. */
+  llm?: {
+    recall?: RecallDiagnostics;
+    classification: {
+      candidates: number;
+      rule: number;
+      llm: number;
+      heuristic: number;
+      attempted: number;
+      cacheHits: number;
+      failures: number;
+      models: Record<string, number>;
+    };
+  };
 }
 
 export interface DiscoverRequest {
@@ -198,10 +212,14 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const anchor = universe.find((m) => m.id === anchorId);
   if (!anchor) return { status: "not_found", suggestions: [] };
 
-  // Stage 1: candidate generation (embeddings if a key is set, else lexical recall).
+  // Stage 1: embeddings when explicitly enabled; otherwise cached batched LLM recall, with lexical
+  // recall as the final network-free fallback.
   const semanticScore = await buildSemanticScorer(universe);
   const topK = req.topK ?? 12;
-  const llmRecall = !semanticScore ? await recallCandidatesWithQwen(anchor, universe, topK) : null;
+  let recallDiagnostics: RecallDiagnostics | undefined;
+  const llmRecall = !semanticScore ? await recallCandidatesWithQwen(anchor, universe, topK, {
+    onDiagnostics: (diagnostics) => { recallDiagnostics = diagnostics; },
+  }) : null;
   const rawCandidates = selectRecallCandidates(anchor, universe, {
     topK,
     semanticScore: semanticScore ?? undefined,
@@ -215,6 +233,18 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
 
   // Stage 2: classify every candidate (keeping the raw classification for the optimizer adapter).
   const classified = await Promise.all(candidates.map(async (pair) => ({ pair, cls: await classifyPair(pair) })));
+  const modelCounts: Record<string, number> = {};
+  for (const { cls } of classified) if (cls.llmModel) modelCounts[cls.llmModel] = (modelCounts[cls.llmModel] ?? 0) + 1;
+  const classificationDiagnostics = {
+    candidates: classified.length,
+    rule: classified.filter(({ cls }) => cls.method === "rule").length,
+    llm: classified.filter(({ cls }) => cls.method === "llm").length,
+    heuristic: classified.filter(({ cls }) => cls.method === "heuristic").length,
+    attempted: classified.filter(({ cls }) => cls.method === "llm" || cls.llmAttempts !== undefined).length,
+    cacheHits: classified.filter(({ cls }) => cls.llmCacheHit).length,
+    failures: classified.filter(({ cls }) => Boolean(cls.llmFailureReason)).length,
+    models: modelCounts,
+  };
   const candidateSnapshotsWritten = await persistCandidateSnapshots(anchor, classified).catch(() => 0);
 
   // Stages 3–5: the descriptive relation map (φ from STRUCTURE or estimate only — never price-corr).
@@ -278,5 +308,6 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     semanticRecall: Boolean(semanticScore),
     pricedAt: new Date().toISOString(),
     candidateSnapshotsWritten,
+    llm: { recall: recallDiagnostics, classification: classificationDiagnostics },
   };
 }

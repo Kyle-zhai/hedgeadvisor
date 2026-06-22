@@ -7,6 +7,7 @@ import {
   relationThinkingEnabled,
   type ModelAttempt,
 } from "./modelFallback";
+import { llmCacheKey, loadLlmCache, recordLlmRun, storeLlmCache } from "./llmCache";
 
 const NodeSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
@@ -92,6 +93,7 @@ export interface QwenRelationResult {
   hypothesis?: RelationHypothesis;
   reason?: string;
   attempts?: ModelAttempt[];
+  cached?: boolean;
 }
 
 export interface QwenRelationOptions {
@@ -101,6 +103,8 @@ export interface QwenRelationOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Defaults to true for live calls and false for injected test transports. */
+  cache?: boolean;
 }
 
 const SYSTEM = `You classify relationships between prediction-market resolution rules and build a small causal/event mechanism graph.
@@ -125,6 +129,7 @@ export async function analyzeRelationWithQwen(
   candidate: MarketRuleInput,
   options: QwenRelationOptions = {},
 ): Promise<QwenRelationResult> {
+  const startedAt = Date.now();
   // Use || not ?? so an EMPTY-STRING env var (e.g. a non-existent GitHub secret mapped to "") is
   // treated as absent and falls through — ?? would keep "" and wrongly disable Qwen.
   const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY;
@@ -149,6 +154,20 @@ export async function analyzeRelationWithQwen(
       return { error: `invalid JSON (${error instanceof Error ? error.message : "parse failed"})` } as const;
     }
   };
+  const useCache = options.cache ?? !options.fetchImpl;
+  const trackMetrics = !options.fetchImpl;
+  const cacheKey = llmCacheKey("classification", "relation-v2", { anchor, candidate, models });
+  if (useCache) {
+    const cached = await loadLlmCache<unknown>(cacheKey);
+    if (cached) {
+      const parsed = RelationSchema.safeParse(cached.value);
+      if (parsed.success) {
+        const attempts: ModelAttempt[] = [{ model: cached.model, status: "ok", durationMs: 0 }];
+        if (trackMetrics) await recordLlmRun({ operation: "classification", cacheHit: true, status: "ok", model: cached.model, attempts, latencyMs: Date.now() - startedAt });
+        return { status: "ok", model: cached.model, hypothesis: parsed.data, attempts, cached: true };
+      }
+    }
+  }
   const completion = await chatCompletionWithFallback({
     apiKey,
     baseUrl,
@@ -172,9 +191,15 @@ export async function analyzeRelationWithQwen(
     validateContent: (content) => decode(content).error,
   });
   if (completion.status !== "ok" || !completion.content) {
+    if (trackMetrics) await recordLlmRun({ operation: "classification", cacheHit: false, status: "error", model: completion.model, attempts: completion.attempts, latencyMs: Date.now() - startedAt });
     return { status: "error", model: completion.model, reason: completion.reason, attempts: completion.attempts };
   }
   const decoded = decode(completion.content);
-  if (!decoded.parsed) return { status: "error", model: completion.model, reason: decoded.error, attempts: completion.attempts };
-  return { status: "ok", model: completion.model, hypothesis: decoded.parsed.data, attempts: completion.attempts };
+  if (!decoded.parsed) {
+    if (trackMetrics) await recordLlmRun({ operation: "classification", cacheHit: false, status: "error", model: completion.model, attempts: completion.attempts, latencyMs: Date.now() - startedAt });
+    return { status: "error", model: completion.model, reason: decoded.error, attempts: completion.attempts };
+  }
+  if (useCache) await storeLlmCache(cacheKey, "classification", decoded.parsed.data, completion.model);
+  if (trackMetrics) await recordLlmRun({ operation: "classification", cacheHit: false, status: "ok", model: completion.model, attempts: completion.attempts, latencyMs: Date.now() - startedAt });
+  return { status: "ok", model: completion.model, hypothesis: decoded.parsed.data, attempts: completion.attempts, cached: false };
 }

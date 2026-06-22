@@ -45,6 +45,7 @@ export async function GET(req: Request) {
         status: result.status,
         relations: result.relations?.length ?? 0,
         written: result.candidateSnapshotsWritten ?? 0,
+        llm: result.llm,
       };
     } catch (error) {
       return { query: job.query, eventSlug: job.eventSlug, status: "error", error: error instanceof Error ? error.message : "unknown error", written: 0 };

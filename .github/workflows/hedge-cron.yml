@@ -51,6 +51,8 @@ jobs:
       QWEN_EMBED_MODEL: ${{ vars.QWEN_EMBED_MODEL }}
       QWEN_RELATION_TIMEOUT_MS: ${{ vars.QWEN_RELATION_TIMEOUT_MS }}
       HEDGE_ENABLE_SEMANTIC_EMBEDDINGS: ${{ vars.HEDGE_ENABLE_SEMANTIC_EMBEDDINGS }}
+      HEDGE_RELATION_JOB_CONCURRENCY: ${{ vars.HEDGE_RELATION_JOB_CONCURRENCY }}
+      HEDGE_LLM_CACHE_TTL_HOURS: ${{ vars.HEDGE_LLM_CACHE_TTL_HOURS }}
       PORT: "3000"
     steps:
       - uses: actions/checkout@v4
@@ -124,8 +126,11 @@ jobs:
             -d '{"query":"France wins the World Cup","eventSlug":"world-cup-winner","topK":12}')
           echo "response bytes:             $(printf '%s' "$body" | wc -c | tr -d ' ')"
           echo "mechanism-graph signatures: $(printf '%s' "$body" | grep -oE 'mechanismGraph|mechanismType|anchorEventClass|cross_entity|cross_domain' | wc -l | tr -d ' ')"
-          echo "llm-method markers:         $(printf '%s' "$body" | grep -oE '"method":"llm"' | wc -l | tr -d ' ')"
+          llm_markers=$(printf '%s' "$body" | grep -oE '"classifyMethod":"llm"' | wc -l | tr -d ' ')
+          echo "llm-classification markers: $llm_markers"
+          printf '%s' "$body" | grep -oE '"classification":\{[^}]{0,500}' | head -1 || true
           printf '%s' "$body" | grep -oE '"error":"[^"]{0,80}' | head -1 || true
+          [ "$llm_markers" -gt 0 ] || { echo "::error::discover returned no LLM-classified candidate"; exit 1; }
           echo "::endgroup::"
 
       - name: Primary LLM REALISTIC probe (manual only — mimics the app's exact request)
@@ -156,6 +161,13 @@ jobs:
         run: |
           echo "/api/diag/qwen (runs ordered model fallback incl. Zod validation):"
           curl -s --max-time 180 -H "authorization: Bearer ${CRON_SECRET}" "http://localhost:3000/api/diag/qwen"
+          echo
+
+      - name: Data accumulation and LLM health
+        if: always()
+        run: |
+          echo "/api/diag/stats (calibration milestones, cache and fallback health):"
+          curl -s --max-time 30 -H "authorization: Bearer ${CRON_SECRET}" "http://localhost:3000/api/diag/stats"
           echo
 
       - name: Server log (qwen/error lines, secret-filtered)

@@ -68,6 +68,7 @@ position → lib/polymarket (resolve + normalize book) → outcome partition (de
 cron → /api/cron/snapshot → book_snapshot (the moat)
 cron → /api/cron/settle → branch-normalized association_observation
 soft candidate → Qwen hypothesis → settled-pair calibration → robust association optimizer
+                         ↘ PostgreSQL LLM cache + latency/fallback metrics
 ```
 
 The optional hybrid soft-association framework lives in `lib/association`. `/api/association` is a
@@ -75,6 +76,11 @@ hypothesis-only public analysis surface; actionable recommendations run through 
 which reads trusted settlement calibration. With no Qwen key it fails open for product availability
 but fail-closed for recommendations: semantic hypotheses are simply ineligible until calibrated. See
 [`ASSOCIATION_ENGINE.md`](ASSOCIATION_ENGINE.md).
+
+Repeated LLM recall/classification inputs are cached for seven days by default, including across
+stateless GitHub Action runs when `DATABASE_URL` is configured. `/api/diag/stats` reports cache hits,
+model fallback/latency health, pending frozen pairs, and 100/300/500/1000 independent-cluster
+calibration milestones. Neither cache metadata nor metrics store prompts, API keys, or credentials.
 
 `lib/types.ts` is the single contract; the fee function and the go/no-go verdict each
 live in exactly one place. See the tech spec for the full design and the verification

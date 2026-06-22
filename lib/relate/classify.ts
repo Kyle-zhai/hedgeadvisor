@@ -108,19 +108,31 @@ export function hypothesisToClassification(h: RelationHypothesis): PairClassific
   };
 }
 
-async function llmClassify(pair: CandidatePair): Promise<PairClassification | null> {
+async function llmClassify(pair: CandidatePair): Promise<{ classification: PairClassification | null; attempts?: PairClassification["llmAttempts"]; reason?: string }> {
   const res = await analyzeRelationWithQwen(
     { title: `${pair.a.title} — ${pair.a.marketTitle}`, rules: pair.a.resolutionCriteria },
     { title: `${pair.b.title} — ${pair.b.marketTitle}`, rules: pair.b.resolutionCriteria },
   );
   if (res.status !== "ok" || !res.hypothesis) {
     if (res.status === "error") console.error(`[llmClassify] ${pair.a.title}↔${pair.b.title}: ${res.reason}`);
-    return null; // disabled/error ⇒ fall through to heuristic
+    return { classification: null, attempts: res.attempts, reason: res.reason }; // disabled/error ⇒ heuristic
   }
-  return { ...hypothesisToClassification(res.hypothesis), llmModel: res.model };
+  return {
+    classification: {
+      ...hypothesisToClassification(res.hypothesis),
+      llmModel: res.model,
+      llmAttempts: res.attempts,
+      llmCacheHit: res.cached,
+    },
+    attempts: res.attempts,
+  };
 }
 
 /** Classify one candidate pair: rules → LLM → heuristic. */
 export async function classifyPair(pair: CandidatePair): Promise<PairClassification> {
-  return ruleClassify(pair) ?? (await llmClassify(pair)) ?? heuristicClassify(pair);
+  const ruled = ruleClassify(pair);
+  if (ruled) return ruled;
+  const llm = await llmClassify(pair);
+  if (llm.classification) return llm.classification;
+  return { ...heuristicClassify(pair), llmAttempts: llm.attempts, llmFailureReason: llm.reason };
 }

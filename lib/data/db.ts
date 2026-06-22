@@ -16,8 +16,9 @@ export type Sql = {
 };
 
 let _sql: Sql | null = null;
-let _initTried = false;
+let _sqlPromise: Promise<Sql | null> | null = null;
 let _schemaEnsured = false;
+let _schemaPromise: Promise<void> | null = null;
 
 export function dbEnabled(): boolean {
   return Boolean(process.env.DATABASE_URL);
@@ -27,24 +28,32 @@ export function dbEnabled(): boolean {
 export async function getSql(): Promise<Sql | null> {
   if (!dbEnabled()) return null;
   if (_sql) return _sql;
-  if (_initTried) return null;
-  _initTried = true;
-  try {
-    const mod = await import("postgres");
-    const postgres = (mod as { default: (url: string, opts?: unknown) => unknown }).default;
-    // `postgres` ships loose types; cast once here at the boundary to our minimal Sql shape.
-    _sql = postgres(process.env.DATABASE_URL as string, { max: 3, idle_timeout: 20 }) as unknown as Sql;
-    return _sql;
-  } catch {
-    return null;
-  }
+  if (_sqlPromise) return _sqlPromise;
+  _sqlPromise = (async () => {
+    try {
+      const mod = await import("postgres");
+      const postgres = (mod as { default: (url: string, opts?: unknown) => unknown }).default;
+      // `postgres` ships loose types; cast once here at the boundary to our minimal Sql shape.
+      _sql = postgres(process.env.DATABASE_URL as string, { max: 3, idle_timeout: 20 }) as unknown as Sql;
+      return _sql;
+    } catch {
+      return null;
+    }
+  })();
+  return _sqlPromise;
 }
 
 /** Run the schema DDL at most once per process (idempotent + avoids per-minute churn). */
 export async function ensureSchema(sql: Sql): Promise<void> {
   if (_schemaEnsured) return;
-  await sql.unsafe(SCHEMA_SQL);
-  _schemaEnsured = true;
+  if (_schemaPromise) return _schemaPromise;
+  _schemaPromise = (async () => {
+    await sql.unsafe(SCHEMA_SQL);
+    _schemaEnsured = true;
+  })().finally(() => {
+    if (!_schemaEnsured) _schemaPromise = null;
+  });
+  return _schemaPromise;
 }
 
 export const SCHEMA_SQL = `
@@ -140,4 +149,29 @@ ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS anchor_event
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS anchor_venue text;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS candidate_event_key text;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS candidate_venue text;
+
+-- Persistent LLM cache survives stateless GitHub Action/server restarts. Inputs are SHA-256 keys;
+-- prompts and API credentials are never stored. The run table measures latency/fallback/cache health.
+CREATE TABLE IF NOT EXISTS llm_relation_cache (
+  cache_key text PRIMARY KEY,
+  operation text NOT NULL,
+  payload jsonb NOT NULL,
+  model text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  hits integer NOT NULL DEFAULT 0,
+  last_hit_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS llm_relation_cache_expiry_idx ON llm_relation_cache (expires_at);
+CREATE TABLE IF NOT EXISTS llm_relation_run (
+  id bigserial PRIMARY KEY,
+  operation text NOT NULL,
+  cache_hit boolean NOT NULL DEFAULT false,
+  status text NOT NULL CHECK (status IN ('ok', 'error', 'disabled')),
+  model text,
+  attempts jsonb,
+  latency_ms integer NOT NULL CHECK (latency_ms >= 0),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS llm_relation_run_created_idx ON llm_relation_run (created_at DESC);
 `;
