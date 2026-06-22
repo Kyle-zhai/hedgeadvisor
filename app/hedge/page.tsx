@@ -158,6 +158,17 @@ export default function HedgePage() {
   const directionUnknownCount = llmRels.length - exploratory.length;
   const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
 
+  // The recommendation card is ALWAYS rendered when there is an anchor — config when a qualifying
+  // hedge exists, an explicit No Action otherwise — so the core area never silently disappears.
+  const rh = data?.robustHedge;
+  const hasHedge = optimalLegs.length > 0;
+  const stakeNum = Number(stakeUsd) > 0 ? Number(stakeUsd) : 20;
+  const currentMaxLoss = stakeNum; // unhedged: you lose your stake if the bet fails
+  const hedgedMaxLoss = rh?.modeledLossIfPrimaryFailsUsd ?? stakeNum; // = stake when no hedge applies
+  const hedgeSpend = rh?.spendUsd ?? 0;
+  const keptIfWin = rh?.keepIfPrimaryWinsFloorUsd ?? (anchor ? stakeNum * (1 - anchor.probYes) / Math.max(0.01, anchor.probYes) : 0);
+  const noActionReason = rh?.reason ?? "No candidate qualified after the evidence, uncertainty, price, and liquidity gates.";
+
   return (
     <div className="page">
       <div className="topbar">
@@ -223,47 +234,52 @@ export default function HedgePage() {
             <div className="metric"><div className="label">Recall</div><div className="value" style={{ fontSize: 18 }}>{data?.semanticRecall ? "Semantic" : "Lexical"}</div><div className="detail">{data?.semanticRecall ? "embeddings on" : "set an AI key for embeddings"}</div></div>
           </div>
 
-          {/* Layer 1 — the trustworthy, actionable hedge: logically certain or settlement-calibrated only. */}
-          {data?.robustHedge && (
-            <div className="card" style={{ borderColor: data.robustHedge.status === "RECOMMEND" && optimalLegs.length ? "var(--go)" : "var(--border-strong)" }}>
-              <div className="cardtitle">
-                Optimal hedge <span className="hint">settlement-calibrated cross-event legs only · trustworthy</span>
-              </div>
-              <p className="sub" style={{ marginTop: 6 }}>{data.robustHedge.reason}</p>
-              {optimalLegs.length > 0 ? (
-                <>
-                  <div className="metric-strip" style={{ marginTop: 4 }}>
-                    <div className="metric"><div className="label">Spend</div><div className="value">${data.robustHedge.spendUsd.toFixed(2)}</div><div className="detail">budget ${data.robustHedge.budgetUsd.toFixed(2)}</div></div>
-                    <div className="metric"><div className="label">Modeled loss if fails</div><div className="value pnl-pos">${data.robustHedge.modeledLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">after the hedge</div></div>
-                    <div className="metric"><div className="label">Strict worst loss</div><div className="value pnl-neg">${data.robustHedge.strictWorstLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">the true floor; soft/inferred legs can pay $0</div></div>
-                    <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${data.robustHedge.keepIfPrimaryWinsFloorUsd.toFixed(2)}</div></div>
-                  </div>
-                  <div className="table-wrap" style={{ marginTop: 8 }}>
-                    <table style={{ minWidth: 560 }}>
-                      <thead><tr><th>Leg</th><th>Provenance</th><th style={{ textAlign: "right" }}>Spend</th><th style={{ textAlign: "right" }}>Pay if fail</th><th style={{ textAlign: "right" }}>Loss ↓</th></tr></thead>
-                      <tbody>{optimalLegs.map((a) => (
-                        <tr key={a.candidateId}>
-                          <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /></td>
-                          <td><span className={`badge ${a.provenance === "ANALYTIC" ? "GO" : "PARTIAL"}`}>{a.provenance}</span></td>
-                          <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
-                          <td style={{ textAlign: "right" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
-                          <td style={{ textAlign: "right" }} className="pnl-pos">${a.modeledLossReductionUsd.toFixed(2)}</td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                </>
-              ) : (
-                <p className="sub" style={{ margin: "8px 0 0" }}>No settlement-calibrated cross-event hedge yet. The honest answer is to hold the bet as is, or weigh the exploratory layer below at your own risk.</p>
-              )}
-              {data.robustHedge.rejected.length > 0 && (
-                <details style={{ marginTop: 8 }}>
-                  <summary className="muted">Rejected candidates ({data.robustHedge.rejected.length}) · why they are not recommended</summary>
-                  <div style={{ marginTop: 6 }}>{data.robustHedge.rejected.slice(0, 8).map((r) => <div key={r.candidateId} className="muted" style={{ fontSize: 12 }}>· {r.candidateId}: {r.reason}</div>)}</div>
-                </details>
-              )}
+          {/* Layer 1 — the trustworthy hedge recommendation. ALWAYS rendered: config when a qualifying
+              calibrated/structural hedge exists, an explicit No Action otherwise, so the core
+              recommendation area never silently disappears. */}
+          <div className="card" style={{ borderColor: hasHedge ? "var(--go)" : "var(--border-strong)" }}>
+            <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              Optimal hedge <span className="hint">settlement-calibrated cross-event legs only · trustworthy</span>
+              {hasHedge
+                ? <span className="badge GO" style={{ marginLeft: "auto" }}>RECOMMENDED</span>
+                : <span className="badge" style={{ marginLeft: "auto", background: "var(--surface-2,#f4f4f3)", color: "var(--muted)" }}>NO ACTION</span>}
             </div>
-          )}
+            <p className="sub" style={{ marginTop: 6 }}>{hasHedge ? rh?.reason : noActionReason}</p>
+            <div className="metric-strip" style={{ marginTop: 4 }}>
+              <div className="metric"><div className="label">Current max loss</div><div className="value pnl-neg">${currentMaxLoss.toFixed(2)}</div><div className="detail">unhedged, if your bet fails</div></div>
+              <div className="metric"><div className="label">Hedged max loss</div><div className={`value ${hasHedge ? "pnl-pos" : ""}`}>${hedgedMaxLoss.toFixed(2)}</div><div className="detail">{hasHedge ? "after the hedge" : "no hedge applied"}</div></div>
+              <div className="metric"><div className="label">Hedge spend</div><div className="value">${hedgeSpend.toFixed(2)}</div><div className="detail">{rh ? `budget $${rh.budgetUsd.toFixed(2)}` : "nothing to buy"}</div></div>
+              <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${keptIfWin.toFixed(2)}</div><div className="detail">winnings, after any cost</div></div>
+            </div>
+            {hasHedge ? (
+              <div className="table-wrap" style={{ marginTop: 8 }}>
+                <table style={{ minWidth: 560 }}>
+                  <thead><tr><th>Leg</th><th>Provenance</th><th style={{ textAlign: "right" }}>Spend</th><th style={{ textAlign: "right" }}>Pay if fail</th><th style={{ textAlign: "right" }}>Loss ↓</th></tr></thead>
+                  <tbody>{optimalLegs.map((a) => (
+                    <tr key={a.candidateId}>
+                      <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /></td>
+                      <td><span className={`badge ${a.provenance === "ANALYTIC" ? "GO" : "PARTIAL"}`}>{a.provenance}</span></td>
+                      <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
+                      <td style={{ textAlign: "right" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
+                      <td style={{ textAlign: "right" }} className="pnl-pos">${a.modeledLossReductionUsd.toFixed(2)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="note-box" style={{ marginTop: 8 }}>
+                No settlement-calibrated cross-event hedge qualifies right now, so the honest recommendation is No Action: hold the
+                bet as is, or weigh the exploratory layer below at your own risk. This stays empty until settled-outcome data proves
+                a leg pays more often when your bet fails — it is a designed answer, not a missing result.
+              </div>
+            )}
+            {rh && rh.rejected.length > 0 && (
+              <details style={{ marginTop: 8 }}>
+                <summary className="muted">Rejected candidates ({rh.rejected.length}) · why they are not recommended</summary>
+                <div style={{ marginTop: 6 }}>{rh.rejected.slice(0, 8).map((r) => <div key={r.candidateId} className="muted" style={{ fontSize: 12 }}>· {r.candidateId}: {r.reason}</div>)}</div>
+              </details>
+            )}
+          </div>
 
           {/* Layer 2 — mechanism hypotheses only. They suggest a side to investigate but carry no
               conditional payoff, spend, or loss-reduction claim until historical calibration passes. */}

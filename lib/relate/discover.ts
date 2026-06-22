@@ -291,17 +291,17 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const keepFraction = Math.min(1, Math.max(0, req.keepFraction ?? 0.5));
   const pricingBudgetUsd = Math.max(1, (1 - keepFraction) * stakeUsd * (1 - entryPrice) / entryPrice);
   const optimizerCandidates = await buildOptimizerCandidates(anchor, classified, pricingBudgetUsd).catch(() => []);
-  let robustHedge: RobustOptimizerResult | undefined;
-  if (optimizerCandidates.length > 0) {
-    robustHedge = optimizeRobustHedge({
-      stakeUsd,
-      primaryPrice: entryPrice,
-      keepFraction,
-      conservatism: Math.min(1, Math.max(0, req.conservatism ?? 0.5)),
-      maxLegs: Math.max(1, Math.floor(req.maxLegs ?? 3)),
-      candidates: optimizerCandidates,
-    });
-  }
+  // Always return an optimizer result, including when no candidate survives the evidence/pricing
+  // adapter. The UI must show an explicit NO_ACTION decision instead of silently omitting the
+  // product's primary recommendation card.
+  const robustHedge: RobustOptimizerResult = optimizeRobustHedge({
+    stakeUsd,
+    primaryPrice: entryPrice,
+    keepFraction,
+    conservatism: Math.min(1, Math.max(0, req.conservatism ?? 0.5)),
+    maxLegs: Math.max(1, Math.floor(req.maxLegs ?? 3)),
+    candidates: optimizerCandidates,
+  });
 
   return {
     status: "ok",
