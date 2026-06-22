@@ -1,7 +1,11 @@
+// Fast, reliable models first; MiniMax-M2.5 last as a quality fallback. Telemetry (2026-06-22) showed
+// MiniMax at ~50% timeout / 64s avg / 26% first-try success while qwen3.6-flash is ~7s with no timeouts;
+// since the schema-coercion fix lets the fast models parse reliably, leading with them cuts per-pair
+// latency and avoids MiniMax's 90s thinking timeout on the hot path. Override with QWEN_RELATION_MODELS.
 export const DEFAULT_RELATION_MODEL_CHAIN = [
-  "MiniMax-M2.5",
   "qwen3.6-flash",
   "qwen3-max-preview",
+  "MiniMax-M2.5",
 ] as const;
 
 export interface ModelAttempt {
