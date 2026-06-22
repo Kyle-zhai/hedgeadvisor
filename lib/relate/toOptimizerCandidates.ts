@@ -5,12 +5,12 @@
  * POSITIVE-SUM ONLY. A hedge here is never a short of the user's own bet (no anchor-NO complement, no
  * cross-venue equivalent NO, no exclusive rival, no same-entity subset). Every leg is a standalone
  * positive bet on a DIFFERENT event that tends to pay when the anchor fails, so ideally both win and
- * at worst one wins. Two confidence tiers feed the optimizer:
+ * at worst one wins. One evidence-bearing soft tier feeds the optimizer:
  *
  *   CALIBRATED — settled-outcome history (loadConditionalCounts on a stable relation_key) gives a
  *                beta-binomial credible interval where the leg pays MORE often when the anchor fails.
- *   HYPOTHESIS — Qwen mechanism graph, no calibration yet: admitted as an INFERRED low-confidence leg
- *                (edge assumed from the mechanism) only below balanced conservatism, never as a guarantee.
+ *   HYPOTHESIS — Qwen mechanism graph, no calibration yet: retained for explanation/audit, but NEVER
+ *                assigned a payoff probability or admitted to sizing.
  *
  * Qwen DISCOVERS (hypothesis), settled DATA PROVES (calibrated), the optimizer DECIDES (cost = book
  * all-in price, capacity = depth, uncertainty = credible bounds).
@@ -23,14 +23,12 @@ import { calibrateConditionalPayoff, loadConditionalCounts, type OptimizerCandid
 import { mechanismSignature, relationKey, relationRole } from "./relationKey";
 import type { CandidatePair, NormalizedMarket, PairClassification } from "./types";
 
-const NOMINAL_BUDGET = 50; // near-touch pricing probe size (USD)
 const MAX_HYPOTHESIS = 8; // cap rejected legs shown (transparency), per relation-family dedup
-const INFERRED_REL_EDGE = 0.4; // max ASSUMED relative edge of an inferred mechanism leg (at confidence 1)
 const CREDIBLE_LEVEL = 0.95;
 const MIN_SAMPLES = 20;
 
 /** All-in executable price + capacity for BUYING one side of a market, off its real book. */
-async function priceSide(m: NormalizedMarket, side: "yes" | "no"): Promise<{ price: number; capacityUsd: number } | null> {
+async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetUsd: number): Promise<{ price: number; capacityUsd: number } | null> {
   const token = side === "no" ? m.noTokenId : m.yesTokenId;
   let book: Book | null = null;
   if (m.venue === "polymarket") {
@@ -39,13 +37,20 @@ async function priceSide(m: NormalizedMarket, side: "yes" | "no"): Promise<{ pri
     book = await fetchKalshiBook(token, side).catch(() => null);
   }
   if (!book) return null;
-  const fill = walkBookBuyBudgetCapped(book, NOMINAL_BUDGET, 3);
+  // Walk the amount this plan could actually deploy. A fixed probe (formerly $50) understates the
+  // average price whenever a larger plan climbs multiple levels inside the accepted price band.
+  const fill = walkBookBuyBudgetCapped(book, Math.max(1, budgetUsd), 3);
   const p = fill.avgFillPrice ?? book.bestAsk;
   if (!Number.isFinite(p) || p <= 0 || p >= 1) return null;
   const perShareFee = m.venue === "kalshi"
     ? kalshiTakerFeeUsd(1, p, m.feeRate / 0.07)
     : takerFeeUsd(1, p, "buy", { rate: m.feeRate, exponent: m.feeExponent, takerOnly: m.feeTakerOnly });
-  return { price: Math.min(0.999, p + perShareFee), capacityUsd: Number(bandDepthUsd(book, 3).toFixed(2)) };
+  const allIn = Math.min(0.999, p + perShareFee);
+  const rawCapacity = bandDepthUsd(book, 3);
+  const capacityUsd = fill.filledShares > 0
+    ? Math.min(rawCapacity + perShareFee * fill.filledShares, fill.filledShares * allIn)
+    : 0;
+  return { price: allIn, capacityUsd: Number(capacityUsd.toFixed(2)) };
 }
 
 /** The side you'd BUY to hedge: a leg that pays when the anchor FAILS. A POSITIVELY-correlated leg
@@ -62,7 +67,7 @@ export interface ClassifiedCandidate {
   cls: PairClassification;
 }
 
-export async function buildOptimizerCandidates(anchor: NormalizedMarket, classified: ClassifiedCandidate[]): Promise<OptimizerCandidate[]> {
+export async function buildOptimizerCandidates(anchor: NormalizedMarket, classified: ClassifiedCandidate[], pricingBudgetUsd = 50): Promise<OptimizerCandidate[]> {
   // POSITIVE-SUM hedges only. We never short the user's own bet, so there is no anchor-NO complement,
   // no cross-venue equivalent NO, no mutually-exclusive rival, and no same-entity subset here. Every
   // leg is a standalone positive bet on a DIFFERENT event that tends to pay when the anchor fails.
@@ -76,7 +81,7 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
     const m = pair.b;
 
     // Cross-event positive-sum hedge: a standalone bet on a DIFFERENT event, keyed by a stable
-    // relation_key. Settled history calibrates it; otherwise it is admitted as inferred low-confidence.
+    // relation_key. Settled history calibrates it; otherwise it remains display-only.
     const preferredSide = hedgeSide(cls);
     const role = relationRole(anchor.title, {
       entity: m.title,
@@ -88,11 +93,11 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
     // and anything unrelated. A hedge leg must resolve on a DIFFERENT event from the anchor.
     if (role === "unrelated" || role === "rival" || role === "same_entity" || m.eventKey === anchor.eventKey) continue;
     const graph = cls.hypothesis?.mechanismGraph;
-    const mechanism = mechanismSignature(graph);
+    const mechanism = mechanismSignature(graph, cls.hypothesis?.direction);
     const reusableCohort = !graph || graph.portability !== "INSTANCE_ONLY";
     const anchorFamily = graph?.anchorEventClass ?? anchor.eventFamily;
     const candidateFamily = graph?.candidateEventClass ?? m.eventFamily;
-    const predicate = graph ? "mechanism" : m.predicate;
+    const predicate = m.predicate;
     // Evaluate BOTH sides from settlement evidence. Qwen may propose a direction for recall/display,
     // but it cannot suppress the side that historical outcomes actually prove is the hedge.
     const sides: Array<"yes" | "no"> = preferredSide
@@ -104,7 +109,7 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
       const counts = reusableCohort ? await loadConditionalCounts(key).catch(() => null) : null;
       const calibration = counts ? calibrateConditionalPayoff(counts, CREDIBLE_LEVEL, MIN_SAMPLES) : undefined;
       if (!calibration?.sufficientEvidence) continue;
-      const priced = await priceSide(m, side);
+      const priced = await priceSide(m, side, pricingBudgetUsd);
       if (!priced) continue;
       foundCalibrated = true;
       out.push({
@@ -124,25 +129,8 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
       hypothesisCount++;
       const side = preferredSide;
       const key = relationKey(anchorFamily, candidateFamily, predicate, role, side, mechanism);
-      // A coherent cross-event/cross-domain MECHANISM graph ⇒ admit as an INFERRED low-confidence leg
-      // (priced off the REAL book; the edge over the market price is ASSUMED ∝ the LLM's confidence,
-      // capped relative to price so a cheap leg can't game it). The optimizer admits it only below
-      // balanced conservatism and labels it inferred. Without a graph it stays a display-only HYPOTHESIS.
-      const confidence = graph ? Math.min(1, Math.max(0, cls.hypothesis?.confidence ?? 0)) : 0;
-      if (graph && confidence > 0) {
-        const priced = await priceSide(m, side);
-        if (priced && priced.price > 0 && priced.price < 1) {
-          out.push({
-            id: `inf:${key}:${m.id}`, label: `${side === "no" ? "NOT " : ""}${m.title} · ${m.venue}`,
-            venue: m.venue, side, price: priced.price, maxSpendUsd: priced.capacityUsd,
-            provenance: "HYPOTHESIS",
-            inferredPayoff: { payGivenFail: Math.min(0.95, priced.price * (1 + confidence * INFERRED_REL_EDGE)), payGivenWin: priced.price, confidence },
-            associationGroup: `soft-market:${m.id}`,
-          });
-          continue;
-        }
-      }
-      // display-only hypothesis (no mechanism graph, or unpriced): the optimizer rejects it.
+      // A classification confidence is not a conditional payoff probability. Keep the hypothesis in
+      // the audit/rejection output, but only settled calibration may later authorize sizing.
       const mid = side === "no" ? 1 - m.probYes : m.probYes;
       if (mid > 0 && mid < 1) out.push({ id: `hyp:${key}:${m.id}`, label: `${side === "no" ? "NOT " : ""}${m.title} · ${m.venue}`, venue: m.venue, side, price: Number(mid.toFixed(4)), provenance: "HYPOTHESIS" });
     }

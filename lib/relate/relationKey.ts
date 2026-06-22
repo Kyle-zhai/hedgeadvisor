@@ -12,9 +12,10 @@
 import { norm } from "@/lib/polymarket/text";
 import { sameEntityStrict } from "@/lib/link/match";
 import type { MechanismGraph } from "@/lib/association";
+import { canonicalEventClass, canonicalMechanismSignature } from "./ontology";
 
 /** Bump when eventFamily/predicate/role/weighting logic changes — old samples must NOT be reused. */
-export const TEMPLATE_VERSION = 4;
+export const TEMPLATE_VERSION = 5;
 
 /** The ENTITY relationship between an anchor (team) and a candidate — so unlike pairings never pool. */
 export type RelationRole = "same_entity" | "entity_event" | "event_linked" | "cross_entity" | "cross_domain" | "same_team_player" | "rival" | "global_event" | "unrelated";
@@ -44,9 +45,8 @@ export function relationRole(anchorEntity: string, candidate: { entity: string; 
 }
 
 /** Stable, bounded cohort component. Free-form graph labels never enter a calibration key. */
-export function mechanismSignature(graph?: MechanismGraph): string | undefined {
-  if (!graph || graph.portability === "INSTANCE_ONLY") return undefined;
-  return [graph.mechanismType, graph.scope, graph.timeOrder, graph.portability].map((x) => x.toLowerCase()).join(".");
+export function mechanismSignature(graph?: MechanismGraph, direction?: string): string | undefined {
+  return canonicalMechanismSignature(graph, direction);
 }
 
 const FAMILY_RULES: { re: RegExp; family: string }[] = [
@@ -105,5 +105,8 @@ export function predicateOf(marketTitle: string, rules: string, outcomeLabel?: s
 
 /** Stable relation key: anchorFamily -> candidateFamily:predicate -> role -> side @ version. */
 export function relationKey(anchorFamily: string, candidateFamily: string, predicate: string, role: RelationRole, side: "yes" | "no", mechanism?: string): string {
-  return `${anchorFamily}->${candidateFamily}:${predicate}->${role}${mechanism ? `:m=${mechanism}` : ""}->${side}@v${TEMPLATE_VERSION}`;
+  const anchorClass = canonicalEventClass(anchorFamily, anchorFamily);
+  const candidateClass = canonicalEventClass(candidateFamily, candidateFamily);
+  const stablePredicate = norm(predicate).replace(/[^a-z0-9:=]+/g, "_").replace(/^_+|_+$/g, "") || "generic";
+  return `${anchorClass}->${candidateClass}:${stablePredicate}->${role}${mechanism ? `:m=${mechanism}` : ""}->${side}@v${TEMPLATE_VERSION}`;
 }

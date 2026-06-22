@@ -32,6 +32,7 @@ interface DiscoveredRelation {
   classifyMethod: "rule" | "llm" | "heuristic";
   relation: EventRelation;
   mechanismGraph?: { mechanismType: string; scope: string; timeOrder: string; portability: string };
+  hypothesis?: { relation: string; direction: string; mechanism: string; confidence: number; requiresCalibration: boolean };
 }
 interface RobustAllocation {
   candidateId: string;
@@ -69,9 +70,6 @@ interface DiscoverResult {
 }
 
 const cents = (v: number) => `${Math.round(v * 100)}¢`;
-// A companion bet only qualifies as a hedge if it is MEANINGFULLY negatively correlated (pays when
-// your bet fails). Weaker than this is noise or an amplifier, and is hidden from the companion layer.
-const MIN_HEDGE_CORRELATION = -0.15;
 const REL_LABEL: Record<RelationType, string> = { same: "Same", related: "Related", mutually_exclusive: "Exclusive", independent: "Independent" };
 const REL_BADGE: Record<RelationType, string> = { same: "PARTIAL", related: "PARTIAL", mutually_exclusive: "GO", independent: "" };
 
@@ -100,6 +98,8 @@ export default function HedgePage() {
   // Conservatism s∈[0,1]: 0 = pursue payoff (posterior mean, looser evidence); 1 = control max loss
   // (credible lower bound, strictest evidence, structural-only). Drives the robust optimizer.
   const [conservatism, setConservatism] = useState(0.5);
+  const [stakeUsd, setStakeUsd] = useState("20");
+  const [entryPrice, setEntryPrice] = useState("");
   const [data, setData] = useState<DiscoverResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -113,7 +113,20 @@ export default function HedgePage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch("/api/discover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: q.trim(), topK: 16, conservatism: s }), signal: controller.signal });
+      const stake = Number(stakeUsd);
+      const entry = Number(entryPrice);
+      const res = await fetch("/api/discover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          query: q.trim(),
+          topK: 16,
+          conservatism: s,
+          stakeUsd: Number.isFinite(stake) && stake > 0 ? stake : 20,
+          ...(Number.isFinite(entry) && entry > 0 && entry < 1 ? { entryPrice: entry } : {}),
+        }),
+        signal: controller.signal,
+      });
       const json: DiscoverResult = await res.json();
       if (!res.ok) throw new Error(json.error || "Hedge search failed");
       if (requestRef.current !== controller) return;
@@ -125,7 +138,7 @@ export default function HedgePage() {
     } finally {
       if (requestRef.current === controller) setLoading(false);
     }
-  }, []);
+  }, [entryPrice, stakeUsd]);
 
   useEffect(() => {
     // Seed the search from ?q= (e.g. the Markets "Hedge" row link or a saved History record).
@@ -137,20 +150,13 @@ export default function HedgePage() {
   }, []);
 
   const anchor = data?.anchor;
-  // Two-layer split: trustworthy legs (logically certain or settlement-proven) vs exploratory
-  // cross-event mechanisms (model-inferred, never calibrated). Honesty separation is the point.
+  // Only structural or settlement-proven allocations can appear in the optimizer result. LLM
+  // hypotheses remain a separate, unsized discovery list.
   const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED"), [data]);
-  const inferredLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "HYPOTHESIS"), [data]);
-  // A companion hedge must PAY WHEN YOUR BET FAILS, i.e. it must be negatively correlated. Positively
-  // correlated markets (same-nation player props, the anchor's own progression) fail TOGETHER with
-  // your bet, so they amplify rather than hedge. Gate them OUT of the companion layer (eval fix).
   const llmRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod === "llm"), [data]);
-  // A companion must be MEANINGFULLY negatively correlated to qualify (eval 2026-06-21: a bare <0 gate
-  // admitted ~0 noise). Anything weaker is hidden — weak/zero or positively-correlated (amplifier).
-  const crossEvent = useMemo(() => llmRels.filter((r) => r.relation.correlation <= MIN_HEDGE_CORRELATION), [llmRels]);
-  const amplifierCount = useMemo(() => llmRels.filter((r) => r.relation.correlation > MIN_HEDGE_CORRELATION).length, [llmRels]);
+  const exploratory = useMemo(() => llmRels.filter((r) => r.hypothesis?.direction === "POSITIVE" || r.hypothesis?.direction === "NEGATIVE"), [llmRels]);
+  const directionUnknownCount = llmRels.length - exploratory.length;
   const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
-  const inferredSpend = inferredLegs.reduce((s, a) => s + a.spendUsd, 0);
 
   return (
     <div className="page">
@@ -177,6 +183,14 @@ export default function HedgePage() {
             Evidence conservatism {conservatism <= 0.33 ? "· aggressive" : conservatism >= 0.8 ? "· conservative" : "· balanced"}
             <div className="range-control"><input type="range" min={0} max={1} step={0.05} value={conservatism} onChange={(e) => { const s = Number(e.target.value); setConservatism(s); run(query, s); }} /></div>
             <span className="combo-hint">{conservatism <= 0.33 ? "posterior mean · admits strong-calibrated soft legs" : conservatism >= 0.98 ? "strict posture · structural cover only" : conservatism >= 0.8 ? "credible lower bound · soft legs require separated intervals" : "95% interval · evidence-gated soft legs"} · (does not change the hedge budget)</span>
+          </label>
+          <label className="combo-label" style={{ flex: 0.8, minWidth: 110 }}>Stake USD
+            <input value={stakeUsd} onChange={(e) => setStakeUsd(e.target.value)} inputMode="decimal" aria-label="Position cost in USD" />
+            <span className="combo-hint">Your actual cost.</span>
+          </label>
+          <label className="combo-label" style={{ flex: 0.8, minWidth: 110 }}>Avg entry
+            <input value={entryPrice} onChange={(e) => setEntryPrice(e.target.value)} inputMode="decimal" placeholder="current" aria-label="Average entry price" />
+            <span className="combo-hint">0–1; blank uses current.</span>
           </label>
           <label className="combo-label" style={{ flex: 0 }}>&nbsp;
             <button className="primarybtn" type="submit" disabled={loading}><ShieldCheck size={15} /> Hedge</button>
@@ -219,7 +233,7 @@ export default function HedgePage() {
               {optimalLegs.length > 0 ? (
                 <>
                   <div className="metric-strip" style={{ marginTop: 4 }}>
-                    <div className="metric"><div className="label">Spend</div><div className="value">${data.robustHedge.spendUsd.toFixed(2)}</div><div className="detail">budget ${data.robustHedge.budgetUsd.toFixed(2)}{inferredSpend > 0 ? ` · incl. $${inferredSpend.toFixed(2)} exploratory` : ""}</div></div>
+                    <div className="metric"><div className="label">Spend</div><div className="value">${data.robustHedge.spendUsd.toFixed(2)}</div><div className="detail">budget ${data.robustHedge.budgetUsd.toFixed(2)}</div></div>
                     <div className="metric"><div className="label">Modeled loss if fails</div><div className="value pnl-pos">${data.robustHedge.modeledLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">after the hedge</div></div>
                     <div className="metric"><div className="label">Strict worst loss</div><div className="value pnl-neg">${data.robustHedge.strictWorstLossIfPrimaryFailsUsd.toFixed(2)}</div><div className="detail">the true floor; soft/inferred legs can pay $0</div></div>
                     <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${data.robustHedge.keepIfPrimaryWinsFloorUsd.toFixed(2)}</div></div>
@@ -251,43 +265,28 @@ export default function HedgePage() {
             </div>
           )}
 
-          {/* Layer 2 — exploratory cross-event mechanisms: model-inferred, never calibrated. Subordinate by design.
-              Only negatively-correlated (pay-when-you-fail) markets appear here; positively-correlated ones are excluded. */}
-          {(inferredLegs.length > 0 || crossEvent.length > 0 || amplifierCount > 0) && (
+          {/* Layer 2 — mechanism hypotheses only. They suggest a side to investigate but carry no
+              conditional payoff, spend, or loss-reduction claim until historical calibration passes. */}
+          {(exploratory.length > 0 || directionUnknownCount > 0) && (
             <div className="card" style={{ background: "var(--bg-subtle)" }}>
               <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 Exploratory · inferred <span className="badge PARTIAL">LOW CONFIDENCE</span>
               </div>
               <p className="sub" style={{ marginTop: 6, color: "var(--ink-2)" }}>
-                Cross-event and cross-domain mechanisms the model surfaced that tend to pay when your bet fails. Not settlement-proven,
-                not guaranteed, and not part of the optimal hedge above. For exploration only, not a hedge recommendation.
+                Cross-event and cross-domain mechanisms surfaced by the model. The side below is a qualitative hypothesis only:
+                no payoff probability, spend, or loss reduction is assigned until settled historical evidence passes calibration.
               </p>
 
-              {inferredLegs.length > 0 && (
+              {exploratory.length > 0 && (
                 <div className="table-wrap" style={{ marginTop: 4 }}>
-                  <table style={{ minWidth: 520 }}>
-                    <thead><tr><th>Inferred leg in the combo</th><th style={{ textAlign: "right" }}>Spend</th><th style={{ textAlign: "right" }}>Assumed pay if fail</th></tr></thead>
-                    <tbody>{inferredLegs.map((a) => (
-                      <tr key={a.candidateId}>
-                        <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /> <span className="badge PARTIAL">INFERRED</span></td>
-                        <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
-                        <td style={{ textAlign: "right", color: "var(--ink-2)" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              )}
-
-              {crossEvent.length > 0 && (
-                <div className="table-wrap" style={{ marginTop: inferredLegs.length > 0 ? 10 : 4 }}>
                   <table style={{ minWidth: 640 }}>
-                    <thead><tr><th>Cross-event market</th><th>Mechanism</th><th style={{ textAlign: "right" }}>φ est.</th><th>Conf.</th><th></th></tr></thead>
-                    <tbody>{crossEvent.map((r) => (
+                    <thead><tr><th>Cross-event market</th><th>Mechanism</th><th>Side to investigate</th><th>Classification confidence</th><th></th></tr></thead>
+                    <tbody>{exploratory.map((r) => (
                       <tr key={r.market.id}>
                         <td><strong>{r.market.title}</strong> <VenueTag venue={r.market.venue} short /><div style={{ color: "var(--ink-2)", fontSize: 12 }}>{r.market.marketTitle} · {cents(r.market.probYes)}</div></td>
                         <td style={{ color: "var(--ink-2)" }}>{r.mechanismGraph?.mechanismType ?? "mechanism"}{r.mechanismGraph?.scope ? ` · ${r.mechanismGraph.scope}` : ""}</td>
-                        <td style={{ textAlign: "right", color: "var(--go)" }}>{r.relation.correlation.toFixed(2)}</td>
-                        <td style={{ color: "var(--ink-2)" }}>{r.relation.confidence === "high" ? "High" : r.relation.confidence === "medium" ? "Med" : "Low"}</td>
+                        <td>{r.hypothesis?.direction === "POSITIVE" ? "Inspect NO" : "Inspect YES"}</td>
+                        <td style={{ color: "var(--ink-2)" }}>{Math.round((r.hypothesis?.confidence ?? 0) * 100)}% · relation label only</td>
                         <td style={{ textAlign: "right" }}><a className="ghostbtn" target="_blank" rel="noreferrer" href={r.market.url}><ArrowSquareOut size={13} /></a></td>
                       </tr>
                     ))}</tbody>
@@ -295,9 +294,9 @@ export default function HedgePage() {
                 </div>
               )}
 
-              {amplifierCount > 0 && (
-                <div className="note-box" style={{ marginTop: crossEvent.length > 0 || inferredLegs.length > 0 ? 10 : 4 }}>
-                  {amplifierCount} market{amplifierCount === 1 ? "" : "s"} with weak or positive correlation {amplifierCount === 1 ? "was" : "were"} hidden: a companion must be meaningfully negatively correlated (φ ≤ -0.15) to pay when your bet fails, otherwise it amplifies your exposure or does nothing. See the descriptive map below.
+              {directionUnknownCount > 0 && (
+                <div className="note-box" style={{ marginTop: exploratory.length > 0 ? 10 : 4 }}>
+                  {directionUnknownCount} additional mechanism{directionUnknownCount === 1 ? " has" : "s have"} no defensible payoff direction and therefore no suggested side.
                 </div>
               )}
             </div>
@@ -325,8 +324,8 @@ export default function HedgePage() {
         together with your bet. Two layers, read them differently. The OPTIMAL hedge is the trustworthy output: legs priced off
         the real book (cost), capped by depth (capacity), admitted only when settled-outcome calibration proves the leg pays more
         often when your bet fails (uncertainty via credible bounds). The EXPLORATORY layer is low confidence by design: cross-event
-        and cross-domain mechanisms are model-inferred, their edge is assumed (not settlement-proven), and they are shown for
-        exploration, never as a guarantee. Every leg adds to the strict worst loss because it can pay $0 in a possible state. The
+        and cross-domain mechanisms are model-inferred and shown without payoff probabilities or position sizes. Only historical
+        settlement calibration can promote one into the optimizer. Every soft leg can still pay $0 in a possible state. The
         Related-markets table is a DESCRIPTIVE map: φ is the binary correlation from the joint P(A and B), exact for structural
         relations and a Fréchet-clamped estimate otherwise; price co-movement is never used as φ.
       </div>

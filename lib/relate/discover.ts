@@ -12,13 +12,12 @@ import { listKalshiEvents, fetchKalshiMarkets } from "@/lib/kalshi";
 import { buildEventRelation, type EventRelation } from "@/lib/correlation";
 import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
-import { generateCandidates } from "./candidates";
+import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
 import { buildOptimizerCandidates } from "./toOptimizerCandidates";
 import { persistCandidateSnapshots } from "./candidateSnapshot";
 import { recallCandidatesWithQwen } from "./llmRecall";
-import { lexicalSimilarity } from "./candidates";
 import { optimizeRobustHedge, type RobustOptimizerResult } from "@/lib/association";
 import type { MechanismGraph } from "@/lib/association";
 import type { CandidatePair, NormalizedMarket } from "./types";
@@ -143,6 +142,15 @@ export interface DiscoveredRelation {
   classifyMethod: "rule" | "llm" | "heuristic";
   relation: EventRelation;
   mechanismGraph?: MechanismGraph;
+  /** LLM audit metadata only. Direction may suggest which side to inspect, but confidence never
+   *  becomes a payoff probability or position size. */
+  hypothesis?: {
+    relation: string;
+    direction: string;
+    mechanism: string;
+    confidence: number;
+    requiresCalibration: boolean;
+  };
 }
 
 export interface DiscoverResult {
@@ -166,6 +174,9 @@ export interface DiscoverRequest {
   eventSlug?: string;
   topK?: number;
   stakeUsd?: number;
+  /** User's actual average entry price. Defaults to the current de-vigged anchor probability only
+   *  when analyzing a prospective position rather than an existing holding. */
+  entryPrice?: number;
   keepFraction?: number; // win-floor k (default 0.5)
   conservatism?: number; // 0=model mean … 1=strictest credible-bound admissibility (default 0.5)
   maxLegs?: number; // default 3
@@ -190,27 +201,14 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   // Stage 1: candidate generation (embeddings if a key is set, else lexical recall).
   const semanticScore = await buildSemanticScorer(universe);
   const topK = req.topK ?? 12;
-  const baseCandidates = generateCandidates(anchor, universe, {
-    topK: semanticScore ? topK : 0,
+  const llmRecall = !semanticScore ? await recallCandidatesWithQwen(anchor, universe, topK) : null;
+  const rawCandidates = selectRecallCandidates(anchor, universe, {
+    topK,
     semanticScore: semanticScore ?? undefined,
+    llmRecall,
     allowCrossCategory: true,
-    // Embeddings support genuinely non-lexical mechanisms. Without them, retain a small lexical
-    // floor so Qwen still sees plausible cross-domain candidates rather than the entire catalog.
     minSimilarity: semanticScore ? 0.12 : 0.08,
   });
-  const llmRecall = !semanticScore ? await recallCandidatesWithQwen(anchor, universe, topK) : null;
-  const rawCandidates = llmRecall
-    ? [...baseCandidates, ...llmRecall.map((candidate) => ({
-        a: anchor,
-        b: candidate,
-        recall: "llm_recall" as const,
-        similarity: Number(lexicalSimilarity(anchor, candidate).toFixed(3)),
-      }))]
-    : generateCandidates(anchor, universe, {
-        topK,
-        allowCrossCategory: true,
-        minSimilarity: 0.08,
-      });
   // Drop player-award and placeholder candidates at this one chokepoint, so they reach neither the
   // relation map (display) nor buildOptimizerCandidates (legs) — both consume `classified` below.
   const candidates = rawCandidates.filter(({ b }) => !isHedgeIneligibleCandidate(b));
@@ -240,6 +238,13 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
         classifyMethod: cls.method,
         relation,
         mechanismGraph: cls.hypothesis?.mechanismGraph,
+        hypothesis: cls.hypothesis ? {
+          relation: cls.hypothesis.relation,
+          direction: cls.hypothesis.direction,
+          mechanism: cls.hypothesis.mechanism,
+          confidence: cls.hypothesis.confidence,
+          requiresCalibration: cls.hypothesis.requiresCalibration,
+        } : undefined,
       };
     })
     .sort((a, b) => Math.abs(b.relation.correlation) - Math.abs(a.relation.correlation));
@@ -247,13 +252,17 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   // ── The ACTIONABLE hedge: cost/capacity/uncertainty-constrained robust optimizer ──
   // Candidates are priced off the REAL book; only verified cover-all NO legs are ANALYTIC, the rest
   // are HYPOTHESIS (rejected without settlement calibration). No φ-from-price drives this.
-  const optimizerCandidates = await buildOptimizerCandidates(anchor, classified).catch(() => []);
+  const stakeUsd = Math.max(1, req.stakeUsd ?? 20);
+  const entryPrice = Math.min(0.999, Math.max(0.001, req.entryPrice ?? anchor.probYes));
+  const keepFraction = Math.min(1, Math.max(0, req.keepFraction ?? 0.5));
+  const pricingBudgetUsd = Math.max(1, (1 - keepFraction) * stakeUsd * (1 - entryPrice) / entryPrice);
+  const optimizerCandidates = await buildOptimizerCandidates(anchor, classified, pricingBudgetUsd).catch(() => []);
   let robustHedge: RobustOptimizerResult | undefined;
   if (optimizerCandidates.length > 0) {
     robustHedge = optimizeRobustHedge({
-      stakeUsd: Math.max(1, req.stakeUsd ?? 20),
-      primaryPrice: anchor.probYes,
-      keepFraction: Math.min(1, Math.max(0, req.keepFraction ?? 0.5)),
+      stakeUsd,
+      primaryPrice: entryPrice,
+      keepFraction,
       conservatism: Math.min(1, Math.max(0, req.conservatism ?? 0.5)),
       maxLegs: Math.max(1, Math.floor(req.maxLegs ?? 3)),
       candidates: optimizerCandidates,

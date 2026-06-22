@@ -3,7 +3,7 @@
  * Fixtures mimic the live WC universe across both venues.
  */
 import { describe, expect, test } from "vitest";
-import { metadataCompatible, lexicalSimilarity, generateCandidates, classifyPair, hypothesisToClassification, normalizeKalshiEvent, normalizePolymarketEvent } from "@/lib/relate";
+import { metadataCompatible, lexicalSimilarity, generateCandidates, selectRecallCandidates, classifyPair, hypothesisToClassification, normalizeKalshiEvent, normalizePolymarketEvent } from "@/lib/relate";
 import type { NormalizedMarket } from "@/lib/relate";
 
 function mkt(over: Partial<NormalizedMarket>): NormalizedMarket {
@@ -105,6 +105,19 @@ describe("Stage 1 candidate generation", () => {
   test("includes cross-event candidates via recall, not the anchor itself", () => {
     expect(cands.every((c) => c.b.id !== franceWin.id)).toBe(true);
     expect(cands.some((c) => c.b.id === "pm:fr-boot" && c.recall === "lexical")).toBe(true);
+  });
+  test("keeps semantic ranking instead of regenerating lexical candidates", () => {
+    const semanticOnly = mkt({ id: "pm:semantic", eventKey: "other-event", title: "Hotel occupancy", description: "unrelated words", category: "economics" });
+    const lexicalOnly = mkt({ id: "pm:lexical", eventKey: "lex-event", title: "France mention", description: franceWin.description, category: "world-cup" });
+    const selected = selectRecallCandidates(franceWin, [franceWin, semanticOnly, lexicalOnly], {
+      topK: 1,
+      semanticScore: (_a, b) => b.id === semanticOnly.id ? 0.9 : 0.01,
+      llmRecall: null,
+      allowCrossCategory: true,
+      minSimilarity: 0.12,
+    });
+    expect(selected.some((candidate) => candidate.b.id === semanticOnly.id && candidate.recall === "semantic")).toBe(true);
+    expect(selected.some((candidate) => candidate.b.id === lexicalOnly.id)).toBe(false);
   });
 });
 

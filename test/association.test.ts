@@ -89,17 +89,17 @@ describe("robust hedge optimizer", () => {
     expect(strict.status).toBe("NO_ACTION");
   });
 
-  test("inferred cross-event mechanism leg admitted only below balanced conservatism, labeled hypothesis", () => {
-    const inferred: OptimizerCandidate = {
+  test("LLM confidence never authorizes payoff probabilities or sizing", () => {
+    const hypothesis: OptimizerCandidate = {
       id: "inf-leg", label: "Coach departs · kalshi", venue: "kalshi", side: "yes", price: 0.3,
-      maxSpendUsd: 100, provenance: "HYPOTHESIS", inferredPayoff: { payGivenFail: 0.42, payGivenWin: 0.3, confidence: 0.8 },
+      maxSpendUsd: 100, provenance: "HYPOTHESIS",
     };
-    const lo = optimizeRobustHedge({ ...base, conservatism: 0.3, candidates: [inferred] });
-    expect(lo.status).toBe("RECOMMEND");
-    expect(lo.allocations[0].provenance).toBe("HYPOTHESIS"); // truthful: inferred, never stamped calibrated
-    expect(lo.strictWorstLossIfPrimaryFailsUsd).toBeGreaterThan(20); // can pay 0 ⇒ premium adds to worst loss
-    const hi = optimizeRobustHedge({ ...base, conservatism: 0.6, candidates: [inferred] });
-    expect(hi.status).toBe("NO_ACTION"); // excluded at/above balanced conservatism (no calibration)
+    for (const conservatism of [0, 0.3, 0.6, 1]) {
+      const result = optimizeRobustHedge({ ...base, conservatism, candidates: [hypothesis] });
+      expect(result.status).toBe("NO_ACTION");
+      expect(result.allocations).toHaveLength(0);
+      expect(result.rejected[0].reason).toContain("no calibrated payoff evidence");
+    }
   });
 
   test("hypotheses and statistically ambiguous candidates are rejected", () => {

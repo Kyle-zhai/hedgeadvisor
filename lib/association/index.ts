@@ -1,7 +1,14 @@
 export * from "./types";
 export { countConditionalObservations, calibrateConditionalPayoff, regularizedBeta, betaQuantile } from "./calibration";
 export { analyzeRelationWithQwen, type QwenRelationOptions, type QwenRelationResult } from "./qwen";
+export { elicitConditionalWithQwen, type ConditionalElicitResult, type ElicitOptions } from "./elicit";
 export { optimizeRobustHedge } from "./optimizer";
+export {
+  validateHistoricalAssociationSamples,
+  chronologicalClusterSplit,
+  type HistoricalAssociationSample,
+  type HistoricalRejectedSample,
+} from "./historical";
 export {
   walkForwardAssociationBacktest,
   type AssociationBacktestRow,

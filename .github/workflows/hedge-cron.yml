@@ -19,7 +19,13 @@ on:
     # GitHub's floor is every 5 min, but build caching below keeps each run ~1-2 min so hourly fits the
     # private-repo 2000 min/mo budget (~720 runs). Dial down (e.g. "0 */6 * * *") to save minutes.
     - cron: "0 * * * *"
-  workflow_dispatch: {} # manual "Run workflow" button (use this to test the setup immediately)
+  workflow_dispatch:
+    inputs:
+      run_historical_backfill:
+        description: "Run configured historical backfill once"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: hedge-closed-loop
@@ -38,6 +44,7 @@ jobs:
       # non-secret config (mirror what you keep in .env.local)
       HEDGE_RELATION_SNAPSHOT_JOBS_JSON: ${{ vars.HEDGE_RELATION_SNAPSHOT_JOBS_JSON }}
       HEDGE_SETTLE_JOBS_JSON: ${{ vars.HEDGE_SETTLE_JOBS_JSON }}
+      HEDGE_HISTORICAL_BACKFILL_JOBS_JSON: ${{ vars.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON }}
       QWEN_BASE_URL: ${{ vars.QWEN_BASE_URL }}
       QWEN_RELATION_MODEL: ${{ vars.QWEN_RELATION_MODEL }}
       QWEN_EMBED_MODEL: ${{ vars.QWEN_EMBED_MODEL }}
@@ -96,6 +103,15 @@ jobs:
             echo "::endgroup::"
           done
           exit $fail
+
+      - name: Historical relation backfill (manual opt-in only)
+        if: github.event_name == 'workflow_dispatch' && inputs.run_historical_backfill
+        run: |
+          code=$(curl -s -o /tmp/historical.json -w '%{http_code}' --max-time 290 \
+            -H "authorization: Bearer ${CRON_SECRET}" \
+            "http://localhost:3000/api/cron/historical")
+          cat /tmp/historical.json 2>/dev/null; echo
+          [ "$code" = "200" ] || { echo "::error::historical backfill returned ${code}"; exit 1; }
 
       - name: Qwen-in-CI probe (manual runs only)
         if: github.event_name == 'workflow_dispatch'

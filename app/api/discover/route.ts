@@ -10,6 +10,7 @@ const Body = z.object({
   eventSlug: z.string().min(1).max(160).optional(),
   topK: z.number().int().positive().max(40).optional(),
   stakeUsd: z.number().positive().max(1e6).optional(),
+  entryPrice: z.number().gt(0).lt(1).optional(),
   keepFraction: z.number().min(0).max(1).optional(),
   conservatism: z.number().min(0).max(1).optional(),
   maxLegs: z.number().int().min(1).max(8).optional(),

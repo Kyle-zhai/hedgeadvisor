@@ -19,6 +19,11 @@ and supplier demand, a team result and media language, or a policy decision and 
 threshold. Free-form labels never become evidence. Stable enum fields plus the two event classes
 form the calibration cohort key, and `INSTANCE_ONLY` graphs are never pooled.
 
+Calibration keys use the controlled v5 ontology. Known synonyms map to one canonical event class;
+unknown classes are quarantined under a stable hashed `other_event_*` key instead of sharing a giant
+catch-all cohort. The key also includes payoff direction, mechanism edge kinds, the actual settlement
+predicate, scope, time order, and candidate side. Existing v4 rows stay stored but cannot mix into v5.
+
 Discovery indexes configured events plus broad open-event pools from both venues. Qwen embeddings
 are recall-only: they surface pairs with little lexical overlap, while the relation model explains
 the possible mechanism. Neither output can make a trade actionable.
@@ -85,16 +90,34 @@ anchor fails, hedge drag when it wins, and an explicit leakage-violation count. 
 currently point-in-time mids; execution-grade backtests should next join the nearest earlier order
 book snapshot for spread, fees, depth, and slippage.
 
+### Historical backfill
+
+`POST /api/association/historical` accepts CRON-secret-gated archived pairs. Every row must carry a
+real pre-resolution `observedAt`, actual `resolvedAt`, historical anchor probability, and historical
+candidate price. Rows inside the configured lead window (24h by default), rows without stable market
+ids, and duplicates are rejected. The endpoint writes both the archived snapshot and settlement, so
+the normal walk-forward join remains the only evaluation path. It also reports a chronological,
+cluster-disjoint train/holdout split. Missing historical timestamps or prices must never be replaced
+with today's values.
+
+The automated provider adapter is `GET /api/cron/historical`. It reads a predeclared job manifest,
+fetches settled outcomes plus historical YES prices from Polymarket or Kalshi, selects the last price
+at or before the lead-time cutoff, and writes the v5 snapshot and observation idempotently. It is
+manual-only in GitHub Actions because archived data does not change.
+
+```env
+HEDGE_HISTORICAL_BACKFILL_JOBS_JSON=[{"id":"event-a-pair-1","clusterKey":"event-a","anchor":{"venue":"polymarket","eventKey":"resolved-anchor-event","label":"Anchor outcome"},"candidate":{"venue":"kalshi","eventKey":"KXRESOLVED-EVENT","marketId":"KXRESOLVED-EVENT-MARKET"},"relation":{"anchorFamily":"election_outcome","candidateFamily":"policy_decision","predicate":"policy_passes","role":"cross_domain","side":"yes","mechanismSignature":"institutional.cross_domain.anchor_before_candidate.event_class.positive.edges=causes","relationDirection":"POSITIVE"},"leadHours":168}]
+```
+
+Prefer native `marketId` values over labels. Each `clusterKey` must identify one independent real-world
+event. Configure the manifest before running the manual GitHub Action; do not generate it from winners.
+
 ## API
 
-`POST /api/association` is the public hypothesis-analysis surface. It accepts an anchor, candidate
-contracts, executable prices, and a `conservatism` value in `[0,1]`, but deliberately does **not**
-trust caller-supplied counts or structural flags. Those fields are stripped, so this endpoint cannot
-turn fabricated evidence into an actionable recommendation.
-
-Production recommendations use `/api/discover`: structural coverage is created only by deterministic
-code, while calibrated counts are loaded from the secret-gated settlement store. Resolved samples enter
-through `/api/cron/settle` or the `CRON_SECRET`-protected `/api/association/observe` endpoint.
+Production recommendations use `POST /api/discover`: structural coverage is created only by
+deterministic code, while calibrated counts are loaded from the secret-gated settlement store. Qwen
+hypotheses remain unsized. Resolved samples enter through `/api/cron/settle`, the protected
+`/api/association/observe` endpoint, or the stricter archived-data endpoint above.
 
 ```json
 {

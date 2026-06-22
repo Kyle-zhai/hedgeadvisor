@@ -5,7 +5,7 @@ function row(i: number, overrides: Partial<AssociationBacktestRow> = {}): Associ
   const resolved = new Date(Date.UTC(2020, 0, 1 + i));
   const anchorPays = i % 2 === 0;
   return {
-    relationKey: "a->b:mechanism->cross_domain:m=causal.cross_domain.anchor_before_candidate.event_class->no@v4",
+    relationKey: "competition_winner->broadcast_language:says_champion->cross_domain:m=causal.cross_domain.anchor_before_candidate.event_class.negative.edges=causes->no@v5",
     sampleKey: `sample-${i}`,
     clusterKey: `cluster-${i}`,
     anchorPays,

@@ -140,7 +140,7 @@ async function runJob(job: SettleJob, deadlineMs: number) {
         relatedEntities: [a.entity],
         resolvedAt: settlementObservedAt,
       }, role);
-      add(graph.candidateEventClass, "mechanism", role, instances, mechanismSignature(graph), hypothesis, result.model);
+      add(graph.candidateEventClass, candidate.predicate, role, instances, mechanismSignature(graph, hypothesis.direction), hypothesis, result.model);
     }
   };
   if (anchorOutcomes.length === 0) return { cluster: job.cluster, settledAnchors: 0, relations, written };

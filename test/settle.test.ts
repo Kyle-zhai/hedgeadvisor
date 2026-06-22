@@ -5,6 +5,7 @@
  */
 import { describe, expect, test } from "vitest";
 import { eventFamily, mechanismSignature, relationKey, predicateOf, relationRole } from "@/lib/relate/relationKey";
+import { canonicalEventClass } from "@/lib/relate/ontology";
 import { buildRelationObservations, observationsForResolvedInstances, frozenResolvedInstance, type ResolvedInstance } from "@/lib/relate";
 import { pmOutcome, kalshiOutcome, pairResolvedInstances, type MarketOutcome } from "@/lib/relate";
 import { countConditionalObservations, calibrateConditionalPayoff } from "@/lib/association";
@@ -25,6 +26,12 @@ describe("granular templates: predicate + role + version", () => {
   test("key carries role + version and is side-specific", () => {
     expect(relationKey("a", "b", "p", "same_entity", "no")).toContain("->same_entity->no@v");
     expect(relationKey("a", "b", "p", "same_entity", "no")).not.toBe(relationKey("a", "b", "p", "global_event", "no"));
+  });
+  test("v5 ontology merges synonyms but separates payoff directions", () => {
+    expect(canonicalEventClass("national_team_title")).toBe("competition_winner");
+    expect(canonicalEventClass("tournament_champion")).toBe("competition_winner");
+    expect(relationKey("national_team_title", "broadcast_word_occurrence", "says_champion", "cross_domain", "no", "causal.cross_domain.overlapping.event_class.positive.edges=causes"))
+      .not.toBe(relationKey("national_team_title", "broadcast_word_occurrence", "says_champion", "cross_domain", "no", "causal.cross_domain.overlapping.event_class.negative.edges=causes"));
   });
   test("relationRole classifies entity relationships", () => {
     expect(relationRole("France", { entity: "first song", family: "broadcast_word" })).toBe("global_event");
@@ -52,7 +59,7 @@ describe("granular templates: predicate + role + version", () => {
     expect(relationRole("Spain", { entity: "Luis de la Fuente", family: "employment", mechanismGraph: base })).toBe("cross_entity");
     const crossDomain = { ...base, scope: "CROSS_DOMAIN" as const, candidateEventClass: "hotel_occupancy_threshold", mechanismType: "ECONOMIC" as const };
     expect(relationRole("Spain", { entity: "Madrid hotels", family: "economics", mechanismGraph: crossDomain })).toBe("cross_domain");
-    expect(mechanismSignature(crossDomain)).toBe("economic.cross_domain.anchor_before_candidate.event_class");
+    expect(mechanismSignature(crossDomain, "NEGATIVE")).toBe("economic.cross_domain.anchor_before_candidate.event_class.negative.edges=causes");
   });
 });
 

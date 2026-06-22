@@ -35,13 +35,13 @@ export async function persistCandidateSnapshots(
       mechanismGraph: graph,
     });
     if (role === "unrelated" || role === "rival") continue;
-    const signature = mechanismSignature(graph);
+    const signature = mechanismSignature(graph, cls.hypothesis?.direction);
     for (const side of ["yes", "no"] as const) {
-      const key = relationKey(graph.anchorEventClass, graph.candidateEventClass, "mechanism", role, side, signature);
+      const key = relationKey(graph.anchorEventClass, graph.candidateEventClass, candidate.predicate, role, side, signature);
       await upsertAssociationRelation({
         relationKey: key,
         anchorTemplate: graph.anchorEventClass,
-        candidateTemplate: `${graph.candidateEventClass}:mechanism:${role}:${signature ?? "instance"}`,
+        candidateTemplate: `${graph.candidateEventClass}:${candidate.predicate}:${role}:${signature ?? "instance"}`,
         candidateSide: side,
         hypothesis: cls.hypothesis,
         llmModel: process.env.QWEN_RELATION_MODEL ?? "qwen-plus",

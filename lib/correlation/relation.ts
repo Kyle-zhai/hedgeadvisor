@@ -49,6 +49,22 @@ export function jointFromPhi(pA: number, pB: number, phi: number): { pAB: number
   return { pAB, clamped: raw < lo - 1e-9 || raw > hi + 1e-9 };
 }
 
+/**
+ * Signed φ from an ELICITED conditional P(B | A wins) plus the de-vigged market marginals. The joint
+ * P(A∩B) = P(A)·P(B|A) is PROJECTED onto the Fréchet–Hoeffding box of the marginals (the feasibility
+ * constraint — the LLM cannot assert an impossible joint), then φ is derived. This is the cross-event
+ * estimator: it turns an LLM conditional into a market-coherent SIGNED correlation instead of the ~0
+ * independence default. A large clamp distance is an unreliability flag (the LLM estimate was incoherent).
+ */
+export function frechetProjectedPhi(pA: number, pB: number, pBGivenAWins: number): { phi: number; pAB: number; clamped: boolean } {
+  const a = clamp01(pA);
+  const b = clamp01(pB);
+  const raw = a * clamp01(pBGivenAWins);
+  const [lo, hi] = frechetBounds(a, b);
+  const pAB = Math.min(hi, Math.max(lo, raw));
+  return { phi: Number(corrFromJoint(pA, pB, pAB).toFixed(4)), pAB: Number(pAB.toFixed(4)), clamped: raw < lo - 1e-9 || raw > hi + 1e-9 };
+}
+
 /** Signed optimal min-variance hedge ratio (N_B over N_A) = −φ·σ_A/σ_B. */
 export function optimalHedgeRatio(phi: number, pA: number, pB: number): number {
   const sB = sigma(pB);

@@ -1,8 +1,10 @@
 export { discoverRelations, type DiscoverRequest, type DiscoverResult, type DiscoveredRelation } from "./discover";
-export { generateCandidates, metadataCompatible, lexicalSimilarity, type CandidateOpts } from "./candidates";
+export { generateCandidates, selectRecallCandidates, metadataCompatible, lexicalSimilarity, type CandidateOpts, type RecallSelectionOpts } from "./candidates";
 export { classifyPair, hypothesisToClassification } from "./classify";
 export { buildOptimizerCandidates, type ClassifiedCandidate } from "./toOptimizerCandidates";
 export { eventFamily, predicateOf, relationKey, TEMPLATE_VERSION } from "./relationKey";
+export { canonicalEventClass, canonicalPayoffDirection, canonicalMechanismSignature, type CanonicalEventClass, type PayoffDirection } from "./ontology";
+export { historicalPointAtOrBefore, runHistoricalBackfillJob, type HistoricalBackfillJob, type HistoricalBackfillResult, type HistoricalMarketRef } from "./historicalBackfill";
 export { toObservation, buildRelationObservations, observationsForResolvedInstances, frozenResolvedInstance, type ResolvedInstance, type SettledOutcome } from "./settle";
 export { pmOutcome, kalshiOutcome, pairResolvedInstances, type MarketOutcome } from "./enumerate";
 export { buildSemanticScorer } from "./embed";

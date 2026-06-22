@@ -4,6 +4,7 @@ export {
   buildEventRelation,
   frechetBounds,
   jointFromPhi,
+  frechetProjectedPhi,
   optimalHedgeRatio,
   hedgeSignalFor,
   type EventRelation,

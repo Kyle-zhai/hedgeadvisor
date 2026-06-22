@@ -13,7 +13,7 @@ const Body = z.object({
   candidateFamily: z.string().min(1).max(120),
   predicate: z.string().min(1).max(120),
   role: z.enum(["same_entity", "entity_event", "event_linked", "cross_entity", "cross_domain", "same_team_player", "rival", "global_event", "unrelated"]).default("global_event"),
-  mechanismSignature: z.string().regex(/^[a-z_.]+$/).max(160).optional(),
+  mechanismSignature: z.string().regex(/^[a-z0-9_.+=-]+$/).max(240).optional(),
   side: z.enum(["yes", "no"]),
   anchorTemplate: z.string().min(1).max(500),
   candidateTemplate: z.string().min(1).max(500),
