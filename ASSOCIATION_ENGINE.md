@@ -47,6 +47,7 @@ Qwen is optional and disabled safely when the key is empty:
 DASHSCOPE_API_KEY=
 QWEN_RELATION_MODELS=MiniMax-M2.5,qwen3.6-flash,qwen3-max-preview
 QWEN_RELATION_MODEL=MiniMax-M2.5
+HEDGE_RELATION_JOB_CONCURRENCY=8
 QWEN_EMBED_MODEL=text-embedding-v4
 QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 HEDGE_RELATE_PM_TOP_EVENTS=24

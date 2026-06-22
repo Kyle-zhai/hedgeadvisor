@@ -5,7 +5,7 @@ import { discoverRelations } from "@/lib/relate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 600;
 
 const Job = z.object({
   query: z.string().min(1).max(160),
@@ -36,20 +36,27 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, jobs: 0, written: 0, note: "HEDGE_RELATION_SNAPSHOT_JOBS_JSON is empty" });
   }
 
-  const results = [];
-  for (const job of configured) {
+  const runJob = async (job: z.infer<typeof Job>) => {
     try {
       const result = await discoverRelations({ ...job, stakeUsd: 20, conservatism: 0.5, maxLegs: 1 });
-      results.push({
+      return {
         query: job.query,
         eventSlug: job.eventSlug,
         status: result.status,
         relations: result.relations?.length ?? 0,
         written: result.candidateSnapshotsWritten ?? 0,
-      });
+      };
     } catch (error) {
-      results.push({ query: job.query, eventSlug: job.eventSlug, status: "error", error: error instanceof Error ? error.message : "unknown error", written: 0 });
+      return { query: job.query, eventSlug: job.eventSlug, status: "error", error: error instanceof Error ? error.message : "unknown error", written: 0 };
     }
+  };
+  // MiniMax-M2.5 is thinking-only and materially slower than Qwen Flash. Run independent anchors in
+  // bounded parallel batches so one hourly snapshot does not multiply that latency by job count.
+  const configuredConcurrency = Number(process.env.HEDGE_RELATION_JOB_CONCURRENCY ?? 8);
+  const concurrency = Number.isFinite(configuredConcurrency) ? Math.min(10, Math.max(1, Math.floor(configuredConcurrency))) : 8;
+  const results: Awaited<ReturnType<typeof runJob>>[] = [];
+  for (let i = 0; i < configured.length; i += concurrency) {
+    results.push(...await Promise.all(configured.slice(i, i + concurrency).map(runJob)));
   }
   return NextResponse.json({
     ok: results.every((result) => result.status !== "error"),
