@@ -80,12 +80,47 @@ export async function GET(req: Request) {
     SELECT operation, model, status, cache_hit,
            count(*)::int AS runs,
            round(avg(latency_ms))::int AS avg_latency_ms,
-           count(*) FILTER (WHERE jsonb_array_length(COALESCE(attempts, '[]'::jsonb)) > 1)::int AS fallback_runs
+           count(*) FILTER (WHERE jsonb_array_length(CASE WHEN jsonb_typeof(attempts) = 'array' THEN attempts WHEN jsonb_typeof(attempts) = 'string' THEN (attempts #>> '{}')::jsonb ELSE '[]'::jsonb END) > 1)::int AS fallback_runs
     FROM llm_relation_run
     WHERE created_at >= now() - interval '24 hours'
     GROUP BY operation, model, status, cache_hit
     ORDER BY operation, runs DESC
   `;
+  // Per-model success / timeout / fallback telemetry, unnested from every attempt (not just the final
+  // model). A timeout is an aborted attempt (the model's per-call deadline). The fallback ratio is the
+  // share of runs whose first model failed (>1 attempt). This is the MiniMax health view requested.
+  const modelAttempts = await sql`
+    SELECT a->>'model' AS model,
+           count(*)::int AS attempts,
+           count(*) FILTER (WHERE a->>'status' = 'ok')::int AS successes,
+           count(*) FILTER (WHERE a->>'status' = 'error' AND (a->>'reason') ILIKE '%abort%')::int AS timeouts,
+           round(avg(NULLIF((a->>'durationMs'), '')::numeric))::int AS avg_ms
+    FROM llm_relation_run, jsonb_array_elements(CASE WHEN jsonb_typeof(attempts) = 'array' THEN attempts WHEN jsonb_typeof(attempts) = 'string' THEN (attempts #>> '{}')::jsonb ELSE '[]'::jsonb END) AS a
+    WHERE created_at >= now() - interval '24 hours' AND a->>'model' IS NOT NULL
+    GROUP BY a->>'model' ORDER BY attempts DESC
+  ` as Array<{ model: string; attempts: number; successes: number; timeouts: number; avg_ms: number }>;
+  const fallbackAgg = (await sql`
+    SELECT count(*)::int AS total_runs,
+           count(*) FILTER (WHERE jsonb_array_length(CASE WHEN jsonb_typeof(attempts) = 'array' THEN attempts WHEN jsonb_typeof(attempts) = 'string' THEN (attempts #>> '{}')::jsonb ELSE '[]'::jsonb END) > 1)::int AS fallback_runs,
+           count(*) FILTER (WHERE status = 'ok')::int AS ok_runs
+    FROM llm_relation_run WHERE created_at >= now() - interval '24 hours'
+  `)[0] as { total_runs: number; fallback_runs: number; ok_runs: number };
+  const modelTelemetry = {
+    windowHours: 24,
+    perModel: modelAttempts.map((m) => ({
+      model: m.model,
+      attempts: m.attempts,
+      successes: m.successes,
+      errors: m.attempts - m.successes,
+      timeouts: m.timeouts,
+      successRate: m.attempts ? Number((m.successes / m.attempts).toFixed(3)) : null,
+      timeoutRate: m.attempts ? Number((m.timeouts / m.attempts).toFixed(3)) : null,
+      avgMs: m.avg_ms,
+    })),
+    fallbackRatio: fallbackAgg.total_runs ? Number((fallbackAgg.fallback_runs / fallbackAgg.total_runs).toFixed(3)) : null,
+    runOkRate: fallbackAgg.total_runs ? Number((fallbackAgg.ok_runs / fallbackAgg.total_runs).toFixed(3)) : null,
+    totalRuns: fallbackAgg.total_runs,
+  };
   const readinessRows = await sql`
     SELECT relation_key,
            count(DISTINCT COALESCE(cluster_key, sample_key))::int AS independent_clusters
@@ -109,5 +144,5 @@ export async function GET(req: Request) {
     relationKeysAt500: readinessRows.filter((row) => row.independent_clusters >= 500).length,
   };
 
-  return NextResponse.json({ overview, backtestEligible, pendingFrozenPairs: pendingFrozen, calibrationReadiness, llm: { cache: llmCache, runs24h: llmRuns24h }, topFrozenRelations });
+  return NextResponse.json({ overview, backtestEligible, pendingFrozenPairs: pendingFrozen, calibrationReadiness, llm: { cache: llmCache, runs24h: llmRuns24h, modelTelemetry }, topFrozenRelations });
 }

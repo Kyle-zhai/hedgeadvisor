@@ -47,43 +47,95 @@ const RelationSchema = z.object({
   mechanismGraph: MechanismGraphSchema,
 });
 
-// Meaning-preserving aliases for enum values Qwen commonly emits outside the schema vocabulary.
-// Anything NOT listed here is left as-is and still fails the Zod parse (fail-closed honesty).
+// Meaning-preserving aliases for enum values the models commonly emit outside the schema vocabulary,
+// applied BEFORE the valid-set check. Anything still unrecognized is then COERCED to the field's
+// catch-all default (see canonicalizeRelationJson) rather than failing the whole parse — the audit
+// (2026-06-22) showed ~50% of LLM classifications were being discarded over graph-vocabulary nits
+// while their relation/direction/mechanism were sound. Coercion preserves the actionable signal; an
+// unrecognized RELATION/DIRECTION coerces to AMBIGUOUS (which never authorizes a hedge side), so this
+// stays honest — it normalizes the mechanism-graph metadata, it does not invent confidence.
 const MECH_TYPE_ALIAS: Record<string, string> = {
-  LOGICAL_IMPLICATION: "LOGICAL", THEMATIC: "OTHER", CORRELATION: "COMMON_CAUSE",
-  COMMON_DRIVER: "COMMON_CAUSE", ASSOCIATION: "OTHER", STRUCTURAL: "LOGICAL",
-  REPUTATIONAL: "BEHAVIORAL", POLITICAL: "INSTITUTIONAL", FINANCIAL: "ECONOMIC", SENTIMENT: "BEHAVIORAL",
+  LOGICAL_IMPLICATION: "LOGICAL", LOGICAL_SUBSET: "LOGICAL", THEMATIC: "OTHER", THEMATIC_LINK: "OTHER",
+  CORRELATION: "COMMON_CAUSE", COMMON_DRIVER: "COMMON_CAUSE", ASSOCIATION: "OTHER", STRUCTURAL: "LOGICAL",
+  MUTEX: "LOGICAL", REPUTATIONAL: "BEHAVIORAL", POLITICAL: "INSTITUTIONAL", FINANCIAL: "ECONOMIC", SENTIMENT: "BEHAVIORAL",
 };
 const TIME_ORDER_ALIAS: Record<string, string> = {
   SIMULTANEOUS: "OVERLAPPING", SIMULTANEOUS_WINDOW: "OVERLAPPING", CONCURRENT: "OVERLAPPING",
-  INDEPENDENT: "UNKNOWN", NONE: "UNKNOWN", UNSPECIFIED: "UNKNOWN", UNORDERED: "UNKNOWN",
+  INDEPENDENT: "UNKNOWN", NONE: "UNKNOWN", UNSPECIFIED: "UNKNOWN", UNORDERED: "UNKNOWN", AMBIGUOUS: "UNKNOWN",
   ANCHOR_AFTER_CANDIDATE: "CANDIDATE_BEFORE_ANCHOR", CANDIDATE_AFTER_ANCHOR: "ANCHOR_BEFORE_CANDIDATE",
+  CANDIDATE_TO_ANCHOR: "CANDIDATE_BEFORE_ANCHOR", ANCHOR_TO_CANDIDATE: "ANCHOR_BEFORE_CANDIDATE",
 };
 const EDGE_KIND_ALIAS: Record<string, string> = {
-  IMPLICATION: "IMPLIES", INFLUENCES: "SIGNALS", INFLUENCE: "SIGNALS", AFFECTS: "SIGNALS",
-  IMPACTS: "SIGNALS", CORRELATES_WITH: "SHARES_DRIVER", CORRELATED_WITH: "SHARES_DRIVER",
+  IMPLICATION: "IMPLIES", LOGICALLY_IMPLIES: "IMPLIES", INFLUENCES: "SIGNALS", INFLUENCE: "SIGNALS", AFFECTS: "SIGNALS",
+  IMPACTS: "SIGNALS", SUGGESTS_STRENGTH: "SIGNALS", CORRELATES_WITH: "SHARES_DRIVER", CORRELATED_WITH: "SHARES_DRIVER",
+  THEMATIC: "SHARES_DRIVER", THEMATIC_LINK: "SHARES_DRIVER", THEMATIC_ASSOCIATION: "SHARES_DRIVER",
   PRECEDES: "SIGNALS", LEADS_TO: "CAUSES", RESULTS_IN: "CAUSES", CONTRIBUTES_TO: "ENABLES",
-  PREVENTS: "INHIBITS", REDUCES: "INHIBITS", INCREASES: "ENABLES", DEPENDS_ON: "REACTS_TO",
+  CONTRIBUTES_TO_PROBABILITY: "ENABLES", REQUIRES: "REACTS_TO", REQUIRES_MATCH_PLAY: "REACTS_TO",
+  PRECLUDES: "INHIBITS", PREVENTS: "INHIBITS", REDUCES: "INHIBITS", INCREASES: "ENABLES", DEPENDS_ON: "REACTS_TO",
 };
 
-/** Narrow, meaning-preserving aliases observed from Qwen. Unknown values still fail closed. */
+const MECH_TYPES = new Set(["IDENTITY", "LOGICAL", "INSTITUTIONAL", "CAUSAL", "BEHAVIORAL", "INFORMATION", "ECONOMIC", "NARRATIVE", "TEMPORAL", "COMMON_CAUSE", "IMPLICATION", "OTHER"]);
+const SCOPES = new Set(["SAME_ENTITY", "ENTITY_SPECIFIC", "EVENT_GLOBAL", "CROSS_ENTITY", "CROSS_DOMAIN"]);
+const TIME_ORDERS = new Set(["ANCHOR_BEFORE_CANDIDATE", "CANDIDATE_BEFORE_ANCHOR", "OVERLAPPING", "COMMON_HORIZON", "UNKNOWN"]);
+const PORTABILITIES = new Set(["INSTANCE_ONLY", "ENTITY_CLASS", "EVENT_CLASS", "CROSS_DOMAIN_CLASS"]);
+const EDGE_KINDS = new Set(["CAUSES", "ENABLES", "INHIBITS", "SIGNALS", "REACTS_TO", "SHARES_DRIVER", "RESOLVES_WITH", "IMPLIES"]);
+const NODE_KINDS = new Set(["ENTITY", "EVENT", "CONDITION", "INSTITUTION", "OBSERVABLE"]);
+const RELATIONS = new Set(["EQUIVALENT", "MUTEX", "IMPLICATION", "CAUSAL", "THEMATIC", "UNRELATED", "AMBIGUOUS"]);
+const DIRECTIONS = new Set(["POSITIVE", "NEGATIVE", "AMBIGUOUS", "ANCHOR_TO_CANDIDATE", "CANDIDATE_TO_ANCHOR"]);
+
+const coerceEnum = (raw: unknown, alias: Record<string, string>, valid: Set<string>, fallback: string): string => {
+  if (typeof raw !== "string") return fallback;
+  const k = raw.toUpperCase().replace(/[\s-]+/g, "_");
+  const aliased = alias[k] ?? k;
+  return valid.has(aliased) ? aliased : fallback;
+};
+
+/** Repair the model's JSON into the feasible schema: known aliases first, then coerce any still-
+ *  unrecognized enum to that field's safe default, supply missing required fields, and fix the
+ *  mechanism graph (drop dangling edges, synthesize a generic edge/nodes when degenerate). The
+ *  relation/direction stay the model's own read (unknown ⇒ AMBIGUOUS), so nothing fabricates a sign. */
 function canonicalizeRelationJson(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const root = value as Record<string, unknown>;
-  if (typeof root.mechanism === "string" && root.mechanism.length > 1200) root.mechanism = root.mechanism.slice(0, 1200);
+  root.relation = coerceEnum(root.relation, {}, RELATIONS, "AMBIGUOUS");
+  root.direction = coerceEnum(root.direction, {}, DIRECTIONS, "AMBIGUOUS");
+  if (typeof root.mechanism !== "string") root.mechanism = "";
+  else if (root.mechanism.length > 1200) root.mechanism = root.mechanism.slice(0, 1200);
+  if (!Array.isArray(root.sharedEntities)) root.sharedEntities = [];
+  if (!Array.isArray(root.counterexamples) || root.counterexamples.length === 0) root.counterexamples = ["(no counterexample provided by the model)"];
+  if (typeof root.confidence !== "number") root.confidence = 0.3;
+  if (typeof root.requiresCalibration !== "boolean") root.requiresCalibration = true;
+
   const graph = root.mechanismGraph;
   if (!graph || typeof graph !== "object" || Array.isArray(graph)) return value;
   const g = graph as Record<string, unknown>;
-  if (typeof g.mechanismType === "string") { const k = g.mechanismType.toUpperCase(); g.mechanismType = MECH_TYPE_ALIAS[k] ?? k; }
-  if (typeof g.timeOrder === "string") { const k = g.timeOrder.toUpperCase(); g.timeOrder = TIME_ORDER_ALIAS[k] ?? k; }
-  if (Array.isArray(g.edges)) {
-    for (const edge of g.edges) {
-      if (edge && typeof edge === "object") {
-        const e = edge as Record<string, unknown>;
-        if (typeof e.kind === "string") { const k = e.kind.toUpperCase(); e.kind = EDGE_KIND_ALIAS[k] ?? k; }
-      }
-    }
+  g.mechanismType = coerceEnum(g.mechanismType, MECH_TYPE_ALIAS, MECH_TYPES, "OTHER");
+  g.scope = coerceEnum(g.scope, {}, SCOPES, "CROSS_ENTITY");
+  g.timeOrder = coerceEnum(g.timeOrder, TIME_ORDER_ALIAS, TIME_ORDERS, "UNKNOWN");
+  g.portability = coerceEnum(g.portability, {}, PORTABILITIES, "INSTANCE_ONLY");
+  const slug = (raw: unknown, fb: string): string => {
+    if (typeof raw !== "string") return fb;
+    const s = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 63);
+    return /^[a-z]/.test(s) ? s : fb;
+  };
+  g.anchorEventClass = slug(g.anchorEventClass, "anchor_event");
+  g.candidateEventClass = slug(g.candidateEventClass, "candidate_event");
+
+  // Nodes: coerce kind; guarantee at least the two canonical event nodes.
+  let nodes = Array.isArray(g.nodes) ? (g.nodes as Record<string, unknown>[]).filter((n) => n && typeof n === "object" && typeof n.id === "string" && typeof n.label === "string") : [];
+  for (const n of nodes) n.kind = coerceEnum(n.kind, {}, NODE_KINDS, "EVENT");
+  if (nodes.length < 2) {
+    nodes = [{ id: "anchor_event", label: "anchor event", kind: "EVENT" }, { id: "candidate_event", label: "candidate event", kind: "EVENT" }];
   }
+  g.nodes = nodes;
+  const ids = new Set(nodes.map((n) => n.id as string));
+
+  // Edges: coerce kind, drop endpoints that don't reference a node, synthesize a generic edge if none survive.
+  let edges = Array.isArray(g.edges) ? (g.edges as Record<string, unknown>[]).filter((e) => e && typeof e === "object" && ids.has(e.from as string) && ids.has(e.to as string)) : [];
+  for (const e of edges) e.kind = coerceEnum(e.kind, EDGE_KIND_ALIAS, EDGE_KINDS, "SHARES_DRIVER");
+  if (edges.length === 0) edges = [{ from: nodes[0].id, to: nodes[1].id, kind: "SHARES_DRIVER" }];
+  g.edges = edges.slice(0, 20);
+  if (!Array.isArray(g.sharedDrivers)) g.sharedDrivers = [];
   return value;
 }
 

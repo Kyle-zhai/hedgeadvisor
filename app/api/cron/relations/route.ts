@@ -13,9 +13,24 @@ const Job = z.object({
   topK: z.number().int().min(1).max(6).default(4),
 });
 
+// Diverse default collection targets spanning domains, so the calibration training set is NOT
+// concentrated in sports or macro (2026-06-22). Used only when HEDGE_RELATION_SNAPSHOT_JOBS_JSON is
+// unset; the env var overrides this entirely. Each query is resolved live; an anchor that matches no
+// current market no-ops gracefully, so a stale entry just contributes nothing rather than erroring.
+const DEFAULT_SNAPSHOT_JOBS: z.infer<typeof Job>[] = [
+  { query: "Spain wins the 2026 World Cup", topK: 4 },               // sports — football
+  { query: "Lakers win the 2026 NBA championship", topK: 4 },         // sports — basketball
+  { query: "Donald Trump job approval above 45 percent", topK: 4 },   // politics — US executive
+  { query: "Republicans win the 2026 Senate majority", topK: 4 },     // politics — US legislative
+  { query: "Bitcoin above 100000 dollars in 2026", topK: 4 },         // crypto
+  { query: "Federal Reserve cuts interest rates in 2026", topK: 4 },  // macro / rates
+  { query: "OpenAI releases GPT-5 in 2026", topK: 4 },                // technology / AI
+  { query: "2026 Academy Award Best Picture winner", topK: 4 },       // entertainment / awards
+];
+
 function jobs() {
   const raw = process.env.HEDGE_RELATION_SNAPSHOT_JOBS_JSON;
-  if (!raw) return [];
+  if (!raw) return DEFAULT_SNAPSHOT_JOBS;
   return z.array(Job).max(20).parse(JSON.parse(raw));
 }
 
