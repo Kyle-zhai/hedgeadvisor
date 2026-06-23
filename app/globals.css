@@ -439,5 +439,11 @@ table th[style*="right"], table td[style*="right"] { white-space: nowrap; }
   font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   background: var(--accent-soft); color: var(--accent-ink);
 }
+.combo-scope {
+  display: inline-flex; align-items: center; padding: 1px 5px; border-radius: 999px;
+  font-size: 8.5px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase;
+  border: 1px solid var(--border); color: var(--ink-3);
+}
+.combo-scope.cross { border-color: var(--go); color: var(--go); } /* cross-event = the preferred, novel leg */
 .combo-leg-name strong { font-weight: 640; }
 .combo-leg-price { color: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }

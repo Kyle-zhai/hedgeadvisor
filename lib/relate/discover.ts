@@ -187,6 +187,7 @@ export interface HedgeStrategy {
   hedgedLossUsd: number;
   keptIfWinUsd: number;
   mechanism: string;
+  scope: "same-event" | "cross-event"; // same match/event as the anchor (collateral) vs a different event
 }
 
 /** One leg inside a combo: a single bet you place, fully described. */
@@ -202,6 +203,7 @@ export interface HedgeComboLeg {
   costUsd: number;      // dollars to put on this leg
   mechanism: string;    // why it pays when your bet fails
   dimension: string;    // the FACET of the event this leg covers (scoring/discipline/timing/narrative/…)
+  scope: "same-event" | "cross-event"; // collateral on the anchor's own event, or a different event
 }
 
 /** A COMBO = a basket of 1–4 complementary legs. Each leg covers a different way your bet can fail, so
@@ -386,13 +388,18 @@ async function buildCrossEventStrategies(
     // small). Cut = cost × per-dollar edge, capped at the stake (you cannot recover more than you risked).
     const costUsd = Math.min(stakeUsd * qSide, 0.5 * baseWinnings);
     const expectedReductionUsd = Math.min(costUsd * edge, stakeUsd);
+    // Same-event collateral (a different market on the anchor's OWN match/event) vs a different event. The
+    // diversity-recall legs are always cross-event; a same-match market nests the anchor's match identity.
+    const mt = norm(r.market.marketTitle);
+    const scope: "same-event" | "cross-event" =
+      r.recall !== "diversity" && anchorMt.length > 6 && (mt.includes(anchorMt) || anchorMt.includes(mt)) ? "same-event" : "cross-event";
     out.push({
       marketId: r.market.id, venue: r.market.venue, title: r.market.title, marketTitle: r.market.marketTitle,
       probYes: r.market.probYes, url: r.market.url, side: buyYes ? "YES" : "NO",
       legPrice: Number(qSide.toFixed(4)), phi: Number(phi.toFixed(3)), pGivenFails: Number(pFside.toFixed(3)),
       pGivenWins: Number(pWside.toFixed(3)), confidence: Number(conf.toFixed(2)), costUsd: Number(costUsd.toFixed(2)),
       expectedReductionUsd: Number(expectedReductionUsd.toFixed(2)), hedgedLossUsd: Number((stakeUsd - expectedReductionUsd).toFixed(2)),
-      keptIfWinUsd: Number((baseWinnings - costUsd).toFixed(2)), mechanism: reason.slice(0, 160),
+      keptIfWinUsd: Number((baseWinnings - costUsd).toFixed(2)), mechanism: reason.slice(0, 160), scope,
     });
   }
   return out
@@ -480,7 +487,7 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       legs: picks.map(({ s, cost }) => ({
         marketId: s.marketId, venue: s.venue, title: s.title, marketTitle: s.marketTitle, url: s.url,
         side: s.side, legPrice: s.legPrice, pGivenFails: s.pGivenFails, costUsd: Number(cost.toFixed(2)),
-        mechanism: s.mechanism, dimension: dimensionOf(s),
+        mechanism: s.mechanism, dimension: dimensionOf(s), scope: s.scope,
       })),
       coverage: Number(coverage.toFixed(3)),
       totalCostUsd: Number(totalCost.toFixed(2)),
@@ -492,15 +499,20 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
         : `A single-leg ${dimensionOf(picks[0].s)} hedge covering ~${Math.round(coverage * 100)}% of your fail states (modeled).`,
     };
   };
-  // Four orderings → genuinely different combos: best value, broadest coverage, a DIVERSIFIED basket that
-  // splits the budget evenly across up to 4 distinct dimensions (so the multi-facet structure shows even
-  // when one leg would otherwise eat the budget), and the single strongest leg. Dedupe by leg set; rank by cut.
+  // Orderings → genuinely different combos: best value; a DIVERSIFIED basket that splits the budget evenly
+  // across up to 4 distinct dimensions (so the multi-facet structure shows even when one leg would otherwise
+  // eat the budget); a CROSS-EVENT-FIRST basket that leads with a genuine different-event leg when one passes
+  // the gate and falls back to same-event collateral otherwise (the user's priority); the single strongest
+  // leg. Dedupe by leg set; rank by cut.
   const byCut = [...distinct].sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd);
   const byCoverage = [...distinct].sort((a, b) => b.pGivenFails - a.pGivenFails);
+  // cross-event first, then same-event collateral; within each, best cut first (so the fallback is ordered too)
+  const crossFirst = [...distinct].sort((a, b) =>
+    (a.scope === "cross-event" ? 0 : 1) - (b.scope === "cross-event" ? 0 : 1) || b.expectedReductionUsd - a.expectedReductionUsd);
   const spreadCap = budget / Math.min(4, Math.max(1, distinct.length)); // even split across up to 4 facets
   const seen = new Set<string>();
   const combos: HedgeCombo[] = [];
-  for (const c of [assemble(byCut), assemble(byCut, spreadCap), assemble(byCoverage), assemble(byCut.slice(0, 1))]) {
+  for (const c of [assemble(byCut), assemble(byCut, spreadCap), assemble(crossFirst, spreadCap), assemble(byCoverage), assemble(byCut.slice(0, 1))]) {
     if (!c.legs.length) continue;
     const key = c.legs.map((l) => l.marketId).sort().join("|");
     if (seen.has(key)) continue;

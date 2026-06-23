@@ -66,7 +66,7 @@ interface HedgeStrategy {
 interface HedgeComboLeg {
   marketId: string; venue: Venue; title: string; marketTitle: string; url: string;
   side: "YES" | "NO"; legPrice: number; pGivenFails: number; costUsd: number; mechanism: string;
-  dimension?: string;
+  dimension?: string; scope?: string;
 }
 interface HedgeCombo {
   legs: HedgeComboLeg[]; coverage: number; totalCostUsd: number;
@@ -380,10 +380,11 @@ export default function HedgePage() {
               {combos.length > 0 && <span className="hint" style={{ marginLeft: "auto" }}>select one to model its payoff above</span>}
             </div>
             <p className="sub" style={{ marginTop: 6, marginBottom: 13, color: "var(--ink-2)" }}>
-              Each combo bundles up to 4 bets on DIFFERENT facets of the event (its scoring, discipline, timing, broadcast
-              narrative, …), one per dimension, so each leg pays a different way your bet fails. It never stacks several
-              outcomes of one market. Per-leg correlation is the elicited conditional probability (signed φ), not a keyword
-              guess; payoff is modeled from live prices, not settled outcomes.
+              Each combo bundles up to 4 bets on DIFFERENT facets, one per dimension, so each leg pays a different way your
+              bet fails. It prefers a cross-event leg when a different event genuinely correlates, and otherwise falls back to
+              same-event facets of this match: its scoring, a red card, or what the broadcast announcer says. It never stacks
+              several outcomes of one market. Per-leg correlation is the elicited conditional probability (signed φ); payoff
+              is modeled from live prices, not settled outcomes.
             </p>
             {combos.length > 0 ? (
               <div className="strat-list" role="radiogroup" aria-label="Hedge combos">
@@ -406,6 +407,7 @@ export default function HedgePage() {
                           <span className="combo-leg" key={l.marketId}>
                             <span className={`strat-buy ${l.side === "YES" ? "yes" : "no"}`}>BUY {l.side}</span>
                             {l.dimension && <span className="combo-dim">{l.dimension}</span>}
+                            {l.scope && <span className={`combo-scope${l.scope === "cross-event" ? " cross" : ""}`}>{l.scope === "cross-event" ? "cross-event" : "same-event"}</span>}
                             <span className="combo-leg-name"><strong>{l.title}</strong> <VenueTag venue={l.venue} short /></span>
                             <span className="combo-leg-price">@ {cents(l.legPrice)} · ${l.costUsd.toFixed(2)}</span>
                           </span>
