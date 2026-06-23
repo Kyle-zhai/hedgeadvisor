@@ -423,7 +423,18 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       picks.push({ s, cost });
       remaining -= cost;
     }
-    const coverage = 1 - picks.reduce((p, { s }) => p * (1 - s.pGivenFails), 1);
+    // Honest joint coverage (Boole–Fréchet aware, cf. PortBench's full-covariance point). Group legs by
+    // market: distinct-ENTITY partition outcomes in one market (different nominees) are MUTUALLY EXCLUSIVE →
+    // additive (Σ, capped); same-market PROP legs (over/under, handicaps) are positively CORRELATED (driven
+    // by one match) → conservative max. Across markets, conditionally independent. The expected cut is a sum
+    // of per-leg expectations and stays correct by linearity regardless of correlation.
+    const isProp = (t: string) => /\b(o\s*\/?\s*u|over|under|total|goals?|half|handicap|spread)\b/i.test(t) || /[+(\-]\s*\d/.test(t);
+    const groups = new Map<string, { sum: number; max: number; prop: boolean }>();
+    for (const { s } of picks) {
+      const g = groups.get(s.marketTitle) ?? { sum: 0, max: 0, prop: false };
+      groups.set(s.marketTitle, { sum: Math.min(1, g.sum + s.pGivenFails), max: Math.max(g.max, s.pGivenFails), prop: g.prop || isProp(s.title) });
+    }
+    const coverage = 1 - [...groups.values()].reduce((p, g) => p * (1 - (g.prop ? g.max : g.sum)), 1);
     const totalCost = picks.reduce((c, x) => c + x.cost, 0);
     // expected cut = Σ (allocation × the leg's per-dollar edge when your bet fails), capped at the stake.
     const cut = Math.min(picks.reduce((c, { s, cost }) => c + cost * (s.pGivenFails / Math.max(0.02, s.legPrice) - 1), 0), stakeUsd);
