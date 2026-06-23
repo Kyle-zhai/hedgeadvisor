@@ -19,9 +19,10 @@ export function metadataCompatible(a: NormalizedMarket, b: NormalizedMarket, all
   if (a.id === b.id) return false;
   if (!allowCrossCategory && a.category !== b.category) return false;
   if (a.eventKey === b.eventKey && a.mutuallyExclusiveEvent && b.mutuallyExclusiveEvent) return false; // exact siblings handled structurally
-  // time-window overlap: if both have a resolution time, require them within ~30 days (so one
-  // hasn't long settled before the other). Null end dates (common for our reads) pass.
-  if (a.endDateMs != null && b.endDateMs != null && Math.abs(a.endDateMs - b.endDateMs) > 30 * DAY) return false;
+  // time-window overlap: WITHIN a domain, require resolutions within ~30 days (so one hasn't long settled
+  // before the other). ACROSS domains the horizons legitimately differ (a match settles in days, a macro
+  // hedge in months), so do not gate cross-category pairs on the window — the elicited-φ gate decides.
+  if (a.category === b.category && a.endDateMs != null && b.endDateMs != null && Math.abs(a.endDateMs - b.endDateMs) > 30 * DAY) return false;
   return true;
 }
 
