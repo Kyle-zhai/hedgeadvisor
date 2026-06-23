@@ -5,6 +5,7 @@
  */
 import { NextResponse } from "next/server";
 import { getSql, dbEnabled, ensureSchema } from "@/lib/data/db";
+import { loadTuningProfile } from "@/lib/relate/tuningProfile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -144,5 +145,13 @@ export async function GET(req: Request) {
     relationKeysAt500: readinessRows.filter((row) => row.independent_clusters >= 500).length,
   };
 
-  return NextResponse.json({ overview, backtestEligible, pendingFrozenPairs: pendingFrozen, calibrationReadiness, llm: { cache: llmCache, runs24h: llmRuns24h, modelTelemetry }, topFrozenRelations });
+  // The LEARNED RULES the engine extracts from settlement data (role × mechanism × side buckets), pooled
+  // across all templates — what tunes the engine for unseen questions, not a per-question lookup table.
+  const profile = await loadTuningProfile(0).catch(() => new Map());
+  const learnedRules = [...profile.entries()]
+    .map(([bucket, s]) => ({ bucket, pGivenFails: s.pGivenFails, pGivenWins: s.pGivenWins, specificity: s.specificity, samplesFail: s.samplesFail, samplesWin: s.samplesWin }))
+    .sort((a, b) => Math.min(b.samplesFail, b.samplesWin) - Math.min(a.samplesFail, a.samplesWin))
+    .slice(0, 30);
+
+  return NextResponse.json({ overview, backtestEligible, pendingFrozenPairs: pendingFrozen, calibrationReadiness, learnedRules, llm: { cache: llmCache, runs24h: llmRuns24h, modelTelemetry }, topFrozenRelations });
 }

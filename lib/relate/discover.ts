@@ -13,8 +13,8 @@ import { buildEventRelation, frechetProjectedPhi, type EventRelation } from "@/l
 import { elicitConditionalWithQwen } from "@/lib/association";
 import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
-import { marketDimension, eventFamily, predicateOf, relationRole, mechanismSignature, relationKey } from "./relationKey";
-import { loadConditionalCounts, calibrateConditionalPayoff } from "@/lib/association";
+import { marketDimension, eventFamily, relationRole, mechanismSignature } from "./relationKey";
+import { loadTuningProfile, lookupBucket } from "./tuningProfile";
 import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
@@ -365,7 +365,12 @@ async function buildCrossEventStrategies(
   // hallucinate, so hold it to a stricter bar than a same-event collateral leg.
   const DIVERSITY_PHI_MIN = 0.25;
   const DIVERSITY_CONF_MIN = 0.5;
-  const CALIB_MIN_SAMPLES = 20; // settled observations per branch before a leg is admitted as CALIBRATED
+  const CALIB_MIN_SAMPLES = 20; // pooled observations per branch in a bucket before a leg is admitted CALIBRATED
+  const BUCKET_MIN_SAMPLES = 4; // minimum evidence before a learned bucket rule influences the prior at all
+  const BUCKET_PRIOR_STRENGTH = 12; // κ: the LLM prior counts as κ pseudo-samples in the shrink toward the bucket
+  // The LEARNED tuning profile: realized conditional payoff per structural bucket (role × mechanism × side),
+  // pooled across ALL templates. This is the generalizable rule, applied to every leg including unseen ones.
+  const tuning = await loadTuningProfile();
   const elicited = await mapPool(cands, 8, async (r) => {
     const e = await elicitConditionalWithQwen(anchorTitle, `${r.market.title} (${r.market.marketTitle})`).catch(() => null);
     if (!e || e.status !== "ok" || e.pGivenAnchorWins == null) return null;
@@ -390,29 +395,25 @@ async function buildCrossEventStrategies(
     // P(bought side pays | anchor fails). The model's level often disagrees with the price; clamp to the
     // market-feasible bound P(side)/P(anchor fails) so the payoff stays consistent with the real price.
     const pFsideModeled = Math.min(buyYes ? pF : 1 - pF, qSide / Math.max(0.05, 1 - ap));
-    // ── Confidence ladder: blend the LLM-elicited prior with SETTLEMENT evidence. When this relation
-    // template has enough settled observations, the calibrated posterior P(pays | anchor fails) SUPERSEDES
-    // the LLM prior and the leg becomes CALIBRATED; otherwise it stays MODELED. loadConditionalCounts returns
-    // null instantly without a DB, so this degrades to MODELED at zero cost. ──
+    // ── LEARNED-RULE tuning (not a per-template lookup): map this leg to its structural bucket (relation
+    // ROLE × mechanism TYPE × bought SIDE) and apply the rule the moat learned for that bucket across ALL
+    // templates. The bucket's realized P(pays | anchor fails) shrinks the LLM prior toward what outcomes of
+    // this STRUCTURE actually do (κ pseudo-samples), so a never-seen pair is still tuned by its role; a
+    // well-evidenced bucket with positive specificity promotes the leg to CALIBRATED. Empty profile (no DB)
+    // ⇒ untouched MODELED prior at zero cost. ──
     const side: "yes" | "no" = buyYes ? "yes" : "no";
     const candidateFamily = r.mechanismGraph?.candidateEventClass ?? eventFamily(r.market.marketTitle, r.market.category ?? "");
-    const anchorFamily = r.mechanismGraph?.anchorEventClass ?? anchor.eventFamily ?? eventFamily(anchor.marketTitle, anchor.category ?? "");
     const role = relationRole(`${anchor.title} ${anchor.marketTitle}`, { entity: r.market.title, family: candidateFamily, context: `${r.market.marketTitle} ${r.market.title}`, mechanismGraph: r.mechanismGraph });
-    const reusableCohort = !r.mechanismGraph || r.mechanismGraph.portability !== "INSTANCE_ONLY";
+    const mechType = mechanismSignature(r.mechanismGraph, r.hypothesis?.direction)?.split(".")[0] ?? "rule";
     let tier: "CALIBRATED" | "MODELED" = "MODELED";
     let samples = 0;
     let pFside = pFsideModeled;
-    if (reusableCohort) {
-      const key = relationKey(anchorFamily, candidateFamily, r.market.predicate ?? predicateOf(r.market.title, ""), role, side, mechanismSignature(r.mechanismGraph, r.hypothesis?.direction));
-      const counts = await loadConditionalCounts(key).catch(() => null);
-      if (counts) {
-        const cal = calibrateConditionalPayoff(counts, 0.9, CALIB_MIN_SAMPLES);
-        samples = Math.round(cal.payGivenAnchorFails.samples + cal.payGivenAnchorPays.samples);
-        if (cal.sufficientEvidence && cal.hedgeSpecificityLower > 0) {
-          tier = "CALIBRATED";
-          pFside = Math.min(0.999, Math.max(qSide, cal.payGivenAnchorFails.mean)); // settlement posterior supersedes the prior
-        }
-      }
+    const bucket = lookupBucket(tuning, role, mechType, side, BUCKET_MIN_SAMPLES);
+    if (bucket && bucket.specificity > 0) {
+      samples = bucket.samplesFail + bucket.samplesWin;
+      const w = bucket.samplesFail / (bucket.samplesFail + BUCKET_PRIOR_STRENGTH); // evidence weight on the rule
+      pFside = Math.min(0.999, Math.max(qSide, w * bucket.pGivenFails + (1 - w) * pFsideModeled));
+      if (Math.min(bucket.samplesFail, bucket.samplesWin) >= CALIB_MIN_SAMPLES) tier = "CALIBRATED";
     }
     const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails
     if (edge <= 0 || pFside <= pWside) continue; // must beat its price on fail, and pay more on fail than win

@@ -28,6 +28,7 @@ export {
   upsertAssociationCandidateSnapshots,
   loadCandidateSnapshotsForPair,
   loadConditionalCounts,
+  loadAllConditionalCounts,
   loadAssociationBacktestRows,
   loadPendingFrozenPairs,
   type RelationRecordInput,

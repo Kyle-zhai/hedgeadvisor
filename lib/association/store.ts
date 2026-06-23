@@ -251,6 +251,38 @@ export async function loadConditionalCounts(relationKey: string): Promise<Condit
   };
 }
 
+/** Load EVERY relation template's cluster-normalized conditional counts in one pass. Feeds the rule-learner
+ *  (lib/relate/tuningProfile.ts): it re-buckets these across templates by role/mechanism to learn GENERAL
+ *  regularities, rather than looking up one template's answer. Empty map without a DB. */
+export async function loadAllConditionalCounts(): Promise<Map<string, ConditionalCounts>> {
+  const sql = await getSql();
+  if (!sql) return new Map();
+  await ensureSchema(sql);
+  const rows = await sql`
+    WITH base AS (
+      SELECT *,
+        count(*) OVER (PARTITION BY relation_key, COALESCE(cluster_key, sample_key), anchor_pays)::float8 AS branch_size
+      FROM association_observation
+    ), normalized AS (
+      SELECT *, CASE WHEN branch_size > 0 THEN 1.0 / branch_size ELSE 0 END AS normalized_weight FROM base
+    )
+    SELECT relation_key,
+      COALESCE(sum(normalized_weight) FILTER (WHERE anchor_pays AND candidate_pays), 0)::float8 AS app,
+      COALESCE(sum(normalized_weight) FILTER (WHERE anchor_pays AND NOT candidate_pays), 0)::float8 AS apn,
+      COALESCE(sum(normalized_weight) FILTER (WHERE NOT anchor_pays AND candidate_pays), 0)::float8 AS anp,
+      COALESCE(sum(normalized_weight) FILTER (WHERE NOT anchor_pays AND NOT candidate_pays), 0)::float8 AS ann
+    FROM normalized GROUP BY relation_key
+  ` as Array<{ relation_key: string; app: number; apn: number; anp: number; ann: number }>;
+  const out = new Map<string, ConditionalCounts>();
+  for (const r of rows) {
+    out.set(r.relation_key, {
+      anchorPayCandidatePay: Number(r.app), anchorPayCandidateNoPay: Number(r.apn),
+      anchorNoPayCandidatePay: Number(r.anp), anchorNoPayCandidateNoPay: Number(r.ann),
+    });
+  }
+  return out;
+}
+
 /** Load only observations that had a matching candidate snapshot before resolution. */
 export async function loadAssociationBacktestRows(
   minLeadHours = 24,
