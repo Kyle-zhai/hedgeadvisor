@@ -9,7 +9,8 @@
 import { resolveAnyPosition, resolvePosition, fetchEventBundle, fetchMidpoints, type EventBundle } from "@/lib/polymarket";
 import { gammaGet } from "@/lib/polymarket/client";
 import { listKalshiEvents, fetchKalshiMarkets } from "@/lib/kalshi";
-import { buildEventRelation, type EventRelation } from "@/lib/correlation";
+import { buildEventRelation, frechetProjectedPhi, type EventRelation } from "@/lib/correlation";
+import { elicitConditionalWithQwen } from "@/lib/association";
 import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
 import { selectRecallCandidates } from "./candidates";
@@ -153,8 +154,32 @@ export interface DiscoveredRelation {
   };
 }
 
+/** A validated cross-event hedge strategy. Correlation comes from elicited conditional probabilities
+ *  (Fréchet-projected signed φ, ~92% sign accuracy), NOT the unreliable mechanism MUTEX/CAUSAL label.
+ *  Inferred / exploratory layer: priced from real prices + real conditionals, never the calibrated optimizer. */
+export interface HedgeStrategy {
+  marketId: string;
+  venue: "polymarket" | "kalshi";
+  title: string;
+  marketTitle: string;
+  probYes: number;
+  url: string;
+  side: "YES" | "NO";            // the side you buy so it pays when your bet fails
+  legPrice: number;             // de-vigged price of that side
+  phi: number;                  // signed correlation from conditionals (negative = anti-correlated = hedge)
+  pGivenFails: number;          // P(bought side pays | anchor fails)
+  pGivenWins: number;           // P(bought side pays | anchor wins)
+  confidence: number;           // elicitation confidence
+  costUsd: number;
+  expectedReductionUsd: number; // expected downside cut if your bet fails
+  hedgedLossUsd: number;
+  keptIfWinUsd: number;
+  mechanism: string;
+}
+
 export interface DiscoverResult {
   status: "ok" | "ambiguous" | "not_found";
+  strategies?: HedgeStrategy[];
   anchor?: { id: string; venue: "polymarket" | "kalshi"; title: string; marketTitle: string; probYes: number; url: string };
   relations?: DiscoveredRelation[];
   /** The ACTIONABLE hedge: the cost/capacity/uncertainty-constrained robust optimizer's plan over the
@@ -201,6 +226,97 @@ export interface DiscoverRequest {
   keepFraction?: number; // win-floor k (default 0.5)
   conservatism?: number; // 0=model mean … 1=strictest credible-bound admissibility (default 0.5)
   maxLegs?: number; // default 3
+  /** Build the validated cross-event hedge strategy list (extra LLM elicitation). User-facing only;
+   *  the collection cron leaves it off so snapshots stay cheap. */
+  withStrategies?: boolean;
+}
+
+/** Bounded-concurrency map (keeps the per-anchor elicitation cost predictable). */
+async function mapPool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/**
+ * Build the validated cross-event hedge strategy list. The mechanism-classification MUTEX/CAUSAL label
+ * is unreliable for sizing (it conflates "different party" with "mutually exclusive" — e.g. it wrongly
+ * marks a Democratic-nominee market as a MUTEX hedge for a Republican's presidency). So we do NOT trust
+ * it: we elicit P(candidate pays | anchor wins) and P(candidate pays | anchor fails) and derive a
+ * Fréchet-projected SIGNED φ (empirically ~92% sign accuracy). A candidate is a genuine hedge only when
+ * its bought side pays MEANINGFULLY more often when the anchor fails than when it wins, and more than its
+ * own base rate. Everything is then priced from the real conditionals. Exploratory layer only.
+ */
+async function buildCrossEventStrategies(
+  anchor: { title: string; marketTitle: string; probYes: number },
+  relations: DiscoveredRelation[],
+  stakeUsd: number,
+  baseWinnings: number,
+): Promise<HedgeStrategy[]> {
+  const hedgeLikely = (r: DiscoveredRelation) => {
+    const h = r.hypothesis;
+    if (!h) return 0;
+    return (h.direction === "NEGATIVE" ? 2 : 0) + (h.relation === "MUTEX" || h.relation === "IMPLICATION" || h.relation === "CAUSAL" ? 1 : 0);
+  };
+  // Exclude same-ENTITY companions (the anchor's own name in another market — e.g. "Newsom as Governor",
+  // or the anchor's own nomination): those are prerequisites of the same bet, not cross-event hedges.
+  const anchorTokens = new Set(norm(anchor.title).split(" ").filter((w) => w.length > 2));
+  const sharesEntity = (title: string) => norm(title).split(" ").some((w) => w.length > 2 && anchorTokens.has(w));
+  const cands = relations
+    .filter((r) => r.classifyMethod !== "rule" && r.market.marketTitle !== anchor.marketTitle && !sharesEntity(r.market.title))
+    .sort((a, b) => hedgeLikely(b) - hedgeLikely(a))
+    .slice(0, 16); // bound the elicitation cost
+  if (cands.length === 0) return [];
+  const anchorTitle = `${anchor.title} (${anchor.marketTitle})`;
+  const ap = Math.min(0.999, Math.max(0.001, anchor.probYes));
+  const PHI_MIN = 0.12; // meaningful dependence
+  const CONF_MIN = 0.35; // elicitation-confidence floor
+  const elicited = await mapPool(cands, 8, async (r) => {
+    const e = await elicitConditionalWithQwen(anchorTitle, `${r.market.title} (${r.market.marketTitle})`).catch(() => null);
+    if (!e || e.status !== "ok" || e.pGivenAnchorWins == null) return null;
+    const pW = e.pGivenAnchorWins;
+    const pF = e.pGivenAnchorFails ?? r.market.probYes;
+    // φ from the model's OWN two conditionals (via its implied marginal), so equal conditionals ⇒ φ=0
+    // regardless of any level mismatch with the market price. The real price is used only for pricing.
+    const qB = ap * pW + (1 - ap) * pF;
+    const fp = frechetProjectedPhi(ap, qB, pW);
+    return { r, pW, pF, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "" };
+  });
+  const out: HedgeStrategy[] = [];
+  const hedgeBudget = 0.25 * stakeUsd; // a modest hedge spend; the cut scales with the per-dollar edge
+  for (const x of elicited) {
+    if (!x) continue;
+    const { r, pW, pF, phi, conf, reason } = x;
+    if (Math.abs(phi) < PHI_MIN || conf < CONF_MIN) continue;
+    const buyYes = phi < 0; // anti-correlated → the candidate's YES pays when your bet fails
+    const qSide = Math.min(0.98, Math.max(0.02, buyYes ? r.market.probYes : 1 - r.market.probYes));
+    const pWside = buyYes ? pW : 1 - pW; // P(bought side pays | anchor wins)
+    // P(bought side pays | anchor fails). The model's level often disagrees with the price; clamp to the
+    // market-feasible bound P(side)/P(anchor fails) so the payoff stays consistent with the real price.
+    const pFside = Math.min(buyYes ? pF : 1 - pF, qSide / Math.max(0.05, 1 - ap));
+    const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails
+    if (edge <= 0 || pFside <= pWside) continue; // must beat its price on fail, and pay more on fail than win
+    const costUsd = hedgeBudget;
+    const expectedReductionUsd = costUsd * edge;
+    out.push({
+      marketId: r.market.id, venue: r.market.venue, title: r.market.title, marketTitle: r.market.marketTitle,
+      probYes: r.market.probYes, url: r.market.url, side: buyYes ? "YES" : "NO",
+      legPrice: Number(qSide.toFixed(4)), phi: Number(phi.toFixed(3)), pGivenFails: Number(pFside.toFixed(3)),
+      pGivenWins: Number(pWside.toFixed(3)), confidence: Number(conf.toFixed(2)), costUsd: Number(costUsd.toFixed(2)),
+      expectedReductionUsd: Number(expectedReductionUsd.toFixed(2)), hedgedLossUsd: Number((stakeUsd - expectedReductionUsd).toFixed(2)),
+      keptIfWinUsd: Number((baseWinnings - costUsd).toFixed(2)), mechanism: reason.slice(0, 160),
+    });
+  }
+  return out
+    .sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd || b.confidence - a.confidence)
+    .slice(0, 5);
 }
 
 export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverResult> {
@@ -309,8 +425,18 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     candidates: optimizerCandidates,
   });
 
+  // Validated cross-event hedge strategies (user-facing only; the cron leaves withStrategies off).
+  const baseWinnings = stakeUsd * (1 - anchor.probYes) / Math.max(0.01, anchor.probYes);
+  const strategies = req.withStrategies
+    ? await buildCrossEventStrategies(
+        { title: anchor.title, marketTitle: anchor.marketTitle, probYes: anchor.probYes },
+        relations, stakeUsd, baseWinnings,
+      ).catch(() => [])
+    : undefined;
+
   return {
     status: "ok",
+    strategies,
     anchor: { id: anchor.id, venue: anchor.venue, title: anchor.title, marketTitle: anchor.marketTitle, probYes: Number(anchor.probYes.toFixed(4)), url: anchor.url },
     relations,
     robustHedge,

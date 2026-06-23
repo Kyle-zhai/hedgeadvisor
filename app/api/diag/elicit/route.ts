@@ -46,7 +46,9 @@ export async function POST(req: Request) {
       results.push({ ...p, status: e.status, failReason: e.failReason ?? null });
       continue;
     }
-    const fp = frechetProjectedPhi(p.pA, p.pB, e.pGivenAnchorWins);
+    const pFv = e.pGivenAnchorFails ?? p.pB;
+    const qB = p.pA * e.pGivenAnchorWins + (1 - p.pA) * pFv; // model-implied marginal (level-robust)
+    const fp = frechetProjectedPhi(p.pA, qB, e.pGivenAnchorWins);
     const got = sign(fp.phi);
     const ok = p.expectedSign ? got === p.expectedSign : null;
     if (p.expectedSign) { scored++; if (ok) correct++; }

@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid request body" }, { status: 400 });
   }
   try {
-    let result = await discoverRelations(parsed);
+    let result = await discoverRelations({ ...parsed, withStrategies: true });
     // Auto-disambiguate a CLEAR leader (fix 1): when the query matched one outcome decisively (mode
     // "outcome") but landed just under the resolve threshold, re-pin the top candidate within its event
     // instead of dead-ending. Mirrors the collection cron. Event-title queries (mode "event") are left
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       const [top, next] = result.candidates;
       const clearLeader = top.score >= 0.6 && top.score - (next?.score ?? 0) >= 0.2;
       if (clearLeader) {
-        const pinned = await discoverRelations({ ...parsed, query: top.title, eventSlug: result.eventSlug });
+        const pinned = await discoverRelations({ ...parsed, query: top.title, eventSlug: result.eventSlug, withStrategies: true });
         if (pinned.status === "ok") result = { ...pinned, disambiguatedTo: top.title };
       }
     }

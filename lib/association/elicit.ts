@@ -42,11 +42,16 @@ export interface ElicitOptions {
 const SYSTEM = `You are a careful forecaster estimating the DEPENDENCE between two prediction-market outcomes on DIFFERENT events, using ordinary real-world knowledge (team rosters, shared drivers, mutual exclusivity, common causes). For the CANDIDATE outcome, estimate two conditional probabilities:
 - pGivenAnchorWins = P(candidate pays | the anchor outcome HAPPENS)
 - pGivenAnchorFails = P(candidate pays | the anchor outcome does NOT happen)
-Reason from the mechanism:
-- A contributor to the anchor (e.g. a player on the anchor nation winning the Golden Boot) is MORE likely when the anchor happens: pGivenAnchorWins > pGivenAnchorFails.
-- An outcome that cannot co-occur with the anchor (e.g. "a non-European nation wins" when the anchor is "France wins") is near-impossible when the anchor happens: pGivenAnchorWins ≈ 0, pGivenAnchorFails > 0.
-- Unrelated events: both conditionals ≈ the candidate's own base rate (roughly equal).
-Keep the two estimates plausible and internally consistent with the mechanism. Return JSON only with keys pGivenAnchorWins, pGivenAnchorFails, confidence (0-1, your confidence in the estimate), reason (one short sentence naming the mechanism). Example JSON: {"pGivenAnchorWins":0.30,"pGivenAnchorFails":0.08,"confidence":0.5,"reason":"same-nation contributor, so it rises with the anchor"}`;
+
+Move the two conditionals apart ONLY when a specific, concrete mechanism links the two outcomes. The real mechanisms, with their direction:
+  (a) shared contributor — same team, player, party, or region drives both (a player on the anchor nation winning the Golden Boot rises with the anchor): POSITIVE, pGivenAnchorWins > pGivenAnchorFails.
+  (b) mutual exclusivity — they cannot both be true (two nations winning the same cup; two candidates winning the SAME party's nomination): near-impossible together, pGivenAnchorWins ≈ 0, pGivenAnchorFails > 0.
+  (c) prerequisite — the anchor REQUIRES the candidate outcome, or excludes it. Winning a general election requires first winning that party's nomination, so a DIFFERENT same-party candidate winning that nomination excludes the anchor (NEGATIVE); the anchor candidate winning their own nomination is required (POSITIVE).
+  (d) shared market or environment — assets in the SAME class move together (two cryptocurrencies; two tech stocks; a sector); a strong partisan or macro environment moves same-side races/outcomes together and opposite-side ones apart; an economic regime (recession, easing cycle) moves related macro outcomes together. This is REAL dependence.
+
+OTHERWISE, DEFAULT TO INDEPENDENCE: set pGivenAnchorWins = pGivenAnchorFails = the candidate's base rate. In particular, two outcomes in DIFFERENT, unrelated domains (a sports result vs a crypto price vs a box-office result vs an unrelated election) are independent — do NOT invent a link from "same news cycle", "general uncertainty", or cross-domain "risk-on/off". And a candidate of ONE party winning an office is NOT mutually exclusive with someone of the OTHER party winning that other party's nomination — that is independent, never a strong exclusion.
+
+Return JSON only with keys pGivenAnchorWins, pGivenAnchorFails, confidence (0-1; LOW when the link is speculative or you defaulted to independence), reason (one short sentence; say "independent, no concrete mechanism" when they are unrelated). Example JSON: {"pGivenAnchorWins":0.30,"pGivenAnchorFails":0.08,"confidence":0.5,"reason":"same-nation contributor, so it rises with the anchor"}`;
 
 /** Elicit P(candidate | anchor wins) and P(candidate | anchor fails) from the LLM. Disabled safely
  *  (status "disabled") when no key is configured, exactly like analyzeRelationWithQwen. */
