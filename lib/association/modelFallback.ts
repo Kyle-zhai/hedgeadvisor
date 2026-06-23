@@ -1,11 +1,14 @@
-// Fast, reliable models first; MiniMax-M2.5 last as a quality fallback. Telemetry (2026-06-22) showed
-// MiniMax at ~50% timeout / 64s avg / 26% first-try success while qwen3.6-flash is ~7s with no timeouts;
-// since the schema-coercion fix lets the fast models parse reliably, leading with them cuts per-pair
-// latency and avoids MiniMax's 90s thinking timeout on the hot path. Override with QWEN_RELATION_MODELS.
+// Ordered fallback chain (2026-06-23): each model is tried in order, and quota / rate-limit / error
+// responses fall through to the NEXT model (see chatCompletionWithFallback). Override with the
+// QWEN_RELATION_MODELS env var (comma-separated, same order). Keep this in sync with .env / GitHub var.
 export const DEFAULT_RELATION_MODEL_CHAIN = [
-  "qwen3.6-flash",
-  "qwen3-max-preview",
-  "MiniMax-M2.5",
+  "deepseek-r1",
+  "deepseek-v4-pro",
+  "MiniMax-M2.1",
+  "qwen-flash",
+  "kimi-k2.5",
+  "kimi-k2.6",
+  "qwen-plus-1220",
 ] as const;
 
 export interface ModelAttempt {
