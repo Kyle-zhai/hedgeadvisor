@@ -193,6 +193,9 @@ export default function HedgePage() {
     probability: `${Math.round(p * 100)}%`,
     unprotected: Number((p * baseWinnings - (1 - p) * stakeNum).toFixed(2)),
     protected: Number((p * actKept - (1 - p) * actHedgedLoss).toFixed(2)),
+  })).map((point) => ({
+    ...point,
+    delta: Number((point.protected - point.unprotected).toFixed(2)),
   }));
 
   return (
@@ -327,7 +330,7 @@ export default function HedgePage() {
                   ? <><span className="badge PARTIAL">MODEL</span><span className="hint" style={{ marginLeft: 0 }}>live prices, assumes the companion pays when your bet fails</span></>
                   : <span className="hint" style={{ marginLeft: 0 }}>P&amp;L vs your bet&apos;s win probability</span>}
               </div>
-              <PayoffChart data={payoffData} primaryLabel={selected ? "With companion" : "Your bet"} comparisonLabel="Hold (no hedge)" />
+              <PayoffChart data={payoffData} primaryLabel={selected ? "With companion" : "Your bet"} comparisonLabel="Hold (no hedge)" showDelta={Boolean(selected)} />
               <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
                 {selected
                   ? `Modeled at today's prices: win and you keep about $${selected.keptIfWinUsd.toFixed(2)} (after $${selected.costUsd.toFixed(2)} spent on "${selected.title}"); lose and, if this companion pays, you are down about $${actHedgedLoss.toFixed(2)} instead of $${stakeNum.toFixed(2)}.`

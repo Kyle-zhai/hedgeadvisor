@@ -43,23 +43,50 @@ function MoneyTooltip({ active, payload, label }: { active?: boolean; payload?: 
   );
 }
 
-export function PayoffChart({ data, primaryLabel = "Protected", comparisonLabel = "Unprotected" }: { data: Point[]; primaryLabel?: string; comparisonLabel?: string }) {
+export function PayoffChart({
+  data,
+  primaryLabel = "Protected",
+  comparisonLabel = "Unprotected",
+  showDelta = false,
+}: {
+  data: Point[];
+  primaryLabel?: string;
+  comparisonLabel?: string;
+  showDelta?: boolean;
+}) {
   const mounted = useMounted();
   if (!mounted) return <div className="chart-frame" aria-hidden="true" />;
   return (
-    <div className="chart-frame">
-      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-        <LineChart data={data} margin={{ top: 10, right: 22, left: 2, bottom: 5 }}>
-          <CartesianGrid stroke={GRID} vertical={false} />
-          <XAxis dataKey="probability" tick={{ fill: INK_3, fontSize: 10 }} tickLine={false} axisLine={{ stroke: GRID }} />
-          <YAxis tick={{ fill: INK_3, fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} />
-          <Tooltip content={<MoneyTooltip />} />
-          <Legend iconType="plainline" wrapperStyle={{ fontSize: 10, color: INK_3 }} />
-          <ReferenceLine y={0} stroke="#9ba09c" />
-          <Line name={comparisonLabel} type="linear" dataKey="unprotected" stroke="#8b9194" strokeWidth={2} dot={false} />
-          <Line name={primaryLabel} type="linear" dataKey="protected" stroke={BLUE} strokeWidth={2.4} strokeDasharray="6 4" dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className={`chart-frame ${showDelta ? "with-delta" : ""}`}>
+      <div className="payoff-main-chart">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+          <LineChart data={data} margin={{ top: 10, right: 22, left: 2, bottom: 5 }}>
+            <CartesianGrid stroke={GRID} vertical={false} />
+            <XAxis dataKey="probability" tick={{ fill: INK_3, fontSize: 10 }} tickLine={false} axisLine={{ stroke: GRID }} />
+            <YAxis tick={{ fill: INK_3, fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} />
+            <Tooltip content={<MoneyTooltip />} />
+            <Legend iconType="plainline" wrapperStyle={{ fontSize: 10, color: INK_3 }} />
+            <ReferenceLine y={0} stroke="#9ba09c" />
+            <Line name={comparisonLabel} type="linear" dataKey="unprotected" stroke="#8b9194" strokeWidth={2} dot={false} />
+            <Line name={primaryLabel} type="linear" dataKey="protected" stroke={BLUE} strokeWidth={2.4} strokeDasharray="6 4" dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      {showDelta && (
+        <div className="payoff-delta-chart" aria-label="Difference versus holding">
+          <div className="delta-label">Delta vs hold</div>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <LineChart data={data} margin={{ top: 7, right: 22, left: 2, bottom: 2 }}>
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="probability" tick={{ fill: INK_3, fontSize: 9 }} tickLine={false} axisLine={{ stroke: GRID }} />
+              <YAxis tick={{ fill: INK_3, fontSize: 9 }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} width={42} />
+              <Tooltip content={<MoneyTooltip />} />
+              <ReferenceLine y={0} stroke="#9ba09c" />
+              <Line name="Delta vs hold" type="linear" dataKey="delta" stroke={GREEN} strokeWidth={2.3} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }

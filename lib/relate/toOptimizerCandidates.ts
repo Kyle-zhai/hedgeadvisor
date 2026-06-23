@@ -22,6 +22,7 @@ import { walkBookBuyBudgetCapped, bandDepthUsd, kalshiTakerFeeUsd, takerFeeUsd }
 import { calibrateConditionalPayoff, loadConditionalCounts, type OptimizerCandidate } from "@/lib/association";
 import { mechanismSignature, relationKey, relationRole } from "./relationKey";
 import type { CandidatePair, NormalizedMarket, PairClassification } from "./types";
+import { norm } from "@/lib/polymarket/text";
 
 const MAX_HYPOTHESIS = 8; // cap rejected legs shown (transparency), per relation-family dedup
 const CREDIBLE_LEVEL = 0.95;
@@ -76,6 +77,14 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
 
   // Most-liquid candidate first so the per-relation_key dedup keeps the best one (pre-price proxy).
   const ordered = [...classified].sort((a, b) => Number(b.pair.b.liquidityOk) - Number(a.pair.b.liquidityOk) || b.pair.b.probYes - a.pair.b.probYes);
+  const entityStop = new Set([
+    "the", "to", "win", "wins", "winner", "world", "cup", "stage", "elimination", "champion",
+    "final", "semifinals", "quarterfinals", "knockout", "round", "group", "polymarket", "kalshi",
+  ]);
+  const entityTokens = (text: string) => norm(text).split(" ").filter((w) => w.length > 2 && !entityStop.has(w));
+  const anchorTokens = new Set(entityTokens(`${anchor.title} ${anchor.marketTitle}`));
+  const sharesAnchorEntity = (m: NormalizedMarket) =>
+    entityTokens(`${m.title} ${m.marketTitle}`).some((w) => anchorTokens.has(w));
 
   for (const { pair, cls } of ordered) {
     const m = pair.b;
@@ -83,7 +92,8 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
     // Cross-event positive-sum hedge: a standalone bet on a DIFFERENT event, keyed by a stable
     // relation_key. Settled history calibrates it; otherwise it remains display-only.
     const preferredSide = hedgeSide(cls);
-    const role = relationRole(anchor.title, {
+    const anchorEntityContext = `${anchor.title} ${anchor.marketTitle}`;
+    const role = relationRole(anchorEntityContext, {
       entity: m.title,
       family: m.eventFamily,
       context: `${m.marketTitle} ${m.description} ${m.resolutionCriteria}`,
@@ -91,7 +101,7 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
     });
     // Drop every "short your own bet" leg: same event (rival), same entity (subset / own progress),
     // and anything unrelated. A hedge leg must resolve on a DIFFERENT event from the anchor.
-    if (role === "unrelated" || role === "rival" || role === "same_entity" || m.eventKey === anchor.eventKey) continue;
+    if (role === "unrelated" || role === "rival" || role === "same_entity" || m.eventKey === anchor.eventKey || sharesAnchorEntity(m)) continue;
     const graph = cls.hypothesis?.mechanismGraph;
     const mechanism = mechanismSignature(graph, cls.hypothesis?.direction);
     const reusableCohort = !graph || graph.portability !== "INSTANCE_ONLY";

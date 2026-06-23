@@ -137,7 +137,7 @@ async function buildUniverse(anchorBundle: EventBundle): Promise<NormalizedMarke
 }
 
 export interface DiscoveredRelation {
-  market: { id: string; venue: "polymarket" | "kalshi"; title: string; marketTitle: string; probYes: number; url: string };
+  market: { id: string; venue: "polymarket" | "kalshi"; eventKey: string; title: string; marketTitle: string; probYes: number; url: string };
   recall: CandidatePair["recall"];
   similarity: number;
   classifyMethod: "rule" | "llm" | "heuristic";
@@ -255,7 +255,7 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>
  * own base rate. Everything is then priced from the real conditionals. Exploratory layer only.
  */
 async function buildCrossEventStrategies(
-  anchor: { title: string; marketTitle: string; probYes: number },
+  anchor: { title: string; marketTitle: string; eventKey: string; url: string; probYes: number },
   relations: DiscoveredRelation[],
   stakeUsd: number,
   baseWinnings: number,
@@ -265,12 +265,21 @@ async function buildCrossEventStrategies(
     if (!h) return 0;
     return (h.direction === "NEGATIVE" ? 2 : 0) + (h.relation === "MUTEX" || h.relation === "IMPLICATION" || h.relation === "CAUSAL" ? 1 : 0);
   };
-  // Exclude same-ENTITY companions (the anchor's own name in another market — e.g. "Newsom as Governor",
-  // or the anchor's own nomination): those are prerequisites of the same bet, not cross-event hedges.
-  const anchorTokens = new Set(norm(anchor.title).split(" ").filter((w) => w.length > 2));
-  const sharesEntity = (title: string) => norm(title).split(" ").some((w) => w.length > 2 && anchorTokens.has(w));
+  // Exclude same-event and same-ENTITY companions. For grouped markets the anchor label can be generic
+  // ("Champion", "Final"), while the entity lives in the event title ("Spain Stage of Elimination").
+  // Those prerequisite NO legs are still shorting the user's own outcome, not a cross-event companion.
+  const entityStop = new Set([
+    "the", "to", "win", "wins", "winner", "world", "cup", "stage", "elimination", "champion",
+    "final", "semifinals", "quarterfinals", "knockout", "round", "group", "polymarket", "kalshi",
+  ]);
+  const entityTokens = (text: string) => norm(text).split(" ").filter((w) => w.length > 2 && !entityStop.has(w));
+  const anchorTokens = new Set(entityTokens(`${anchor.title} ${anchor.marketTitle}`));
+  const sharesEntity = (r: DiscoveredRelation) =>
+    entityTokens(`${r.market.title} ${r.market.marketTitle}`).some((w) => anchorTokens.has(w));
+  const sameEvent = (r: DiscoveredRelation) =>
+    r.market.eventKey === anchor.eventKey || r.market.url === anchor.url || norm(r.market.marketTitle) === norm(anchor.marketTitle);
   const cands = relations
-    .filter((r) => r.classifyMethod !== "rule" && r.market.marketTitle !== anchor.marketTitle && !sharesEntity(r.market.title))
+    .filter((r) => r.classifyMethod !== "rule" && !sameEvent(r) && !sharesEntity(r))
     .sort((a, b) => hedgeLikely(b) - hedgeLikely(a))
     .slice(0, 16); // bound the elicitation cost
   if (cands.length === 0) return [];
@@ -388,7 +397,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
       });
       if (cls.method !== "heuristic") relation.reasoning = cls.reasoning;
       return {
-        market: { id: pair.b.id, venue: pair.b.venue, title: pair.b.title, marketTitle: pair.b.marketTitle, probYes: Number(pair.b.probYes.toFixed(4)), url: pair.b.url },
+        market: { id: pair.b.id, venue: pair.b.venue, eventKey: pair.b.eventKey, title: pair.b.title, marketTitle: pair.b.marketTitle, probYes: Number(pair.b.probYes.toFixed(4)), url: pair.b.url },
         recall: pair.recall,
         similarity: pair.similarity,
         classifyMethod: cls.method,
@@ -429,7 +438,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const baseWinnings = stakeUsd * (1 - anchor.probYes) / Math.max(0.01, anchor.probYes);
   const strategies = req.withStrategies
     ? await buildCrossEventStrategies(
-        { title: anchor.title, marketTitle: anchor.marketTitle, probYes: anchor.probYes },
+        { title: anchor.title, marketTitle: anchor.marketTitle, eventKey: anchor.eventKey, url: anchor.url, probYes: anchor.probYes },
         relations, stakeUsd, baseWinnings,
       ).catch(() => [])
     : undefined;
