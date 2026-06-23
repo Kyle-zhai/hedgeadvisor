@@ -56,6 +56,40 @@ export interface RecallSelectionOpts {
   llmRecall: NormalizedMarket[] | null;
   allowCrossCategory?: boolean;
   minSimilarity?: number;
+  /** Inject up to this many cross-event markets from DISTINCT other events, ignoring similarity, so a combo
+   *  can reach dimensions the anchor's own event lacks. The elicited-φ gate downstream still rejects non-hedges. */
+  diversityK?: number;
+}
+
+/**
+ * Cross-event DIVERSITY quota. Similarity recall only surfaces markets that LOOK like the anchor, so a
+ * self-contained event (a single match has only its own goals/handicap markets) can never reach other
+ * DIMENSIONS. This injects one representative market per DISTINCT other event — similarity ignored, spread
+ * across categories/families for maximum dimensional coverage, preferring liquid, hedge-able (mid-priced)
+ * markets. It only WIDENS recall; the elicited-φ gate downstream still rejects any that is not a genuine
+ * hedge, and cross-domain legs are held to a higher φ bar there.
+ */
+export function selectDiversityCandidates(anchor: NormalizedMarket, universe: NormalizedMarket[], k: number): CandidatePair[] {
+  if (k <= 0) return [];
+  const hedgeable = (m: NormalizedMarket) => 0.5 - Math.abs(0.5 - m.probYes); // peaks at 0.5, → 0 at the extremes
+  const perEvent = new Map<string, NormalizedMarket>();
+  for (const m of universe) {
+    if (m.eventKey === anchor.eventKey || !m.liquidityOk) continue;
+    if (!metadataCompatible(anchor, m, true)) continue;
+    const cur = perEvent.get(m.eventKey);
+    if (!cur || hedgeable(m) > hedgeable(cur)) perEvent.set(m.eventKey, m);
+  }
+  // Round-robin across (category, family) so the sample spans many dimensions, not many events of one kind.
+  const reps = [...perEvent.values()].sort((a, b) => hedgeable(b) - hedgeable(a));
+  const seen = new Set<string>();
+  const spread: NormalizedMarket[] = [];
+  const rest: NormalizedMarket[] = [];
+  for (const m of reps) {
+    const key = `${m.category}|${m.eventFamily}`;
+    if (seen.has(key)) rest.push(m);
+    else { seen.add(key); spread.push(m); }
+  }
+  return [...spread, ...rest].slice(0, k).map((b) => ({ a: anchor, b, recall: "diversity" as const, similarity: 0 }));
 }
 
 /** Choose exactly one recall path. This prevents a valid semantic ranking from being accidentally
@@ -65,13 +99,19 @@ export function selectRecallCandidates(
   universe: NormalizedMarket[],
   opts: RecallSelectionOpts,
 ): CandidatePair[] {
+  // Cross-event diversity is merged into whichever recall path runs; on a duplicate market id the
+  // similarity-recalled pair wins (it lists last, so it overwrites the diversity stub) because a real
+  // similarity is more informative than the diversity placeholder.
+  const diversity = selectDiversityCandidates(anchor, universe, opts.diversityK ?? 0);
+  const withDiversity = (base: CandidatePair[]) =>
+    [...new Map([...diversity, ...base].map((pair) => [pair.b.id, pair])).values()];
   if (opts.semanticScore) {
-    return generateCandidates(anchor, universe, {
+    return withDiversity(generateCandidates(anchor, universe, {
       topK: opts.topK,
       semanticScore: opts.semanticScore,
       allowCrossCategory: opts.allowCrossCategory,
       minSimilarity: opts.minSimilarity,
-    });
+    }));
   }
   if (opts.llmRecall !== null) {
     const structural = generateCandidates(anchor, universe, { topK: 0, allowCrossCategory: opts.allowCrossCategory });
@@ -95,13 +135,13 @@ export function selectRecallCandidates(
         similarity: Number(lexicalSimilarity(anchor, candidate).toFixed(3)),
       })),
     ];
-    return [...new Map(merged.map((pair) => [pair.b.id, pair])).values()];
+    return withDiversity([...new Map(merged.map((pair) => [pair.b.id, pair])).values()]);
   }
-  return generateCandidates(anchor, universe, {
+  return withDiversity(generateCandidates(anchor, universe, {
     topK: opts.topK,
     allowCrossCategory: opts.allowCrossCategory,
     minSimilarity: opts.minSimilarity,
-  });
+  }));
 }
 
 /** Stage 1 for one anchor: structural siblings + top-K cross-event candidates. */

@@ -270,6 +270,9 @@ export interface DiscoverRequest {
   /** Build the validated cross-event hedge strategy list (extra LLM elicitation). User-facing only;
    *  the collection cron leaves it off so snapshots stay cheap. */
   withStrategies?: boolean;
+  /** Cross-event diversity quota at recall: markets from distinct other events injected so a combo can span
+   *  dimensions the anchor's own event lacks. Default 8; set 0 to disable (e.g. cheap cron snapshots). */
+  diversityK?: number;
 }
 
 /** Bounded-concurrency map (keeps the per-anchor elicitation cost predictable). */
@@ -329,20 +332,29 @@ async function buildCrossEventStrategies(
   // SHOULD share the match's teams — so include any market whose title nests the anchor's match identity
   // and let the elicited-φ gate decide. For genuinely DIFFERENT events, keep the strict cross-event rule.
   const anchorMt = norm(anchor.marketTitle);
-  const cands = relations
+  const eligible = relations
     .filter((r) => {
       const mt = norm(r.market.marketTitle);
       if (mt === anchorMt) return false; // the other side of the same bet (rival outcome)
       if (anchorMt.length > 6 && (mt.includes(anchorMt) || anchorMt.includes(mt))) return true; // same-match collateral; φ decides
+      if (r.recall === "diversity") return !sameEvent(r) && !sharesEntity(r); // cross-event diversity; φ decides
       return r.classifyMethod !== "rule" && !sameEvent(r) && !sharesEntity(r); // genuine cross-event
     })
-    .sort((a, b) => hedgeLikely(b) - hedgeLikely(a))
-    .slice(0, 18); // bound the elicitation cost
+    .sort((a, b) => hedgeLikely(b) - hedgeLikely(a));
+  // Reserve elicitation slots for cross-event DIVERSITY candidates so a self-contained anchor (a single
+  // match) can still reach other dimensions; the rest go to the similarity-recalled (same-event) legs.
+  const diverse = eligible.filter((r) => r.recall === "diversity").slice(0, 10);
+  const similar = eligible.filter((r) => r.recall !== "diversity").slice(0, 16);
+  const cands = [...new Map([...similar, ...diverse].map((r) => [r.market.id, r])).values()].slice(0, 24);
   if (cands.length === 0) return [];
   const anchorTitle = `${anchor.title} (${anchor.marketTitle})`;
   const ap = Math.min(0.999, Math.max(0.001, anchor.probYes));
   const PHI_MIN = 0.12; // meaningful dependence
   const CONF_MIN = 0.35; // elicitation-confidence floor
+  // A cross-DOMAIN (diversity) leg claims a correlation between unrelated events, which is rare and easy to
+  // hallucinate, so hold it to a stricter bar than a same-event collateral leg.
+  const DIVERSITY_PHI_MIN = 0.25;
+  const DIVERSITY_CONF_MIN = 0.5;
   const elicited = await mapPool(cands, 8, async (r) => {
     const e = await elicitConditionalWithQwen(anchorTitle, `${r.market.title} (${r.market.marketTitle})`).catch(() => null);
     if (!e || e.status !== "ok" || e.pGivenAnchorWins == null) return null;
@@ -358,7 +370,9 @@ async function buildCrossEventStrategies(
   for (const x of elicited) {
     if (!x) continue;
     const { r, pW, pF, phi, conf, reason } = x;
-    if (Math.abs(phi) < PHI_MIN || conf < CONF_MIN) continue;
+    const phiMin = r.recall === "diversity" ? DIVERSITY_PHI_MIN : PHI_MIN;
+    const confMin = r.recall === "diversity" ? DIVERSITY_CONF_MIN : CONF_MIN;
+    if (Math.abs(phi) < phiMin || conf < confMin) continue;
     const buyYes = phi < 0; // anti-correlated → the candidate's YES pays when your bet fails
     const qSide = Math.min(0.98, Math.max(0.02, buyYes ? r.market.probYes : 1 - r.market.probYes));
     const pWside = buyYes ? pW : 1 - pW; // P(bought side pays | anchor wins)
@@ -430,16 +444,19 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
     if (!byDimension.has(k)) byDimension.set(k, s);
   }
   const distinct = [...byDimension.values()];
-  const budget = Math.max(1, 0.5 * baseWinnings); // spend at most half the bet's upside on the WHOLE combo
+  // Spend at most HALF the bet's upside on the whole combo, with NO floor: an extreme favorite has tiny
+  // winnings, so its hedge budget is tiny (and may round to nothing). This guarantees kept-if-win =
+  // baseWinnings - totalCost >= 0.5*baseWinnings > 0 — you can never spend more than the bet can win.
+  const budget = 0.5 * baseWinnings;
   // Allocate the budget across distinct-aspect legs in priority order: each leg gets up to enough to pay
   // the stake if it hits (stake*legPrice), highest-priority first, until the budget or 4 legs run out. So
   // the total cost never exceeds the budget and kept-if-win stays positive.
-  const assemble = (ordered: HedgeStrategy[]): HedgeCombo => {
+  const assemble = (ordered: HedgeStrategy[], capPerLeg = Infinity): HedgeCombo => {
     let remaining = budget;
     const picks: { s: HedgeStrategy; cost: number }[] = [];
     for (const s of ordered) {
       if (picks.length >= 4 || remaining <= 0.05) break;
-      const cost = Math.min(stakeUsd * s.legPrice, remaining);
+      const cost = Math.min(stakeUsd * s.legPrice, capPerLeg, remaining);
       if (cost <= 0.05) continue;
       picks.push({ s, cost });
       remaining -= cost;
@@ -475,13 +492,15 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
         : `A single-leg ${dimensionOf(picks[0].s)} hedge covering ~${Math.round(coverage * 100)}% of your fail states (modeled).`,
     };
   };
-  // Three orderings → genuinely different combos: best value, broadest coverage, and the single strongest
-  // leg. De-duplicate by leg set; rank by expected cut.
+  // Four orderings → genuinely different combos: best value, broadest coverage, a DIVERSIFIED basket that
+  // splits the budget evenly across up to 4 distinct dimensions (so the multi-facet structure shows even
+  // when one leg would otherwise eat the budget), and the single strongest leg. Dedupe by leg set; rank by cut.
   const byCut = [...distinct].sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd);
   const byCoverage = [...distinct].sort((a, b) => b.pGivenFails - a.pGivenFails);
+  const spreadCap = budget / Math.min(4, Math.max(1, distinct.length)); // even split across up to 4 facets
   const seen = new Set<string>();
   const combos: HedgeCombo[] = [];
-  for (const c of [assemble(byCut), assemble(byCoverage), assemble(byCut.slice(0, 1))]) {
+  for (const c of [assemble(byCut), assemble(byCut, spreadCap), assemble(byCoverage), assemble(byCut.slice(0, 1))]) {
     if (!c.legs.length) continue;
     const key = c.legs.map((l) => l.marketId).sort().join("|");
     if (seen.has(key)) continue;
@@ -524,6 +543,9 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     llmRecall,
     allowCrossCategory: true,
     minSimilarity: semanticScore ? 0.12 : 0.08,
+    // Inject cross-event markets from distinct other events so a combo can reach DIMENSIONS the anchor's own
+    // event lacks (its own match only has goals/handicap markets). The elicited-φ gate rejects non-hedges.
+    diversityK: Math.max(0, req.diversityK ?? 8),
   });
   // Drop player-award and placeholder candidates at this one chokepoint, so they reach neither the
   // relation map (display) nor buildOptimizerCandidates (legs) — both consume `classified` below.

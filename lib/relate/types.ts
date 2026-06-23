@@ -51,7 +51,7 @@ export interface NormalizedMarket {
 export interface CandidatePair {
   a: NormalizedMarket;
   b: NormalizedMarket;
-  recall: "structural" | "semantic" | "llm_recall" | "lexical"; // how the pair was surfaced
+  recall: "structural" | "semantic" | "llm_recall" | "lexical" | "diversity"; // how the pair was surfaced
   similarity: number; // cosine (semantic) or token-overlap (lexical); 1 for structural same-event
 }
 
