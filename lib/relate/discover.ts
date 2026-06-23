@@ -165,6 +165,11 @@ export interface DiscoverResult {
   candidates?: { title: string; score: number }[];
   /** The resolved event for an ambiguous result, so a caller can re-pin a chosen candidate. */
   eventSlug?: string;
+  /** Ambiguous disambiguation hint: "outcome" = the query matched an outcome (a clear leader may be
+   *  auto-pinned); "event" = the query named the whole event, so candidates are its outcomes to choose. */
+  mode?: "outcome" | "event";
+  /** When the API auto-pinned a clear leading candidate for an ambiguous query, the title it pinned to. */
+  disambiguatedTo?: string;
   suggestions?: string[];
   pricedAt?: string;
   /** Point-in-time relation rows persisted before settlement (zero when DATABASE_URL is unset). */
@@ -205,7 +210,8 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   if (resolved.kind === "ambiguous") {
     // Expose the resolved event so a caller (e.g. the collection cron) can re-pin the top candidate.
     const eventSlug = (resolved as { eventSlug?: string }).eventSlug ?? req.eventSlug;
-    return { status: "ambiguous", eventSlug, candidates: resolved.candidates.map((c) => ({ title: c.title, score: Number(c.score.toFixed(2)) })) };
+    const mode = (resolved as { mode?: "outcome" | "event" }).mode ?? "outcome";
+    return { status: "ambiguous", eventSlug, mode, candidates: resolved.candidates.map((c) => ({ title: c.title, score: Number(c.score.toFixed(2)) })) };
   }
   if (resolved.kind !== "resolved") return { status: "not_found", suggestions: resolved.suggestions };
 

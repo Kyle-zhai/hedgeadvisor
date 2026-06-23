@@ -66,6 +66,9 @@ interface DiscoverResult {
   universeSize?: number;
   semanticRecall?: boolean;
   candidates?: { title: string; score: number }[];
+  eventSlug?: string;
+  mode?: "outcome" | "event";
+  disambiguatedTo?: string;
   suggestions?: string[];
   llm?: { classification?: { candidates?: number; rule?: number; llm?: number; heuristic?: number } };
   error?: string;
@@ -107,7 +110,7 @@ export default function HedgePage() {
   const [err, setErr] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
 
-  const run = useCallback(async (q: string, s: number) => {
+  const run = useCallback(async (q: string, s: number, slug?: string) => {
     if (!q.trim()) return;
     requestRef.current?.abort();
     const controller = new AbortController();
@@ -125,6 +128,7 @@ export default function HedgePage() {
           topK: 16,
           conservatism: s,
           stakeUsd: Number.isFinite(stake) && stake > 0 ? stake : 20,
+          ...(slug ? { eventSlug: slug } : {}),
           ...(Number.isFinite(entry) && entry > 0 && entry < 1 ? { entryPrice: entry } : {}),
         }),
         signal: controller.signal,
@@ -175,21 +179,30 @@ export default function HedgePage() {
   // is positive (legPrice < confidence), so a selected strategy's curve is never strictly worse than
   // holding. Prices, sides and confidence are real; whether it truly pays when your bet fails is a MODEL
   // assumption (labeled as such), not settled data. Ranked by modeled downside cut, top 5.
+  const anchorMarketTitle = anchor?.marketTitle;
   const stratViews = useMemo(() => llmRels
     .filter((r) => (r.hypothesis?.direction === "POSITIVE" || r.hypothesis?.direction === "NEGATIVE")
-      && r.mechanismGraph?.scope !== "SAME_ENTITY" && r.mechanismGraph?.scope !== "ENTITY_SPECIFIC")
+      && r.mechanismGraph?.scope !== "SAME_ENTITY" && r.mechanismGraph?.scope !== "ENTITY_SPECIFIC"
+      // Require a genuinely DIFFERENT event: a rival outcome in the SAME market (another 2028 candidate,
+      // another World Cup nation) is mutually exclusive, not positive-sum, and the optimizer rejects it.
+      && r.market.marketTitle !== anchorMarketTitle)
     .map((r) => {
       const buyNo = r.hypothesis?.direction === "POSITIVE"; // positive-corr companion → its NO pays when your bet fails
       const legPrice = Math.min(0.95, Math.max(0.02, buyNo ? 1 - r.market.probYes : r.market.probYes));
       const conf = Math.min(1, Math.max(0, r.hypothesis?.confidence ?? 0.5));
-      const cost = stakeNum * legPrice;               // real cost to size the companion against the stake
-      const reduction = stakeNum * (conf - legPrice); // modeled downside cut if your bet fails (>0 = non-dominated)
+      const cost = stakeNum * legPrice;               // real cost to size the companion to cover the stake
+      // EXPECTED downside cut, not a best-case one: the companion only pays in the slice of your
+      // fail-states where its own side hits. Coverage is bounded by the leg's market price (its implied
+      // pay-rate), lifted to the "given your bet fails" conditional and scaled by link confidence. A
+      // fairly-priced longshot companion therefore shows a small, honest cut, not the full stake.
+      const payGivenFail = Math.min(1, (conf * legPrice) / Math.max(0.05, 1 - anchorPrice));
+      const reduction = stakeNum * payGivenFail - cost; // > 0 ⟺ non-dominated (curve beats holding somewhere)
       return { r, id: r.market.id, side: (buyNo ? "NO" : "YES") as "NO" | "YES", legPrice, conf, cost,
         reduction, hedgedLoss: stakeNum - reduction, kept: baseWinnings - cost };
     })
     .filter((v) => v.reduction > 0)                   // drop dominated legs: the curve must beat holding somewhere
     .sort((a, b) => b.reduction - a.reduction)
-    .slice(0, 5), [llmRels, stakeNum, baseWinnings]);
+    .slice(0, 5), [llmRels, stakeNum, baseWinnings, anchorPrice, anchorMarketTitle]);
   const selected = stratViews.find((v) => v.id === selectedId) ?? null;
 
   // Curve/summary use the selected strategy when chosen, else the unhedged baseline. By construction
@@ -246,12 +259,23 @@ export default function HedgePage() {
       {err && <div className="card err">Could not search for hedges: {err}</div>}
       {loading && <div className="card"><span className="muted">Building the cross-venue universe and ranking companion bets…</span></div>}
       {data?.status === "ambiguous" && (
-        <div className="card"><div className="headline">Which exact market?</div>{data.candidates?.map((c) => <button key={c.title} className="chip" type="button" onClick={() => { setQuery(c.title); run(c.title, conservatism); }}>{c.title}</button>)}</div>
+        <div className="card">
+          <div className="headline">{data.mode === "event" ? "Pick the outcome you are betting on" : "Which exact market?"}</div>
+          {data.mode === "event" && <p className="sub" style={{ marginTop: 4 }}>That is the name of the whole event. Choose the specific outcome you hold, most likely first.</p>}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+            {data.candidates?.map((c) => <button key={c.title} className="chip" type="button" onClick={() => { setQuery(c.title); run(c.title, conservatism, data.eventSlug); }}>{c.title}</button>)}
+          </div>
+        </div>
       )}
       {data?.status === "not_found" && <div className="card err"><div className="headline">No live market matched</div><div className="muted">Try {(data.suggestions ?? ["France", "Spain"]).slice(0, 4).join(", ")}.</div></div>}
 
       {anchor && (
         <>
+          {data?.disambiguatedTo && (
+            <div className="note-box" style={{ marginTop: 6 }}>
+              Your query matched an event, so it was resolved to <strong>{data.disambiguatedTo}</strong>. Not what you meant? Refine the bet text above.
+            </div>
+          )}
           <div className="section-head" style={{ marginTop: 4 }}>
             <div>
               <div className="section-kicker">Your bet</div>
@@ -343,7 +367,7 @@ export default function HedgePage() {
                   <div className="kv"><span className="k">Companion bet</span><span className="v"><strong>{selected.side}</strong> {selected.r.market.title}</span></div>
                   <div className="kv"><span className="k">Companion price · link confidence</span><span className="v">{cents(selected.legPrice)} · {Math.round(selected.conf * 100)}%</span></div>
                   <div className="kv"><span className="k">Hedge cost</span><span className="v">${selected.cost.toFixed(2)}</span></div>
-                  <div className="kv"><span className="k">Modeled downside cut</span><span className="v pnl-pos">${selected.reduction.toFixed(2)}</span></div>
+                  <div className="kv"><span className="k">Expected downside cut</span><span className="v pnl-pos">${selected.reduction.toFixed(2)}</span></div>
                   <div className="kv"><span className="k">Kept if your bet wins</span><span className="v pnl-pos">${selected.kept.toFixed(2)}</span></div>
                   <div className="kv"><span className="k">Loss if your bet fails</span><span className="v">${actHedgedLoss.toFixed(2)}</span></div>
                 </>

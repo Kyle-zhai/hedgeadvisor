@@ -52,7 +52,7 @@ export interface EventBundle {
 
 export type ResolveResult =
   | { kind: "resolved"; bundle: EventBundle; index: number }
-  | { kind: "ambiguous"; bundle: EventBundle; candidates: { index: number; title: string; score: number }[] }
+  | { kind: "ambiguous"; bundle: EventBundle; candidates: { index: number; title: string; score: number }[]; mode: "outcome" | "event" }
   | { kind: "not_found"; suggestions: string[] };
 
 function parseMarket(raw: RawMarket, event: RawEvent): MarketRef | null {
@@ -192,7 +192,17 @@ export async function resolvePosition(query: string, slug: string): Promise<Reso
     return { kind: "resolved", bundle, index: top.index };
   }
   if (top.score >= 0.5) {
-    return { kind: "ambiguous", bundle, candidates: ranked.slice(0, 6) };
+    return { kind: "ambiguous", bundle, candidates: ranked.slice(0, 6), mode: "outcome" };
+  }
+  // The query names the EVENT itself (e.g. "Next UK Prime Minister in 2026?"), not a single outcome, so
+  // no market matched. Offer the event's outcomes (most-likely first) to choose from, instead of a
+  // dead-end not_found that would only re-suggest the very title just typed.
+  if (bundle.markets.length > 1 && tokenSetScore(query, bundle.title) >= 0.5) {
+    const byPrice = bundle.markets
+      .map((m, index) => ({ index, title: m.groupItemTitle ?? m.question, score: bundle.yesPrices[index] ?? 0 }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
+    return { kind: "ambiguous", bundle, candidates: byPrice, mode: "event" };
   }
   return { kind: "not_found", suggestions: ranked.slice(0, 6).map((r) => r.title) };
 }
