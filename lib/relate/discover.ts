@@ -189,9 +189,37 @@ export interface HedgeStrategy {
   mechanism: string;
 }
 
+/** One leg inside a combo: a single bet you place, fully described. */
+export interface HedgeComboLeg {
+  marketId: string;
+  venue: "polymarket" | "kalshi";
+  title: string;        // the outcome you bet on, e.g. "Uzbekistan (-1.5)"
+  marketTitle: string;  // the market it lives in
+  url: string;
+  side: "YES" | "NO";   // which side to buy
+  legPrice: number;     // price of that side
+  pGivenFails: number;  // P(this leg pays | your bet fails) — the fail-state it covers
+  costUsd: number;      // dollars to put on this leg
+  mechanism: string;    // why it pays when your bet fails
+}
+
+/** A COMBO = a basket of 1–4 complementary legs. Each leg covers a different way your bet can fail, so
+ *  together they cover more of the fail-space than any single leg. Coverage assumes the legs are
+ *  conditionally independent given the anchor outcome (legs are de-duplicated by scenario to limit overlap). */
+export interface HedgeCombo {
+  legs: HedgeComboLeg[];
+  coverage: number;             // P(at least one leg pays | your bet fails)
+  totalCostUsd: number;
+  expectedReductionUsd: number; // expected downside cut if your bet fails
+  hedgedLossUsd: number;
+  keptIfWinUsd: number;
+  rationale: string;
+}
+
 export interface DiscoverResult {
   status: "ok" | "ambiguous" | "not_found";
   strategies?: HedgeStrategy[];
+  combos?: HedgeCombo[];
   anchor?: { id: string; venue: "polymarket" | "kalshi"; title: string; marketTitle: string; probYes: number; url: string };
   relations?: DiscoveredRelation[];
   /** The ACTIONABLE hedge: the cost/capacity/uncertainty-constrained robust optimizer's plan over the
@@ -354,7 +382,80 @@ async function buildCrossEventStrategies(
   }
   return out
     .sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd || b.confidence - a.confidence)
-    .slice(0, 5);
+    .slice(0, 10); // keep extra legs as raw material for combo construction
+}
+
+/**
+ * Build multi-leg hedge COMBOS from the validated single legs. A combo bundles 1–4 legs that each cover a
+ * DIFFERENT way your bet can fail, so together they cover more of the fail-space than any single leg.
+ * Legs are first de-duplicated by "scenario aspect" (two "Portugal total goals" bets cover the same state,
+ * so only the best is kept), then assembled greedily: a leg joins a combo only when its MARGINAL expected
+ * cut (stake × the fail-mass it newly covers) exceeds its cost. Coverage uses a conditional-independence
+ * model (stated in the UI); legs are sized to pay the stake if they hit, total cost capped at half the upside.
+ */
+function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: number): HedgeCombo[] {
+  if (legs.length === 0) return [];
+  // Scenario "aspect": strip thresholds, sides, and over/under wording so redundant legs (two "Portugal
+  // total goals" bets cover the SAME fail state) collapse to one; keep the best by single-leg cut.
+  const aspect = (s: HedgeStrategy) =>
+    norm(s.title)
+      .replace(/\d+(\.\d+)?/g, " ")
+      .replace(/[()+\-./]/g, " ")
+      .replace(/\b(o\s*u|over|under|total|goals?|half|first|second|st|nd|rd|th)\b/g, " ")
+      .replace(/\s+/g, " ").trim() || norm(s.marketTitle).slice(0, 20);
+  const byAspect = new Map<string, HedgeStrategy>();
+  for (const s of [...legs].sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd)) {
+    const k = aspect(s);
+    if (!byAspect.has(k)) byAspect.set(k, s);
+  }
+  const distinct = [...byAspect.values()];
+  const budget = Math.max(1, 0.5 * baseWinnings); // spend at most half the bet's upside on the WHOLE combo
+  // Allocate the budget across distinct-aspect legs in priority order: each leg gets up to enough to pay
+  // the stake if it hits (stake*legPrice), highest-priority first, until the budget or 4 legs run out. So
+  // the total cost never exceeds the budget and kept-if-win stays positive.
+  const assemble = (ordered: HedgeStrategy[]): HedgeCombo => {
+    let remaining = budget;
+    const picks: { s: HedgeStrategy; cost: number }[] = [];
+    for (const s of ordered) {
+      if (picks.length >= 4 || remaining <= 0.05) break;
+      const cost = Math.min(stakeUsd * s.legPrice, remaining);
+      if (cost <= 0.05) continue;
+      picks.push({ s, cost });
+      remaining -= cost;
+    }
+    const coverage = 1 - picks.reduce((p, { s }) => p * (1 - s.pGivenFails), 1);
+    const totalCost = picks.reduce((c, x) => c + x.cost, 0);
+    // expected cut = Σ (allocation × the leg's per-dollar edge when your bet fails), capped at the stake.
+    const cut = Math.min(picks.reduce((c, { s, cost }) => c + cost * (s.pGivenFails / Math.max(0.02, s.legPrice) - 1), 0), stakeUsd);
+    return {
+      legs: picks.map(({ s, cost }) => ({
+        marketId: s.marketId, venue: s.venue, title: s.title, marketTitle: s.marketTitle, url: s.url,
+        side: s.side, legPrice: s.legPrice, pGivenFails: s.pGivenFails, costUsd: Number(cost.toFixed(2)), mechanism: s.mechanism,
+      })),
+      coverage: Number(coverage.toFixed(3)),
+      totalCostUsd: Number(totalCost.toFixed(2)),
+      expectedReductionUsd: Number(Math.max(0, cut).toFixed(2)),
+      hedgedLossUsd: Number((stakeUsd - Math.max(0, cut)).toFixed(2)),
+      keptIfWinUsd: Number((baseWinnings - totalCost).toFixed(2)),
+      rationale: picks.length > 1
+        ? `Bundles ${picks.length} legs that pay in different ways your bet fails (covers ~${Math.round(coverage * 100)}% of fail states).`
+        : `A single-leg hedge covering ~${Math.round(coverage * 100)}% of your fail states.`,
+    };
+  };
+  // Three orderings → genuinely different combos: best value, broadest coverage, and the single strongest
+  // leg. De-duplicate by leg set; rank by expected cut.
+  const byCut = [...distinct].sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd);
+  const byCoverage = [...distinct].sort((a, b) => b.pGivenFails - a.pGivenFails);
+  const seen = new Set<string>();
+  const combos: HedgeCombo[] = [];
+  for (const c of [assemble(byCut), assemble(byCoverage), assemble(byCut.slice(0, 1))]) {
+    if (!c.legs.length) continue;
+    const key = c.legs.map((l) => l.marketId).sort().join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    combos.push(c);
+  }
+  return combos.sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd).slice(0, 4);
 }
 
 export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverResult> {
@@ -471,10 +572,12 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
         relations, stakeUsd, baseWinnings,
       ).catch(() => [])
     : undefined;
+  const combos = strategies && strategies.length ? buildCombos(strategies, stakeUsd, baseWinnings) : undefined;
 
   return {
     status: "ok",
     strategies,
+    combos,
     anchor: { id: anchor.id, venue: anchor.venue, title: anchor.title, marketTitle: anchor.marketTitle, probYes: Number(anchor.probYes.toFixed(4)), url: anchor.url },
     relations,
     robustHedge,

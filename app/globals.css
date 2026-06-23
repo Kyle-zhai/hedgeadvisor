@@ -425,3 +425,14 @@ table th[style*="right"], table td[style*="right"] { white-space: nowrap; }
   .strat-meter { max-width: none; }
   .strat-sub { white-space: normal; }
 }
+
+/* Hedge combo legs (rendered inside a .strat-opt body) */
+.combo-tag {
+  display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 3px;
+  font-size: 9.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .02em;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-3);
+}
+.combo-legs { display: grid; gap: 5px; margin-top: 8px; }
+.combo-leg { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; line-height: 1.3; color: var(--ink); }
+.combo-leg-name strong { font-weight: 640; }
+.combo-leg-price { color: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }

@@ -63,9 +63,18 @@ interface HedgeStrategy {
   side: "YES" | "NO"; legPrice: number; phi: number; pGivenFails: number; pGivenWins: number;
   confidence: number; costUsd: number; expectedReductionUsd: number; hedgedLossUsd: number; keptIfWinUsd: number; mechanism: string;
 }
+interface HedgeComboLeg {
+  marketId: string; venue: Venue; title: string; marketTitle: string; url: string;
+  side: "YES" | "NO"; legPrice: number; pGivenFails: number; costUsd: number; mechanism: string;
+}
+interface HedgeCombo {
+  legs: HedgeComboLeg[]; coverage: number; totalCostUsd: number;
+  expectedReductionUsd: number; hedgedLossUsd: number; keptIfWinUsd: number; rationale: string;
+}
 interface DiscoverResult {
   status: "ok" | "ambiguous" | "not_found";
   strategies?: HedgeStrategy[];
+  combos?: HedgeCombo[];
   anchor?: { venue: Venue; title: string; marketTitle: string; probYes: number; url: string };
   relations?: DiscoveredRelation[];
   robustHedge?: RobustHedge;
@@ -178,15 +187,15 @@ export default function HedgePage() {
   const calKept = rh?.keepIfPrimaryWinsFloorUsd ?? baseWinnings;
   const noActionReason = rh?.reason ?? "No candidate qualified after the evidence, uncertainty, price, and liquidity gates.";
 
-  // Cross-event hedge strategies come from the SERVER (data.strategies). Each one's correlation is the
-  // elicited conditional-probability signed φ (~96% sign accuracy on a held-out set), NOT the unreliable
-  // mechanism MUTEX/CAUSAL label, and the payoff is priced from those real conditionals. Only genuine,
-  // non-dominated hedges survive the server gate, ranked by expected downside cut, top 5.
-  const strategies = useMemo(() => data?.strategies ?? [], [data]);
-  const selected = strategies.find((s) => s.marketId === selectedId) ?? null;
+  // Cross-event hedge COMBOS come from the SERVER (data.combos). Each combo bundles 1–4 complementary legs;
+  // each leg's correlation is the elicited conditional-probability signed φ (~96% held-out sign accuracy),
+  // NOT a keyword label, and the payoff is priced from those real conditionals. selectedId holds the combo
+  // index as a string ("0".."3"); null = Hold.
+  const combos = useMemo(() => data?.combos ?? [], [data]);
+  const selected = selectedId != null ? combos[Number(selectedId)] ?? null : null;
 
-  // Curve/summary use the selected strategy when chosen, else the unhedged baseline. The server gates to
-  // expected cut > 0, so the protected line is never strictly below the unhedged line.
+  // Curve/summary use the selected combo when chosen, else the unhedged baseline. The server gates each leg
+  // to expected cut > 0, so the protected line is never strictly below the unhedged line.
   const actHedgedLoss = selected?.hedgedLossUsd ?? stakeNum;
   const actKept = selected?.keptIfWinUsd ?? baseWinnings;
   const payoffData = [0, 0.25, 0.5, 0.75, 1].map((p) => ({
@@ -330,11 +339,11 @@ export default function HedgePage() {
                   ? <><span className="badge PARTIAL">MODEL</span><span className="hint" style={{ marginLeft: 0 }}>live prices, assumes the companion pays when your bet fails</span></>
                   : <span className="hint" style={{ marginLeft: 0 }}>P&amp;L vs your bet&apos;s win probability</span>}
               </div>
-              <PayoffChart data={payoffData} primaryLabel={selected ? "With companion" : "Your bet"} comparisonLabel="Hold (no hedge)" showDelta={Boolean(selected)} />
+              <PayoffChart data={payoffData} primaryLabel={selected ? "With combo" : "Your bet"} comparisonLabel="Hold (no hedge)" showDelta={Boolean(selected)} />
               <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
                 {selected
-                  ? `Modeled at today's prices: win and you keep about $${selected.keptIfWinUsd.toFixed(2)} (after $${selected.costUsd.toFixed(2)} spent on "${selected.title}"); lose and, if this companion pays, you are down about $${actHedgedLoss.toFixed(2)} instead of $${stakeNum.toFixed(2)}.`
-                  : "Your bet's payoff with no hedge. Pick a companion bet below to model how it would reshape this line."}
+                  ? `Modeled at today's prices: win and you keep about $${selected.keptIfWinUsd.toFixed(2)} (after $${selected.totalCostUsd.toFixed(2)} spread across ${selected.legs.length} leg${selected.legs.length > 1 ? "s" : ""}); lose and, if a leg pays, you are down about $${actHedgedLoss.toFixed(2)} instead of $${stakeNum.toFixed(2)}.`
+                  : "Your bet's payoff with no hedge. Pick a combo below to model how it would reshape this line."}
               </p>
             </div>
             <div className="card">
@@ -347,9 +356,8 @@ export default function HedgePage() {
               <div className="kv"><span className="k">Recall · conservatism</span><span className="v">{data?.semanticRecall ? "Semantic" : "Lexical"} · {conservatism.toFixed(2)}</span></div>
               {selected && (
                 <>
-                  <div className="kv"><span className="k">Companion bet</span><span className="v"><strong>{selected.side}</strong> {selected.title}</span></div>
-                  <div className="kv"><span className="k">Side price · correlation φ</span><span className="v">{cents(selected.legPrice)} · {selected.phi.toFixed(2)}</span></div>
-                  <div className="kv"><span className="k">Hedge cost</span><span className="v">${selected.costUsd.toFixed(2)}</span></div>
+                  <div className="kv"><span className="k">Combo</span><span className="v">{selected.legs.length} leg{selected.legs.length > 1 ? "s" : ""} · covers ~{Math.round(selected.coverage * 100)}% of fail states</span></div>
+                  <div className="kv"><span className="k">Total hedge cost</span><span className="v">${selected.totalCostUsd.toFixed(2)}</span></div>
                   <div className="kv"><span className="k">Expected downside cut</span><span className="v pnl-pos">${selected.expectedReductionUsd.toFixed(2)}</span></div>
                   <div className="kv"><span className="k">Kept if your bet wins</span><span className="v pnl-pos">${selected.keptIfWinUsd.toFixed(2)}</span></div>
                   <div className="kv"><span className="k">Loss if your bet fails</span><span className="v">${actHedgedLoss.toFixed(2)}</span></div>
@@ -363,45 +371,52 @@ export default function HedgePage() {
             </div>
           </div>
 
-          {/* Cross-event hedge strategies, selectable; choosing one models the payoff curve + summary above.
-              Non-dominated only (reduction > 0, so the curve always beats holding somewhere); the correlation
-              that says it pays when your bet fails is a MODEL assumption until settled data exists. */}
+          {/* Hedge COMBOS: each bundles up to 4 complementary legs (each spelled out). Selecting one models
+              the payoff curve + summary above. Per-leg correlation = elicited conditional φ; MODELED. */}
           <div className="card" style={{ background: "var(--bg-subtle)" }}>
             <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              Cross-event strategies <span className="badge PARTIAL">MODELED</span>
-              {strategies.length > 0 && <span className="hint" style={{ marginLeft: "auto" }}>select one to model its payoff above</span>}
+              Hedge combos <span className="badge PARTIAL">MODELED</span>
+              {combos.length > 0 && <span className="hint" style={{ marginLeft: "auto" }}>select one to model its payoff above</span>}
             </div>
             <p className="sub" style={{ marginTop: 6, marginBottom: 13, color: "var(--ink-2)" }}>
-              Companion bets on a DIFFERENT event the model expects to pay when your bet fails. The correlation is the elicited
-              conditional probability (signed φ), not a keyword guess; only genuine, non-dominated hedges are shown. Payoff is
-              modeled from live prices, not settled outcomes.
+              Each combo is a basket of up to 4 bets on DIFFERENT events, picked so each leg pays in a different way your bet
+              fails (broader cover than any single bet). Per-leg correlation is the elicited conditional probability (signed φ),
+              not a keyword guess; payoff is modeled from live prices, not settled outcomes.
             </p>
-            {strategies.length > 0 ? (
-              <div className="strat-list" role="radiogroup" aria-label="Cross-event hedge strategies">
+            {combos.length > 0 ? (
+              <div className="strat-list" role="radiogroup" aria-label="Hedge combos">
                 <button type="button" role="radio" aria-checked={!selected} className="strat-opt" onClick={() => setSelectedId(null)}>
                   <span className="strat-mark"><span className="strat-dot" /><span className="strat-rank">0</span></span>
                   <span className="strat-body"><span className="strat-title">Hold, no hedge</span><span className="strat-sub">keep your bet exactly as it is</span></span>
                   <span className="strat-metric"><span className="num" style={{ color: "var(--ink-3)" }}>$0</span><span className="lbl">cost</span></span>
                 </button>
-                {strategies.map((s, i) => (
-                  <button key={s.marketId} type="button" role="radio" aria-checked={selected?.marketId === s.marketId} className="strat-opt" onClick={() => setSelectedId(s.marketId)}>
-                    <span className="strat-mark"><span className="strat-dot" /><span className="strat-rank">{i + 1}</span></span>
+                {combos.map((c, i) => (
+                  <button key={i} type="button" role="radio" aria-checked={selectedId === String(i)} className="strat-opt" style={{ alignItems: "start" }} onClick={() => setSelectedId(String(i))}>
+                    <span className="strat-mark" style={{ marginTop: 2 }}><span className="strat-dot" /><span className="strat-rank">{i + 1}</span></span>
                     <span className="strat-body">
                       <span className="strat-title">
-                        {s.title} <VenueTag venue={s.venue} short />
-                        <span className={`strat-buy ${s.side === "YES" ? "yes" : "no"}`}>BUY {s.side}</span>
+                        {c.legs.length === 1 ? "Single-leg hedge" : `Combo of ${c.legs.length} legs`}
+                        <span className="combo-tag">covers ~{Math.round(c.coverage * 100)}%</span>
+                        <span className="combo-tag">cost ${c.totalCostUsd.toFixed(2)}</span>
                       </span>
-                      <span className="strat-sub">{s.mechanism ? s.mechanism : "cross-event hedge"} · φ {s.phi.toFixed(2)} · {cents(s.legPrice)}</span>
-                      <span className="strat-meter" aria-hidden="true"><i style={{ width: `${Math.round(Math.min(1, Math.abs(s.phi)) * 100)}%` }} /></span>
+                      <span className="combo-legs">
+                        {c.legs.map((l) => (
+                          <span className="combo-leg" key={l.marketId}>
+                            <span className={`strat-buy ${l.side === "YES" ? "yes" : "no"}`}>BUY {l.side}</span>
+                            <span className="combo-leg-name"><strong>{l.title}</strong> <VenueTag venue={l.venue} short /></span>
+                            <span className="combo-leg-price">@ {cents(l.legPrice)} · ${l.costUsd.toFixed(2)}</span>
+                          </span>
+                        ))}
+                      </span>
                     </span>
-                    <span className="strat-metric"><span className="num">${s.expectedReductionUsd.toFixed(2)}</span><span className="lbl">exp. cut</span></span>
+                    <span className="strat-metric" style={{ marginTop: 2 }}><span className="num">${c.expectedReductionUsd.toFixed(2)}</span><span className="lbl">exp. cut</span></span>
                   </button>
                 ))}
               </div>
             ) : (
               <div className="note-box" style={{ marginTop: 4 }}>
-                No companion bet on a different event beats simply holding this one. For many bets there is no positive-sum
-                cross-event hedge: the rival outcomes fail together with your bet. That is the honest answer, not a gap.
+                No combo of cross-event bets beats simply holding this one. For many bets there is no positive-sum
+                hedge: the rival outcomes fail together with your bet. That is the honest answer, not a gap.
               </div>
             )}
           </div>
