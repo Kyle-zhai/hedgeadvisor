@@ -66,6 +66,34 @@ export function canonicalEventClass(raw: string | undefined, fallback = "other")
   return `other_event_${shortHash(text || "other")}`;
 }
 
+// ── Orthogonal HEDGE DIMENSIONS ────────────────────────────────────────────────────────────────────────
+// A combo treats each dimension as ONE slot (at most one leg per dimension). Hard rule the product learned:
+// every goal/score/margin/result metric of a match is the SAME dimension ("scoreline") — they are correlated
+// functions of the goals scored, so two of them are not diversification. Truly orthogonal facets are the ones
+// the scoreline does not determine. Cross-domain, each canonical event class is its own dimension, so a Fed
+// anchor can span macro-policy + asset-price + macro-econ + company as genuinely different facets.
+const FAMILY_DIMENSION: Record<string, string> = {
+  match_winner: "scoreline", match_total: "scoreline", tournament_winner: "scoreline",
+  continent_winner: "scoreline", group_winner: "scoreline",
+  stage_advance: "progression", golden_boot: "individual", broadcast_word: "narrative",
+};
+const CLASS_DIMENSION: Partial<Record<KnownEventClass, string>> = {
+  competition_winner: "scoreline", match_outcome: "scoreline", stage_advance: "progression",
+  award_outcome: "individual", broadcast_language: "narrative", media_mention: "narrative",
+  election_outcome: "election", policy_decision: "macro-policy", regulatory_action: "regulatory",
+  economic_threshold: "macro-econ", asset_price_threshold: "asset-price", company_performance: "company",
+  product_event: "product", leadership_change: "leadership", legal_outcome: "legal",
+  geopolitical_event: "geopolitics", weather_event: "weather", entertainment_performance: "entertainment",
+};
+
+/** Map a market's template family + canonical class to its ORTHOGONAL hedge dimension (the combo slot). */
+export function eventDimension(family: string, eventClass: CanonicalEventClass): string {
+  if (FAMILY_DIMENSION[family]) return FAMILY_DIMENSION[family];
+  const known = CLASS_DIMENSION[eventClass as KnownEventClass];
+  if (known) return known;
+  return eventClass; // cross-domain catch-all: an unmapped class is still its own distinct dimension
+}
+
 export type PayoffDirection = "positive" | "negative" | "ambiguous";
 
 export function canonicalPayoffDirection(direction: AssociationDirection | string | undefined): PayoffDirection {

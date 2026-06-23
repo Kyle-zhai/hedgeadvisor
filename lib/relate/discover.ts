@@ -13,6 +13,7 @@ import { buildEventRelation, frechetProjectedPhi, type EventRelation } from "@/l
 import { elicitConditionalWithQwen } from "@/lib/association";
 import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
+import { marketDimension } from "./relationKey";
 import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
@@ -149,7 +150,7 @@ async function buildUniverse(anchorBundle: EventBundle): Promise<NormalizedMarke
 }
 
 export interface DiscoveredRelation {
-  market: { id: string; venue: "polymarket" | "kalshi"; eventKey: string; title: string; marketTitle: string; probYes: number; url: string };
+  market: { id: string; venue: "polymarket" | "kalshi"; eventKey: string; title: string; marketTitle: string; probYes: number; url: string; category?: string };
   recall: CandidatePair["recall"];
   similarity: number;
   classifyMethod: "rule" | "llm" | "heuristic";
@@ -188,6 +189,7 @@ export interface HedgeStrategy {
   keptIfWinUsd: number;
   mechanism: string;
   scope: "same-event" | "cross-event"; // same match/event as the anchor (collateral) vs a different event
+  dimension: string; // the orthogonal facet (scoreline/narrative/election/macro-policy/asset-price/…)
 }
 
 /** One leg inside a combo: a single bet you place, fully described. */
@@ -400,6 +402,7 @@ async function buildCrossEventStrategies(
       pGivenWins: Number(pWside.toFixed(3)), confidence: Number(conf.toFixed(2)), costUsd: Number(costUsd.toFixed(2)),
       expectedReductionUsd: Number(expectedReductionUsd.toFixed(2)), hedgedLossUsd: Number((stakeUsd - expectedReductionUsd).toFixed(2)),
       keptIfWinUsd: Number((baseWinnings - costUsd).toFixed(2)), mechanism: reason.slice(0, 160), scope,
+      dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
     });
   }
   return out
@@ -431,12 +434,17 @@ const DIMENSION_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(o\s*\/?\s*u|over|under|total|goals?|score|handicap|spread|win by|margin|to nil|clean sheet|both teams to score|btts|draw|win|lose|loss|result)\b/i, "scoreline"],
   [/(\(|\s)[+\-]\s?\d|\d\s*[-:]\s*\d/i, "scoreline"], // handicaps (-1.5) and exact scorelines (0 - 0)
 ];
-function dimensionOf(s: { title: string; marketTitle: string }): string {
+function hedgeDimension(s: { title: string; marketTitle: string; category?: string }): string {
   // Classify on the market's OWN labels only, never the LLM mechanism prose (it contains jargon like
-  // "the candidate market"/"score" that would mislabel the facet).
+  // "the candidate market"/"score" that would mislabel the facet). Order: (1) keyword facet rules — these
+  // correctly collapse every goal/margin/handicap/exact-score metric into `scoreline`; (2) any sports market
+  // with no specific facet is still a scoreline/result bet; (3) cross-domain falls to the canonical event
+  // class as its dimension (election / macro-policy / asset-price / geopolitics …), so a Fed or election
+  // anchor can span genuinely orthogonal facets.
   const hay = `${s.title} ${s.marketTitle}`;
   for (const [re, dim] of DIMENSION_RULES) if (re.test(hay)) return dim;
-  return norm(s.marketTitle).slice(0, 28) || "other"; // unknown facet → the market identity (same market = same dimension)
+  if (/\bvs\.?\b|soccer|football|basketball|baseball|hockey|tennis|world.?cup|league|\bmatch\b|\bgame\b/i.test(`${s.marketTitle} ${s.category ?? ""}`)) return "scoreline";
+  return marketDimension(s.marketTitle, s.category ?? "");
 }
 
 /**
@@ -454,7 +462,7 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
   // combo is therefore multi-dimensional by construction.
   const byDimension = new Map<string, HedgeStrategy>();
   for (const s of [...legs].sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd)) {
-    const k = dimensionOf(s);
+    const k = s.dimension;
     if (!byDimension.has(k)) byDimension.set(k, s);
   }
   const distinct = [...byDimension.values()];
@@ -494,7 +502,7 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       legs: picks.map(({ s, cost }) => ({
         marketId: s.marketId, venue: s.venue, title: s.title, marketTitle: s.marketTitle, url: s.url,
         side: s.side, legPrice: s.legPrice, pGivenFails: s.pGivenFails, costUsd: Number(cost.toFixed(2)),
-        mechanism: s.mechanism, dimension: dimensionOf(s), scope: s.scope,
+        mechanism: s.mechanism, dimension: s.dimension, scope: s.scope,
       })),
       coverage: Number(coverage.toFixed(3)),
       totalCostUsd: Number(totalCost.toFixed(2)),
@@ -502,8 +510,8 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       hedgedLossUsd: Number((stakeUsd - Math.max(0, cut)).toFixed(2)),
       keptIfWinUsd: Number((baseWinnings - totalCost).toFixed(2)),
       rationale: picks.length > 1
-        ? `Bundles ${picks.length} legs across different facets of the event (${[...new Set(picks.map(({ s }) => dimensionOf(s)))].join(", ")}); each pays when your bet fails a different way. Covers ~${Math.round(coverage * 100)}% of fail states (modeled).`
-        : `A single-leg ${dimensionOf(picks[0].s)} hedge covering ~${Math.round(coverage * 100)}% of your fail states (modeled).`,
+        ? `Bundles ${picks.length} legs across different facets (${[...new Set(picks.map(({ s }) => s.dimension))].join(", ")}); each pays when your bet fails a different way. Covers ~${Math.round(coverage * 100)}% of fail states (modeled).`
+        : `A single-leg ${picks[0].s.dimension} hedge covering ~${Math.round(coverage * 100)}% of your fail states (modeled).`,
     };
   };
   // Orderings → genuinely different combos: best value; a DIVERSIFIED basket that splits the budget evenly
@@ -601,7 +609,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
       });
       if (cls.method !== "heuristic") relation.reasoning = cls.reasoning;
       return {
-        market: { id: pair.b.id, venue: pair.b.venue, eventKey: pair.b.eventKey, title: pair.b.title, marketTitle: pair.b.marketTitle, probYes: Number(pair.b.probYes.toFixed(4)), url: pair.b.url },
+        market: { id: pair.b.id, venue: pair.b.venue, eventKey: pair.b.eventKey, title: pair.b.title, marketTitle: pair.b.marketTitle, probYes: Number(pair.b.probYes.toFixed(4)), url: pair.b.url, category: pair.b.category },
         recall: pair.recall,
         similarity: pair.similarity,
         classifyMethod: cls.method,

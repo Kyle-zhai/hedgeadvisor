@@ -12,7 +12,7 @@
 import { norm } from "@/lib/polymarket/text";
 import { sameEntityStrict } from "@/lib/link/match";
 import type { MechanismGraph } from "@/lib/association";
-import { canonicalEventClass, canonicalMechanismSignature } from "./ontology";
+import { canonicalEventClass, canonicalMechanismSignature, eventDimension } from "./ontology";
 
 /** Bump when eventFamily/predicate/role/weighting logic changes — old samples must NOT be reused. */
 export const TEMPLATE_VERSION = 5;
@@ -50,6 +50,14 @@ export function mechanismSignature(graph?: MechanismGraph, direction?: string): 
 }
 
 const FAMILY_RULES: { re: RegExp; family: string }[] = [
+  // ── cross-domain families (tested FIRST so "Presidential Election Winner" is not caught by /winner/) ──
+  { re: /nominee|nomination|\bprimary\b|presidential|election|\bvotes?\b|electoral/, family: "election" },
+  { re: /\bfed\b|rate cut|rate hike|interest rate|\bfomc\b|central bank|basis points|\bbps\b/, family: "rate_decision" },
+  { re: /bitcoin|ethereum|\bbtc\b|\beth\b|crypto|hit \$|hits \$|above \$|price .* (hit|reach)/, family: "asset_price" },
+  { re: /inflation|\bcpi\b|\bgdp\b|unemployment|recession|jobs report/, family: "macro_econ" },
+  { re: /earnings|revenue|market cap|largest company|valuation/, family: "company" },
+  { re: /regime|ceasefire|airspace|strait|invade|missile|peace deal|withdraw|war\b/, family: "geopolitics" },
+  // ── sports families ──
   { re: /announcer|broadcast|mention|halftime|first song|\bsays?\b|\bword\b|trophy lift/, family: "broadcast_word" },
   { re: /golden boot|top scorer|\bscorer\b|most goals/, family: "golden_boot" },
   { re: /continent .* win|continent to win/, family: "continent_winner" },
@@ -65,6 +73,14 @@ export function eventFamily(marketTitle: string, category: string): string {
   const t = norm(marketTitle);
   for (const r of FAMILY_RULES) if (r.re.test(t)) return r.family;
   return norm(category).replace(/\s+/g, "-") || "other";
+}
+
+/** A market's ORTHOGONAL hedge dimension (the combo slot): family → canonical class → dimension. Cross-domain
+ *  classes are each their own dimension; the keyword-level sports collapse (handicaps, exact scores) is handled
+ *  upstream by the combo's own facet rules, with this as the cross-domain fallback. */
+export function marketDimension(marketTitle: string, category: string): string {
+  const fam = eventFamily(marketTitle, category);
+  return eventDimension(fam, canonicalEventClass(fam, category));
 }
 
 // The specific SETTLEMENT predicate within a family — what actually has to happen for the contract to
