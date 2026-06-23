@@ -100,12 +100,16 @@ export function selectRecallCandidates(
   universe: NormalizedMarket[],
   opts: RecallSelectionOpts,
 ): CandidatePair[] {
-  // Cross-event diversity is merged into whichever recall path runs; on a duplicate market id the
-  // similarity-recalled pair wins (it lists last, so it overwrites the diversity stub) because a real
-  // similarity is more informative than the diversity placeholder.
+  // Cross-event diversity AND the CAUSAL llm-recall shortlist are merged into whichever recall path runs, so
+  // a causally-linked cross-domain market (Fed↔crypto) that lexical/embedding similarity misses still becomes
+  // a candidate. On a duplicate market id the similarity-recalled pair wins (it lists last, overwriting the
+  // injected stub) because a real similarity is more informative than the placeholder.
   const diversity = selectDiversityCandidates(anchor, universe, opts.diversityK ?? 0);
+  const causal: CandidatePair[] = (opts.llmRecall ?? []).map((candidate) => ({
+    a: anchor, b: candidate, recall: "llm_recall" as const, similarity: Number(lexicalSimilarity(anchor, candidate).toFixed(3)),
+  }));
   const withDiversity = (base: CandidatePair[]) =>
-    [...new Map([...diversity, ...base].map((pair) => [pair.b.id, pair])).values()];
+    [...new Map([...diversity, ...causal, ...base].map((pair) => [pair.b.id, pair])).values()];
   if (opts.semanticScore) {
     return withDiversity(generateCandidates(anchor, universe, {
       topK: opts.topK,

@@ -41,10 +41,16 @@ export async function recallCandidatesWithQwen(
   const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
   const eligible = universe.filter((candidate) => candidate.liquidityOk && metadataCompatible(anchor, candidate, true));
   const lexical = [...eligible].sort((a, b) => lexicalSimilarity(anchor, b) - lexicalSimilarity(anchor, a));
-  const pool: NormalizedMarket[] = lexical.slice(0, 40);
+  const pool: NormalizedMarket[] = lexical.slice(0, 30);
   const seenEvents = new Set(pool.map((market) => market.eventKey));
-  for (const candidate of eligible) {
-    if (pool.length >= 80) break;
+  const seenCats = new Set(pool.map((market) => market.category));
+  // Fill the rest prioritizing markets in categories NOT already represented (one per event). The causal
+  // link we want is precisely cross-domain (Fed↔crypto, regime↔oil), so a lexical-only pool would never
+  // show the LLM the right candidate — round-robin across categories guarantees it is in the pool to pick.
+  const rest = eligible.filter((m) => !seenEvents.has(m.eventKey));
+  const newCategory = rest.filter((m) => !seenCats.has(m.category));
+  for (const candidate of [...newCategory, ...rest]) {
+    if (pool.length >= 90) break;
     if (seenEvents.has(candidate.eventKey)) continue;
     seenEvents.add(candidate.eventKey);
     pool.push(candidate);

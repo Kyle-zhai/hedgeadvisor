@@ -595,9 +595,12 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const semanticScore = await buildSemanticScorer(universe);
   const topK = req.topK ?? 12;
   let recallDiagnostics: RecallDiagnostics | undefined;
-  const llmRecall = !semanticScore ? await recallCandidatesWithQwen(anchor, universe, topK, {
+  // CAUSAL recall: the LLM shortlist explicitly targets non-obvious cross-domain mechanisms (Fed↔crypto,
+  // regime↔oil) that lexical/embedding similarity misses. Run it ALONGSIDE embeddings (not only as their
+  // fallback), so its picks are merged in and then gated by the elicited-φ test like any other candidate.
+  const llmRecall = await recallCandidatesWithQwen(anchor, universe, Math.max(topK, 12), {
     onDiagnostics: (diagnostics) => { recallDiagnostics = diagnostics; },
-  }) : null;
+  }).catch(() => null);
   const rawCandidates = selectRecallCandidates(anchor, universe, {
     topK,
     semanticScore: semanticScore ?? undefined,
