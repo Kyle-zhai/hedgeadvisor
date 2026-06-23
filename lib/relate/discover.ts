@@ -201,6 +201,7 @@ export interface HedgeComboLeg {
   pGivenFails: number;  // P(this leg pays | your bet fails) — the fail-state it covers
   costUsd: number;      // dollars to put on this leg
   mechanism: string;    // why it pays when your bet fails
+  dimension: string;    // the FACET of the event this leg covers (scoring/discipline/timing/narrative/…)
 }
 
 /** A COMBO = a basket of 1–4 complementary legs. Each leg covers a different way your bet can fail, so
@@ -385,30 +386,50 @@ async function buildCrossEventStrategies(
     .slice(0, 10); // keep extra legs as raw material for combo construction
 }
 
+// Facets (DIMENSIONS) of an event a hedge leg can cover. A combo must span DIFFERENT dimensions — bets on
+// genuinely different aspects of the same event (its scoring, its discipline, its timing, its broadcast
+// narrative, …), NOT a list of mutually-exclusive outcomes of one market (those are the SAME dimension, just
+// different outcomes, e.g. several nominees in one nomination market or several over/under thresholds). The
+// canonical case is the user's: "team loses" → a DIFFERENT market on the same match (announcer says a word,
+// a red card, a late first goal) pays. First matching rule wins; same-market outcomes share a dimension.
+const DIMENSION_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(announc|commentat|broadcast|says?|said|song|anthem|chant|mention|celebrat|trophy|interview|halftime show)\b/i, "narrative"],
+  [/\b(red\s?cards?|yellow\s?cards?|bookings?|cards?|fouls?|sent off|ejection|var\b|penalty (kick )?awarded)\b/i, "discipline"],
+  [/\b(first goal|opening goal|first (team )?to score|first scorer|next goal|earliest goal|injury time|stoppage time|kick[- ]?off time|goal before \d|goal after \d)\b/i, "timing"],
+  [/\b(to score|scorer|golden boot|assists?|hat[- ]?trick|man of the match|motm|mvp|brace)\b/i, "individual"],
+  [/\b(penalt|extra time|shoot[- ]?out|both teams to score|btts|to nil|advance|qualif|progress|knockout)\b/i, "method"],
+  [/(\(|\s)[+\-]\s?\d|\bhandicap\b|\bspread\b|\bwin by\b|\bmargin of\b|\bclean sheet\b/i, "margin"],
+  [/\b(o\s*\/?\s*u|over|under|total goals?|total|goals?|score)\b/i, "scoring"],
+  [/\b(nominee|nomination|primary|candidate)\b/i, "nomination"],
+  [/\b(senate|house|governor|gubernatorial|congress|representative)\b/i, "downballot"],
+  [/\b(vote share|popular vote|% of vote|share of the vote|electoral votes?)\b/i, "voteshare"],
+  [/\b(turnout|approval|favorab|disapprov)\b/i, "sentiment"],
+];
+function dimensionOf(s: { title: string; marketTitle: string; mechanism?: string }): string {
+  const hay = `${s.title} ${s.marketTitle} ${s.mechanism ?? ""}`;
+  for (const [re, dim] of DIMENSION_RULES) if (re.test(hay)) return dim;
+  return norm(s.marketTitle).slice(0, 28) || "other"; // unknown facet → the market identity (same market = same dimension)
+}
+
 /**
  * Build multi-leg hedge COMBOS from the validated single legs. A combo bundles 1–4 legs that each cover a
- * DIFFERENT way your bet can fail, so together they cover more of the fail-space than any single leg.
- * Legs are first de-duplicated by "scenario aspect" (two "Portugal total goals" bets cover the same state,
- * so only the best is kept), then assembled greedily: a leg joins a combo only when its MARGINAL expected
- * cut (stake × the fail-mass it newly covers) exceeds its cost. Coverage uses a conditional-independence
- * model (stated in the UI); legs are sized to pay the stake if they hit, total cost capped at half the upside.
+ * DIFFERENT DIMENSION of the event (scoring vs discipline vs timing vs narrative vs nomination …), so it
+ * diversifies across the ways your bet can fail rather than restating one market's outcomes. At most ONE leg
+ * per dimension: mutually-exclusive outcomes of a single market (several nominees, several O/U thresholds)
+ * collapse to one and never stack. Legs are assembled greedily by expected cut; coverage uses a conditional-
+ * independence model (stated in the UI); legs are sized to pay the stake if they hit, cost capped at half the upside.
  */
 function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: number): HedgeCombo[] {
   if (legs.length === 0) return [];
-  // Scenario "aspect": strip thresholds, sides, and over/under wording so redundant legs (two "Portugal
-  // total goals" bets cover the SAME fail state) collapse to one; keep the best by single-leg cut.
-  const aspect = (s: HedgeStrategy) =>
-    norm(s.title)
-      .replace(/\d+(\.\d+)?/g, " ")
-      .replace(/[()+\-./]/g, " ")
-      .replace(/\b(o\s*u|over|under|total|goals?|half|first|second|st|nd|rd|th)\b/g, " ")
-      .replace(/\s+/g, " ").trim() || norm(s.marketTitle).slice(0, 20);
-  const byAspect = new Map<string, HedgeStrategy>();
+  // Keep at most ONE leg per DIMENSION (the best by single-leg cut). Two legs on the same facet (two scoring
+  // props, two nominees) cover the same kind of fail state, so only the strongest survives; a multi-leg
+  // combo is therefore multi-dimensional by construction.
+  const byDimension = new Map<string, HedgeStrategy>();
   for (const s of [...legs].sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd)) {
-    const k = aspect(s);
-    if (!byAspect.has(k)) byAspect.set(k, s);
+    const k = dimensionOf(s);
+    if (!byDimension.has(k)) byDimension.set(k, s);
   }
-  const distinct = [...byAspect.values()];
+  const distinct = [...byDimension.values()];
   const budget = Math.max(1, 0.5 * baseWinnings); // spend at most half the bet's upside on the WHOLE combo
   // Allocate the budget across distinct-aspect legs in priority order: each leg gets up to enough to pay
   // the stake if it hits (stake*legPrice), highest-priority first, until the budget or 4 legs run out. So
@@ -441,7 +462,8 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
     return {
       legs: picks.map(({ s, cost }) => ({
         marketId: s.marketId, venue: s.venue, title: s.title, marketTitle: s.marketTitle, url: s.url,
-        side: s.side, legPrice: s.legPrice, pGivenFails: s.pGivenFails, costUsd: Number(cost.toFixed(2)), mechanism: s.mechanism,
+        side: s.side, legPrice: s.legPrice, pGivenFails: s.pGivenFails, costUsd: Number(cost.toFixed(2)),
+        mechanism: s.mechanism, dimension: dimensionOf(s),
       })),
       coverage: Number(coverage.toFixed(3)),
       totalCostUsd: Number(totalCost.toFixed(2)),
@@ -449,8 +471,8 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       hedgedLossUsd: Number((stakeUsd - Math.max(0, cut)).toFixed(2)),
       keptIfWinUsd: Number((baseWinnings - totalCost).toFixed(2)),
       rationale: picks.length > 1
-        ? `Bundles ${picks.length} legs that pay in different ways your bet fails (covers ~${Math.round(coverage * 100)}% of fail states).`
-        : `A single-leg hedge covering ~${Math.round(coverage * 100)}% of your fail states.`,
+        ? `Bundles ${picks.length} legs across different facets of the event (${[...new Set(picks.map(({ s }) => dimensionOf(s)))].join(", ")}); each pays when your bet fails a different way. Covers ~${Math.round(coverage * 100)}% of fail states (modeled).`
+        : `A single-leg ${dimensionOf(picks[0].s)} hedge covering ~${Math.round(coverage * 100)}% of your fail states (modeled).`,
     };
   };
   // Three orderings → genuinely different combos: best value, broadest coverage, and the single strongest

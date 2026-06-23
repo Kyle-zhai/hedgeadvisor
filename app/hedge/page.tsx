@@ -66,6 +66,7 @@ interface HedgeStrategy {
 interface HedgeComboLeg {
   marketId: string; venue: Venue; title: string; marketTitle: string; url: string;
   side: "YES" | "NO"; legPrice: number; pGivenFails: number; costUsd: number; mechanism: string;
+  dimension?: string;
 }
 interface HedgeCombo {
   legs: HedgeComboLeg[]; coverage: number; totalCostUsd: number;
@@ -379,9 +380,10 @@ export default function HedgePage() {
               {combos.length > 0 && <span className="hint" style={{ marginLeft: "auto" }}>select one to model its payoff above</span>}
             </div>
             <p className="sub" style={{ marginTop: 6, marginBottom: 13, color: "var(--ink-2)" }}>
-              Each combo is a basket of up to 4 bets on DIFFERENT events, picked so each leg pays in a different way your bet
-              fails (broader cover than any single bet). Per-leg correlation is the elicited conditional probability (signed φ),
-              not a keyword guess; payoff is modeled from live prices, not settled outcomes.
+              Each combo bundles up to 4 bets on DIFFERENT facets of the event (its scoring, discipline, timing, broadcast
+              narrative, …), one per dimension, so each leg pays a different way your bet fails. It never stacks several
+              outcomes of one market. Per-leg correlation is the elicited conditional probability (signed φ), not a keyword
+              guess; payoff is modeled from live prices, not settled outcomes.
             </p>
             {combos.length > 0 ? (
               <div className="strat-list" role="radiogroup" aria-label="Hedge combos">
@@ -403,6 +405,7 @@ export default function HedgePage() {
                         {c.legs.map((l) => (
                           <span className="combo-leg" key={l.marketId}>
                             <span className={`strat-buy ${l.side === "YES" ? "yes" : "no"}`}>BUY {l.side}</span>
+                            {l.dimension && <span className="combo-dim">{l.dimension}</span>}
                             <span className="combo-leg-name"><strong>{l.title}</strong> <VenueTag venue={l.venue} short /></span>
                             <span className="combo-leg-price">@ {cents(l.legPrice)} · ${l.costUsd.toFixed(2)}</span>
                           </span>
