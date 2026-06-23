@@ -38,8 +38,16 @@ const KALSHI_SERIES = csv(process.env.HEDGE_RELATE_KALSHI_SERIES, [
   "KXMENWORLDCUP",
   "KXWCCONTINENT",
   "KXWCGROUPWINNER",
-  // NARRATIVE / broadcast markets — the announcer-word family. In the pool so soft associations are
-  // RECALLED (and then honestly gated by settlement calibration), not invisible.
+  // SAME-EVENT COLLATERAL markets (live on Kalshi): in-game stats driven by the SAME matches as the
+  // winner bet. Their hedge strength is MATCH-level — strong for a single-match bet, diluted for a
+  // tournament winner (the team plays many matches) — and the elicited-φ gate weights them accordingly.
+  "KXWCTOTALGOAL", // World Cup Total Goals (per match)
+  "KXWCFTTS", // World Cup Team To Score First
+  "KXWCFREEKICKGOAL",
+  "KXWCFASTESTGOAL",
+  "KXWCSOA", // World Cup Score or Assist
+  // NARRATIVE / broadcast markets — the announcer-word / first-song family. Speculative + thin, kept in
+  // the pool so soft associations are RECALLED (and then honestly gated by the φ + liquidity), not invisible.
   "KXWCFIRSTSONG",
 ]);
 const TOP_PM_EVENTS = Math.min(60, Math.max(0, Number(process.env.HEDGE_RELATE_PM_TOP_EVENTS ?? 24)));
