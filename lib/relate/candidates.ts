@@ -75,8 +75,19 @@ export function selectRecallCandidates(
   }
   if (opts.llmRecall !== null) {
     const structural = generateCandidates(anchor, universe, { topK: 0, allowCrossCategory: opts.allowCrossCategory });
+    // Also include the lexically-closest CROSS-EVENT markets, not just the LLM's picks. The LLM recall
+    // pass routinely overlooks structural complements that share the anchor's theme (a "nation to reach
+    // the final" / "golden boot" market for a World Cup winner, a "which party wins" market for a
+    // candidate), even though those are the clean hedges. The downstream elicited-φ gate still decides
+    // whether each is a genuine hedge, so this only widens recall, it does not relax correctness.
+    const lexical = generateCandidates(anchor, universe, {
+      topK: opts.topK,
+      allowCrossCategory: opts.allowCrossCategory,
+      minSimilarity: opts.minSimilarity,
+    }).filter((pair) => pair.recall !== "structural");
     const merged = [
       ...structural,
+      ...lexical,
       ...opts.llmRecall.slice(0, opts.topK).map((candidate) => ({
         a: anchor,
         b: candidate,
