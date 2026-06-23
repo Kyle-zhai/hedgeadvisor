@@ -407,27 +407,34 @@ async function buildCrossEventStrategies(
     .slice(0, 10); // keep extra legs as raw material for combo construction
 }
 
-// Facets (DIMENSIONS) of an event a hedge leg can cover. A combo must span DIFFERENT dimensions — bets on
-// genuinely different aspects of the same event (its scoring, its discipline, its timing, its broadcast
-// narrative, …), NOT a list of mutually-exclusive outcomes of one market (those are the SAME dimension, just
-// different outcomes, e.g. several nominees in one nomination market or several over/under thresholds). The
-// canonical case is the user's: "team loses" → a DIFFERENT market on the same match (announcer says a word,
-// a red card, a late first goal) pays. First matching rule wins; same-market outcomes share a dimension.
+// Facets (DIMENSIONS) of an event a hedge leg can cover. A combo must span GENUINELY ORTHOGONAL dimensions —
+// facets that can vary independently of one another. The hard lesson: total goals, a team's goals, the winning
+// margin/handicap, the exact score and win/draw/lose are ALL monotone functions of the goals scored, so they
+// are ONE dimension (the SCORELINE) — pairing "total under" with "margin under" is fake diversification, the
+// same underlying factor twice. Truly different dimensions are the ones a scoreline does not determine:
+// discipline (a red card), timing (the first goal), narrative (what the announcer says), an individual player,
+// the method of decision (penalties). Order matters — these orthogonal facets must be tested BEFORE the
+// scoreline catch-all (since "first GOAL", "player to SCORE" contain goal/score words). Same-market outcomes
+// share a dimension. The canonical user case: "team loses" hedged by "announcer says 'upset'" (narrative).
 const DIMENSION_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(announc|commentat|broadcast|says?|said|song|anthem|chant|mention|celebrat|trophy|interview|halftime show)\b/i, "narrative"],
   [/\b(red\s?cards?|yellow\s?cards?|bookings?|cards?|fouls?|sent off|ejection|var\b|penalty (kick )?awarded)\b/i, "discipline"],
   [/\b(first goal|opening goal|first (team )?to score|first scorer|next goal|earliest goal|injury time|stoppage time|kick[- ]?off time|goal before \d|goal after \d)\b/i, "timing"],
   [/\b(to score|scorer|golden boot|assists?|hat[- ]?trick|man of the match|motm|mvp|brace)\b/i, "individual"],
-  [/\b(penalt|extra time|shoot[- ]?out|both teams to score|btts|to nil|advance|qualif|progress|knockout)\b/i, "method"],
-  [/(\(|\s)[+\-]\s?\d|\bhandicap\b|\bspread\b|\bwin by\b|\bmargin of\b|\bclean sheet\b/i, "margin"],
-  [/\b(o\s*\/?\s*u|over|under|total goals?|total|goals?|score)\b/i, "scoring"],
-  [/\b(nominee|nomination|primary|candidate)\b/i, "nomination"],
+  [/\b(penalt|extra time|shoot[- ]?out|advance|qualif|progress|go through|knockout|to win the (group|tie))\b/i, "method"],
+  // politics facets (tested before the scoreline catch-all so a stray digit can't mislabel them)
+  [/\b(nominee|nomination|primary)\b/i, "nomination"],
   [/\b(senate|house|governor|gubernatorial|congress|representative)\b/i, "downballot"],
   [/\b(vote share|popular vote|% of vote|share of the vote|electoral votes?)\b/i, "voteshare"],
   [/\b(turnout|approval|favorab|disapprov)\b/i, "sentiment"],
+  // SCORELINE catch-all: every goal/margin/result metric (one dimension; do NOT split these).
+  [/\b(o\s*\/?\s*u|over|under|total|goals?|score|handicap|spread|win by|margin|to nil|clean sheet|both teams to score|btts|draw|win|lose|loss|result)\b/i, "scoreline"],
+  [/(\(|\s)[+\-]\s?\d|\d\s*[-:]\s*\d/i, "scoreline"], // handicaps (-1.5) and exact scorelines (0 - 0)
 ];
-function dimensionOf(s: { title: string; marketTitle: string; mechanism?: string }): string {
-  const hay = `${s.title} ${s.marketTitle} ${s.mechanism ?? ""}`;
+function dimensionOf(s: { title: string; marketTitle: string }): string {
+  // Classify on the market's OWN labels only, never the LLM mechanism prose (it contains jargon like
+  // "the candidate market"/"score" that would mislabel the facet).
+  const hay = `${s.title} ${s.marketTitle}`;
   for (const [re, dim] of DIMENSION_RULES) if (re.test(hay)) return dim;
   return norm(s.marketTitle).slice(0, 28) || "other"; // unknown facet → the market identity (same market = same dimension)
 }

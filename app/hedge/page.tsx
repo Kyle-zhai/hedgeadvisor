@@ -380,11 +380,12 @@ export default function HedgePage() {
               {combos.length > 0 && <span className="hint" style={{ marginLeft: "auto" }}>select one to model its payoff above</span>}
             </div>
             <p className="sub" style={{ marginTop: 6, marginBottom: 13, color: "var(--ink-2)" }}>
-              Each combo bundles up to 4 bets on DIFFERENT facets, one per dimension, so each leg pays a different way your
-              bet fails. It prefers a cross-event leg when a different event genuinely correlates, and otherwise falls back to
-              same-event facets of this match: its scoring, a red card, or what the broadcast announcer says. It never stacks
-              several outcomes of one market. Per-leg correlation is the elicited conditional probability (signed φ); payoff
-              is modeled from live prices, not settled outcomes.
+              Each combo bundles bets on GENUINELY ORTHOGONAL facets, one per dimension. Total goals, the winning margin and
+              the exact score are all the SAME dimension (the scoreline) and never stack. Truly different facets are the ones
+              the score does not determine: a red card, the first goal, what the broadcast announcer says, a specific player.
+              It prefers a cross-event leg when a different event correlates, else falls back to these same-event facets. When
+              a match only has scoreline markets, one leg is the honest answer. Correlation is the elicited conditional φ;
+              payoff is modeled from live prices.
             </p>
             {combos.length > 0 ? (
               <div className="strat-list" role="radiogroup" aria-label="Hedge combos">
