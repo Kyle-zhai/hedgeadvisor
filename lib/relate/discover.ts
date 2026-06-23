@@ -132,7 +132,11 @@ async function sharedUniverse(): Promise<NormalizedMarket[]> {
 //  - unidentifiable placeholder outcomes ("Player Q", "Team AH") with no resolvable entity.
 function isHedgeIneligibleCandidate(m: NormalizedMarket): boolean {
   if (m.eventFamily === "golden_boot") return true;
-  return /^(player|team)\s+[a-z]{1,2}$/.test(norm(m.title));
+  const t = norm(m.title);
+  // placeholder / anonymized outcomes ("Player Q", "Person P", "Other", "the Field") have no resolvable
+  // entity to reason about, and the conditional estimator returns degenerate φ for them.
+  return /^(player|team|person|candidate)\s+[a-z0-9]{1,3}$/.test(t)
+    || /^(other|another|the field|field|someone else|none of (the|these))$/.test(t);
 }
 
 async function buildUniverse(anchorBundle: EventBundle): Promise<NormalizedMarket[]> {
@@ -279,6 +283,11 @@ async function buildCrossEventStrategies(
   const entityStop = new Set([
     "the", "to", "win", "wins", "winner", "world", "cup", "stage", "elimination", "champion",
     "final", "semifinals", "quarterfinals", "knockout", "round", "group", "polymarket", "kalshi",
+    // generic category / temporal words — NOT the distinguishing entity (else two different people in
+    // the same race, e.g. Newsom vs Raimondo, look like the "same entity" via "presidential"/"2028").
+    "presidential", "election", "president", "nominee", "nomination", "democratic", "republican",
+    "party", "primary", "season", "championship", "match", "total", "goals", "score",
+    "2024", "2025", "2026", "2027", "2028", "2029", "2030",
   ]);
   const entityTokens = (text: string) => norm(text).split(" ").filter((w) => w.length > 2 && !entityStop.has(w));
   const anchorTokens = new Set(entityTokens(`${anchor.title} ${anchor.marketTitle}`));
@@ -286,10 +295,20 @@ async function buildCrossEventStrategies(
     entityTokens(`${r.market.title} ${r.market.marketTitle}`).some((w) => anchorTokens.has(w));
   const sameEvent = (r: DiscoveredRelation) =>
     r.market.eventKey === anchor.eventKey || r.market.url === anchor.url || norm(r.market.marketTitle) === norm(anchor.marketTitle);
+  // Same-MATCH collateral (a different market on the SAME match: "Portugal total goals", "Uzbekistan
+  // +1.5", match "total goals O/U" for a "Portugal beats Uzbekistan" anchor) is exactly what we want and
+  // SHOULD share the match's teams — so include any market whose title nests the anchor's match identity
+  // and let the elicited-φ gate decide. For genuinely DIFFERENT events, keep the strict cross-event rule.
+  const anchorMt = norm(anchor.marketTitle);
   const cands = relations
-    .filter((r) => r.classifyMethod !== "rule" && !sameEvent(r) && !sharesEntity(r))
+    .filter((r) => {
+      const mt = norm(r.market.marketTitle);
+      if (mt === anchorMt) return false; // the other side of the same bet (rival outcome)
+      if (anchorMt.length > 6 && (mt.includes(anchorMt) || anchorMt.includes(mt))) return true; // same-match collateral; φ decides
+      return r.classifyMethod !== "rule" && !sameEvent(r) && !sharesEntity(r); // genuine cross-event
+    })
     .sort((a, b) => hedgeLikely(b) - hedgeLikely(a))
-    .slice(0, 16); // bound the elicitation cost
+    .slice(0, 18); // bound the elicitation cost
   if (cands.length === 0) return [];
   const anchorTitle = `${anchor.title} (${anchor.marketTitle})`;
   const ap = Math.min(0.999, Math.max(0.001, anchor.probYes));
@@ -307,7 +326,6 @@ async function buildCrossEventStrategies(
     return { r, pW, pF, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "" };
   });
   const out: HedgeStrategy[] = [];
-  const hedgeBudget = 0.25 * stakeUsd; // a modest hedge spend; the cut scales with the per-dollar edge
   for (const x of elicited) {
     if (!x) continue;
     const { r, pW, pF, phi, conf, reason } = x;
@@ -320,8 +338,11 @@ async function buildCrossEventStrategies(
     const pFside = Math.min(buyYes ? pF : 1 - pF, qSide / Math.max(0.05, 1 - ap));
     const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails
     if (edge <= 0 || pFside <= pWside) continue; // must beat its price on fail, and pay more on fail than win
-    const costUsd = hedgeBudget;
-    const expectedReductionUsd = costUsd * edge;
+    // Size to COVER the stake: buy `stake` shares (payout = stake if the side pays), so cost = stake*qSide
+    // and the expected loss-cut when your bet fails = stake*(pFside - qSide) — capped below the stake, never
+    // inflated by a cheap longshot's huge per-dollar edge.
+    const costUsd = stakeUsd * qSide;
+    const expectedReductionUsd = stakeUsd * (pFside - qSide);
     out.push({
       marketId: r.market.id, venue: r.market.venue, title: r.market.title, marketTitle: r.market.marketTitle,
       probYes: r.market.probYes, url: r.market.url, side: buyYes ? "YES" : "NO",

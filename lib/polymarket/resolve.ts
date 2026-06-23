@@ -163,6 +163,15 @@ function teamQueryLight(free: string): string {
   return words.join(" ") || norm(free);
 }
 
+// "X beats/defeats/edges/to win vs Y" names X as the intended WINNER of a match. Returns the winner
+// phrase (already normalized) so resolvePosition pins that team instead of the draw. Only fires on
+// explicit X-verb-Y phrasing, so "Spain wins the World Cup" (no opponent) is untouched.
+const WINNER_VERB = /^(.+?)\s+(?:beats?|defeats?|tops?|downs?|edges?|sees off|knocks out|to beat|(?:to )?wins? (?:vs|against|over))\s+(.+)$/;
+function extractMatchWinner(query: string): string | null {
+  const m = norm(query).match(WINNER_VERB);
+  return m && m[1].trim().length > 1 ? m[1].trim() : null;
+}
+
 export async function resolvePosition(query: string, slug: string): Promise<ResolveResult> {
   const bundle = await fetchEventBundle(slug);
   if (!bundle || bundle.markets.length === 0) {
@@ -171,18 +180,26 @@ export async function resolvePosition(query: string, slug: string): Promise<Reso
   // Exact-title short-circuit: if the query exactly equals one outcome's title, resolve it
   // decisively. Needed because a draw label like "Draw (Spain vs. Saudi Arabia)" CONTAINS
   // "Spain", which otherwise makes the bare query "Spain" look ambiguous with the draw.
-  const nq = norm(query);
+  // Match-winner anchors ("Portugal beats Uzbekistan") name the winner as the first team; resolve on it.
+  const winner = extractMatchWinner(query);
+  const q = winner ?? query;
+  const wantsDraw = /\bdraw|\btie\b|drawn/.test(norm(query));
+  const isDraw = (label: string) => /\bdraw\b/.test(norm(label));
+  const nq = norm(q);
   const exacts = bundle.markets
     .map((m, index) => ({ index, t: norm(m.groupItemTitle ?? m.question) }))
     .filter((x) => x.t.length > 0 && x.t === nq);
   if (exacts.length === 1) return { kind: "resolved", bundle, index: exacts[0].index };
 
-  const tq = teamQuery(query);
-  const tql = teamQueryLight(query);
+  const tq = teamQuery(q);
+  const tql = teamQueryLight(q);
   const ranked = bundle.markets
     .map((m, index) => {
       const label = m.groupItemTitle ?? m.question;
-      return { index, title: label, score: Math.max(tokenSetScore(tq, label), tokenSetScore(tql, label)) };
+      const base = Math.max(tokenSetScore(tq, label), tokenSetScore(tql, label));
+      // A draw label ("Draw (Portugal vs. Uzbekistan)") shares BOTH team names with a match query, so it
+      // spuriously out-scores the single-team outcome. Unless the user asked for a draw, knock it down.
+      return { index, title: label, score: !wantsDraw && isDraw(label) ? base * 0.25 : base };
     })
     .sort((a, b) => b.score - a.score);
 
