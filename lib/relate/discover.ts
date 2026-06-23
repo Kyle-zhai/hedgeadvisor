@@ -13,7 +13,8 @@ import { buildEventRelation, frechetProjectedPhi, type EventRelation } from "@/l
 import { elicitConditionalWithQwen } from "@/lib/association";
 import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
-import { marketDimension } from "./relationKey";
+import { marketDimension, eventFamily, predicateOf, relationRole, mechanismSignature, relationKey } from "./relationKey";
+import { loadConditionalCounts, calibrateConditionalPayoff } from "@/lib/association";
 import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
@@ -150,7 +151,7 @@ async function buildUniverse(anchorBundle: EventBundle): Promise<NormalizedMarke
 }
 
 export interface DiscoveredRelation {
-  market: { id: string; venue: "polymarket" | "kalshi"; eventKey: string; title: string; marketTitle: string; probYes: number; url: string; category?: string };
+  market: { id: string; venue: "polymarket" | "kalshi"; eventKey: string; title: string; marketTitle: string; probYes: number; url: string; category?: string; predicate?: string };
   recall: CandidatePair["recall"];
   similarity: number;
   classifyMethod: "rule" | "llm" | "heuristic";
@@ -190,6 +191,8 @@ export interface HedgeStrategy {
   mechanism: string;
   scope: "same-event" | "cross-event"; // same match/event as the anchor (collateral) vs a different event
   dimension: string; // the orthogonal facet (scoreline/narrative/election/macro-policy/asset-price/…)
+  tier: "CALIBRATED" | "MODELED"; // settlement-proven posterior vs LLM-elicited prior
+  samples: number; // settlement observations backing this leg's relation template (0 = cold-start / no DB)
 }
 
 /** One leg inside a combo: a single bet you place, fully described. */
@@ -206,6 +209,8 @@ export interface HedgeComboLeg {
   mechanism: string;    // why it pays when your bet fails
   dimension: string;    // the FACET of the event this leg covers (scoring/discipline/timing/narrative/…)
   scope: "same-event" | "cross-event"; // collateral on the anchor's own event, or a different event
+  tier: "CALIBRATED" | "MODELED"; // settlement-proven posterior vs LLM-elicited prior
+  samples: number;      // settlement observations backing this leg (0 = cold-start / no DB)
 }
 
 /** A COMBO = a basket of 1–4 complementary legs. Each leg covers a different way your bet can fail, so
@@ -219,6 +224,7 @@ export interface HedgeCombo {
   hedgedLossUsd: number;
   keptIfWinUsd: number;
   rationale: string;
+  tier: "CALIBRATED" | "MODELED"; // the combo's confidence = its WEAKEST leg (any MODELED leg ⇒ MODELED)
 }
 
 export interface DiscoverResult {
@@ -303,7 +309,7 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>
  * own base rate. Everything is then priced from the real conditionals. Exploratory layer only.
  */
 async function buildCrossEventStrategies(
-  anchor: { title: string; marketTitle: string; eventKey: string; url: string; probYes: number },
+  anchor: { title: string; marketTitle: string; eventKey: string; url: string; probYes: number; category?: string; eventFamily?: string },
   relations: DiscoveredRelation[],
   stakeUsd: number,
   baseWinnings: number,
@@ -359,6 +365,7 @@ async function buildCrossEventStrategies(
   // hallucinate, so hold it to a stricter bar than a same-event collateral leg.
   const DIVERSITY_PHI_MIN = 0.25;
   const DIVERSITY_CONF_MIN = 0.5;
+  const CALIB_MIN_SAMPLES = 20; // settled observations per branch before a leg is admitted as CALIBRATED
   const elicited = await mapPool(cands, 8, async (r) => {
     const e = await elicitConditionalWithQwen(anchorTitle, `${r.market.title} (${r.market.marketTitle})`).catch(() => null);
     if (!e || e.status !== "ok" || e.pGivenAnchorWins == null) return null;
@@ -382,7 +389,31 @@ async function buildCrossEventStrategies(
     const pWside = buyYes ? pW : 1 - pW; // P(bought side pays | anchor wins)
     // P(bought side pays | anchor fails). The model's level often disagrees with the price; clamp to the
     // market-feasible bound P(side)/P(anchor fails) so the payoff stays consistent with the real price.
-    const pFside = Math.min(buyYes ? pF : 1 - pF, qSide / Math.max(0.05, 1 - ap));
+    const pFsideModeled = Math.min(buyYes ? pF : 1 - pF, qSide / Math.max(0.05, 1 - ap));
+    // ── Confidence ladder: blend the LLM-elicited prior with SETTLEMENT evidence. When this relation
+    // template has enough settled observations, the calibrated posterior P(pays | anchor fails) SUPERSEDES
+    // the LLM prior and the leg becomes CALIBRATED; otherwise it stays MODELED. loadConditionalCounts returns
+    // null instantly without a DB, so this degrades to MODELED at zero cost. ──
+    const side: "yes" | "no" = buyYes ? "yes" : "no";
+    const candidateFamily = r.mechanismGraph?.candidateEventClass ?? eventFamily(r.market.marketTitle, r.market.category ?? "");
+    const anchorFamily = r.mechanismGraph?.anchorEventClass ?? anchor.eventFamily ?? eventFamily(anchor.marketTitle, anchor.category ?? "");
+    const role = relationRole(`${anchor.title} ${anchor.marketTitle}`, { entity: r.market.title, family: candidateFamily, context: `${r.market.marketTitle} ${r.market.title}`, mechanismGraph: r.mechanismGraph });
+    const reusableCohort = !r.mechanismGraph || r.mechanismGraph.portability !== "INSTANCE_ONLY";
+    let tier: "CALIBRATED" | "MODELED" = "MODELED";
+    let samples = 0;
+    let pFside = pFsideModeled;
+    if (reusableCohort) {
+      const key = relationKey(anchorFamily, candidateFamily, r.market.predicate ?? predicateOf(r.market.title, ""), role, side, mechanismSignature(r.mechanismGraph, r.hypothesis?.direction));
+      const counts = await loadConditionalCounts(key).catch(() => null);
+      if (counts) {
+        const cal = calibrateConditionalPayoff(counts, 0.9, CALIB_MIN_SAMPLES);
+        samples = Math.round(cal.payGivenAnchorFails.samples + cal.payGivenAnchorPays.samples);
+        if (cal.sufficientEvidence && cal.hedgeSpecificityLower > 0) {
+          tier = "CALIBRATED";
+          pFside = Math.min(0.999, Math.max(qSide, cal.payGivenAnchorFails.mean)); // settlement posterior supersedes the prior
+        }
+      }
+    }
     const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails
     if (edge <= 0 || pFside <= pWside) continue; // must beat its price on fail, and pay more on fail than win
     // Spend at most enough to cover the stake (stake*qSide) AND at most half the bet's own upside, so the
@@ -403,6 +434,7 @@ async function buildCrossEventStrategies(
       expectedReductionUsd: Number(expectedReductionUsd.toFixed(2)), hedgedLossUsd: Number((stakeUsd - expectedReductionUsd).toFixed(2)),
       keptIfWinUsd: Number((baseWinnings - costUsd).toFixed(2)), mechanism: reason.slice(0, 160), scope,
       dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
+      tier, samples,
     });
   }
   return out
@@ -502,16 +534,18 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       legs: picks.map(({ s, cost }) => ({
         marketId: s.marketId, venue: s.venue, title: s.title, marketTitle: s.marketTitle, url: s.url,
         side: s.side, legPrice: s.legPrice, pGivenFails: s.pGivenFails, costUsd: Number(cost.toFixed(2)),
-        mechanism: s.mechanism, dimension: s.dimension, scope: s.scope,
+        mechanism: s.mechanism, dimension: s.dimension, scope: s.scope, tier: s.tier, samples: s.samples,
       })),
       coverage: Number(coverage.toFixed(3)),
       totalCostUsd: Number(totalCost.toFixed(2)),
       expectedReductionUsd: Number(Math.max(0, cut).toFixed(2)),
       hedgedLossUsd: Number((stakeUsd - Math.max(0, cut)).toFixed(2)),
       keptIfWinUsd: Number((baseWinnings - totalCost).toFixed(2)),
+      // combo confidence = its WEAKEST leg: any LLM-prior (MODELED) leg keeps the whole combo MODELED.
+      tier: picks.every(({ s }) => s.tier === "CALIBRATED") ? "CALIBRATED" : "MODELED",
       rationale: picks.length > 1
-        ? `Bundles ${picks.length} legs across different facets (${[...new Set(picks.map(({ s }) => s.dimension))].join(", ")}); each pays when your bet fails a different way. Covers ~${Math.round(coverage * 100)}% of fail states (modeled).`
-        : `A single-leg ${picks[0].s.dimension} hedge covering ~${Math.round(coverage * 100)}% of your fail states (modeled).`,
+        ? `Bundles ${picks.length} legs across different facets (${[...new Set(picks.map(({ s }) => s.dimension))].join(", ")}); each pays when your bet fails a different way. Covers ~${Math.round(coverage * 100)}% of fail states.`
+        : `A single-leg ${picks[0].s.dimension} hedge covering ~${Math.round(coverage * 100)}% of your fail states.`,
     };
   };
   // Orderings → genuinely different combos: best value; a DIVERSIFIED basket that splits the budget evenly
@@ -609,7 +643,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
       });
       if (cls.method !== "heuristic") relation.reasoning = cls.reasoning;
       return {
-        market: { id: pair.b.id, venue: pair.b.venue, eventKey: pair.b.eventKey, title: pair.b.title, marketTitle: pair.b.marketTitle, probYes: Number(pair.b.probYes.toFixed(4)), url: pair.b.url, category: pair.b.category },
+        market: { id: pair.b.id, venue: pair.b.venue, eventKey: pair.b.eventKey, title: pair.b.title, marketTitle: pair.b.marketTitle, probYes: Number(pair.b.probYes.toFixed(4)), url: pair.b.url, category: pair.b.category, predicate: pair.b.predicate },
         recall: pair.recall,
         similarity: pair.similarity,
         classifyMethod: cls.method,
@@ -650,7 +684,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const baseWinnings = stakeUsd * (1 - anchor.probYes) / Math.max(0.01, anchor.probYes);
   const strategies = req.withStrategies
     ? await buildCrossEventStrategies(
-        { title: anchor.title, marketTitle: anchor.marketTitle, eventKey: anchor.eventKey, url: anchor.url, probYes: anchor.probYes },
+        { title: anchor.title, marketTitle: anchor.marketTitle, eventKey: anchor.eventKey, url: anchor.url, probYes: anchor.probYes, category: anchor.category, eventFamily: anchor.eventFamily },
         relations, stakeUsd, baseWinnings,
       ).catch(() => [])
     : undefined;

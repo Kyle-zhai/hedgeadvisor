@@ -445,5 +445,11 @@ table th[style*="right"], table td[style*="right"] { white-space: nowrap; }
   border: 1px solid var(--border); color: var(--ink-3);
 }
 .combo-scope.cross { border-color: var(--go); color: var(--go); } /* cross-event = the preferred, novel leg */
+.combo-tier {
+  display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px;
+  font-size: 8.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+}
+.combo-tier.cal { background: var(--go-bg); color: var(--go); }   /* settlement-proven posterior */
+.combo-tier.mod { background: var(--warn-bg); color: var(--warn); } /* LLM-elicited prior (cold-start) */
 .combo-leg-name strong { font-weight: 640; }
 .combo-leg-price { color: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }

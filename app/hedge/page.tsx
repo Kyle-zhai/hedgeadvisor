@@ -66,11 +66,12 @@ interface HedgeStrategy {
 interface HedgeComboLeg {
   marketId: string; venue: Venue; title: string; marketTitle: string; url: string;
   side: "YES" | "NO"; legPrice: number; pGivenFails: number; costUsd: number; mechanism: string;
-  dimension?: string; scope?: string;
+  dimension?: string; scope?: string; tier?: "CALIBRATED" | "MODELED"; samples?: number;
 }
 interface HedgeCombo {
   legs: HedgeComboLeg[]; coverage: number; totalCostUsd: number;
   expectedReductionUsd: number; hedgedLossUsd: number; keptIfWinUsd: number; rationale: string;
+  tier?: "CALIBRATED" | "MODELED";
 }
 interface DiscoverResult {
   status: "ok" | "ambiguous" | "not_found";
@@ -384,8 +385,9 @@ export default function HedgePage() {
               the exact score are all the SAME dimension (the scoreline) and never stack. Truly different facets are the ones
               the score does not determine: a red card, the first goal, what the broadcast announcer says, a specific player.
               It prefers a cross-event leg when a different event correlates, else falls back to these same-event facets. When
-              a match only has scoreline markets, one leg is the honest answer. Correlation is the elicited conditional φ;
-              payoff is modeled from live prices.
+              a match only has scoreline markets, one leg is the honest answer. Each leg is tagged <strong>modeled</strong> (the
+              LLM-elicited prior) or <strong>calibrated</strong> (a settlement-proven posterior, with its sample count); a leg
+              upgrades itself from modeled to calibrated as settled outcomes for its template accumulate.
             </p>
             {combos.length > 0 ? (
               <div className="strat-list" role="radiogroup" aria-label="Hedge combos">
@@ -402,6 +404,7 @@ export default function HedgePage() {
                         {c.legs.length === 1 ? "Single-leg hedge" : `Combo of ${c.legs.length} legs`}
                         <span className="combo-tag">covers ~{Math.round(c.coverage * 100)}%</span>
                         <span className="combo-tag">cost ${c.totalCostUsd.toFixed(2)}</span>
+                        {c.tier && <span className={`combo-tier ${c.tier === "CALIBRATED" ? "cal" : "mod"}`}>{c.tier === "CALIBRATED" ? "calibrated" : "modeled"}</span>}
                       </span>
                       <span className="combo-legs">
                         {c.legs.map((l) => (
@@ -409,6 +412,7 @@ export default function HedgePage() {
                             <span className={`strat-buy ${l.side === "YES" ? "yes" : "no"}`}>BUY {l.side}</span>
                             {l.dimension && <span className="combo-dim">{l.dimension}</span>}
                             {l.scope && <span className={`combo-scope${l.scope === "cross-event" ? " cross" : ""}`}>{l.scope === "cross-event" ? "cross-event" : "same-event"}</span>}
+                            {l.tier && <span className={`combo-tier ${l.tier === "CALIBRATED" ? "cal" : "mod"}`} title={`${l.samples ?? 0} settled observations back this template`}>{l.tier === "CALIBRATED" ? `calibrated · ${l.samples}` : "modeled"}</span>}
                             <span className="combo-leg-name"><strong>{l.title}</strong> <VenueTag venue={l.venue} short /></span>
                             <span className="combo-leg-price">@ {cents(l.legPrice)} · ${l.costUsd.toFixed(2)}</span>
                           </span>
