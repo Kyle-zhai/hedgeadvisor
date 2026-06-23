@@ -338,11 +338,11 @@ async function buildCrossEventStrategies(
     const pFside = Math.min(buyYes ? pF : 1 - pF, qSide / Math.max(0.05, 1 - ap));
     const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails
     if (edge <= 0 || pFside <= pWside) continue; // must beat its price on fail, and pay more on fail than win
-    // Size to COVER the stake: buy `stake` shares (payout = stake if the side pays), so cost = stake*qSide
-    // and the expected loss-cut when your bet fails = stake*(pFside - qSide) — capped below the stake, never
-    // inflated by a cheap longshot's huge per-dollar edge.
-    const costUsd = stakeUsd * qSide;
-    const expectedReductionUsd = stakeUsd * (pFside - qSide);
+    // Spend at most enough to cover the stake (stake*qSide) AND at most half the bet's own upside, so the
+    // hedge never costs more than you would win (a heavy favorite has small winnings, so its hedge is
+    // small). Cut = cost × per-dollar edge, capped at the stake (you cannot recover more than you risked).
+    const costUsd = Math.min(stakeUsd * qSide, 0.5 * baseWinnings);
+    const expectedReductionUsd = Math.min(costUsd * edge, stakeUsd);
     out.push({
       marketId: r.market.id, venue: r.market.venue, title: r.market.title, marketTitle: r.market.marketTitle,
       probYes: r.market.probYes, url: r.market.url, side: buyYes ? "YES" : "NO",
