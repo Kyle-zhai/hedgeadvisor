@@ -19,10 +19,17 @@ on:
     # GitHub's floor is every 5 min, but build caching below keeps each run ~1-2 min so hourly fits the
     # private-repo 2000 min/mo budget (~720 runs). Dial down (e.g. "0 */6 * * *") to save minutes.
     - cron: "0 * * * *"
+    # Weekly: self-sustaining auto-discovery backfill (scans settled multi-outcome events, no manual manifest).
+    - cron: "0 6 * * 1"
   workflow_dispatch:
     inputs:
       run_historical_backfill:
         description: "Run configured historical backfill once"
+        required: false
+        type: boolean
+        default: false
+      run_auto_backfill:
+        description: "Run the self-sustaining auto-discovery backfill once"
         required: false
         type: boolean
         default: false
@@ -117,6 +124,15 @@ jobs:
             "http://localhost:3000/api/cron/historical")
           cat /tmp/historical.json 2>/dev/null; echo
           [ "$code" = "200" ] || { echo "::error::historical backfill returned ${code}"; exit 1; }
+
+      - name: Auto-discovery backfill (weekly + manual) — self-sustaining, no manifest
+        if: (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 1') || (github.event_name == 'workflow_dispatch' && inputs.run_auto_backfill)
+        run: |
+          code=$(curl -s -o /tmp/auto.json -w '%{http_code}' --max-time 780 \
+            -H "authorization: Bearer ${CRON_SECRET}" \
+            "http://localhost:3000/api/cron/autobackfill")
+          cat /tmp/auto.json 2>/dev/null; echo
+          [ "$code" = "200" ] || { echo "::error::auto backfill returned ${code}"; exit 1; }
 
       - name: Qwen-in-CI probe (manual runs only)
         if: github.event_name == 'workflow_dispatch'
