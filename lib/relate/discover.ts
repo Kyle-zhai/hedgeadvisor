@@ -15,12 +15,12 @@ import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
 import { marketDimension, eventFamily, relationRole, mechanismSignature } from "./relationKey";
 import { loadTuningProfile, lookupBucket } from "./tuningProfile";
-import { buildSuperposition, type SuperposeLeg, type Superposition } from "./superpose";
+import { buildSuperposition, type SuperposeLeg, type SuperposeAnchor, type Superposition } from "./superpose";
 import { deriveStructuralCompanions } from "./structuralCompanions";
 import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
-import { buildOptimizerCandidates } from "./toOptimizerCandidates";
+import { buildOptimizerCandidates, priceSide } from "./toOptimizerCandidates";
 import { persistCandidateSnapshots } from "./candidateSnapshot";
 import { recallCandidatesWithQwen, type RecallDiagnostics } from "./llmRecall";
 import { optimizeRobustHedge, type RobustOptimizerResult } from "@/lib/association";
@@ -311,6 +311,37 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>
 }
 
 /**
+ * Build both directions of the superposition, RE-PRICING every candidate leg at its REAL executable book
+ * cost (de-vig fair + spread + fee) first. This is the honesty fix: the leg's de-vigged FAIR price equals
+ * its modeled marginal, so at fair value every leg contributes EXACTLY 0 to EV (and a structural leg even
+ * more so) — the displayed EV then collapses to ~0, hiding the vig. Pricing at the executable ask makes
+ * marginal/price < 1, so the EV is genuinely negative (the vig you actually pay). Falls back to the
+ * de-vigged price when a book is unavailable, so it degrades gracefully and never blocks a strategy.
+ */
+async function buildDirectionalSuperposition(
+  anchor: SuperposeAnchor,
+  budgetUsd: number,
+  universeById: Map<string, NormalizedMarket>,
+  aggLegs: SuperposeLeg[],
+  consLegs: SuperposeLeg[],
+): Promise<{ aggressive: Superposition; conservative: Superposition }> {
+  const key = (l: SuperposeLeg) => `${l.marketId}|${l.side}`;
+  const uniq = new Map<string, SuperposeLeg>();
+  for (const l of [...aggLegs, ...consLegs]) if (l.marketId && universeById.has(l.marketId) && !uniq.has(key(l))) uniq.set(key(l), l);
+  const exec = new Map<string, number>();
+  await mapPool([...uniq.values()], 8, async (l) => {
+    const priced = await priceSide(universeById.get(l.marketId!)!, l.side === "NO" ? "no" : "yes", budgetUsd).catch(() => null);
+    if (priced && priced.price > 0 && priced.price < 1) exec.set(key(l), priced.price);
+  });
+  const applyExec = (legs: SuperposeLeg[]) =>
+    legs.map((l) => { const q = l.marketId ? exec.get(key(l)) : undefined; return q != null ? { ...l, q } : l; });
+  return {
+    aggressive: buildSuperposition(anchor, applyExec(aggLegs), 1, { riskBudgetUsd: budgetUsd }),
+    conservative: buildSuperposition(anchor, applyExec(consLegs), 0, { riskBudgetUsd: budgetUsd }),
+  };
+}
+
+/**
  * Build the validated cross-event hedge strategy list. The mechanism-classification MUTEX/CAUSAL label
  * is unreliable for sizing (it conflates "different party" with "mutually exclusive" — e.g. it wrongly
  * marks a Democratic-nominee market as a MUTEX hedge for a Republican's presidency). So we do NOT trust
@@ -328,6 +359,7 @@ async function buildCrossEventStrategies(
   entryPrice: number,
   universe: NormalizedMarket[],
 ): Promise<{ strategies: HedgeStrategy[]; directional: { aggressive: Superposition; conservative: Superposition } }> {
+  const universeById = new Map(universe.map((m) => [m.id, m]));
   const hedgeLikely = (r: DiscoveredRelation) => {
     const h = r.hypothesis;
     if (!h) return 0;
@@ -375,13 +407,7 @@ async function buildCrossEventStrategies(
     const superAnchor = { winProb: Math.min(0.999, Math.max(0.001, anchor.probYes)), stakeUsd, entryPrice };
     const superBudget = Math.min(0.5 * baseWinnings, stakeUsd);
     const structural = deriveStructuralCompanions({ title: anchor.title, probYes: superAnchor.winProb }, universe);
-    return {
-      strategies: [],
-      directional: {
-        aggressive: buildSuperposition(superAnchor, structural, 1, { riskBudgetUsd: superBudget }),
-        conservative: buildSuperposition(superAnchor, structural, 0, { riskBudgetUsd: superBudget }),
-      },
-    };
+    return { strategies: [], directional: await buildDirectionalSuperposition(superAnchor, superBudget, universeById, structural, structural) };
   }
   const anchorTitle = `${anchor.title} (${anchor.marketTitle})`;
   const ap = Math.min(0.999, Math.max(0.001, anchor.probYes));
@@ -484,7 +510,7 @@ async function buildCrossEventStrategies(
       const pick = lean(sides[0]) >= lean(sides[1]) ? sides[0] : sides[1];
       if (lean(pick) <= 0) continue; // no directional tilt on either side ⇒ not a companion for this direction
       legs.push({
-        id: r.market.id, marketTitle: r.market.marketTitle, title: r.market.title, side: pick.side,
+        id: r.market.id, marketId: r.market.id, marketTitle: r.market.marketTitle, title: r.market.title, side: pick.side,
         q: Math.min(0.98, Math.max(0.02, pick.q)), pWin: pick.win, pFail: pick.fail,
         dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
         mechanism: reason.slice(0, 160),
@@ -499,10 +525,10 @@ async function buildCrossEventStrategies(
   // ANALYTIC structural companions (continent basket: anchor ⊆ own continent = amplifier, ⟂ others = hedge)
   // are deterministic and appear EVERY run, ahead of the per-draw MODELED elicited legs.
   const structural = deriveStructuralCompanions({ title: anchor.title, probYes: ap }, universe);
-  const directional = {
-    aggressive: buildSuperposition(superAnchor, [...structural, ...toSuperposeLegs(1)], 1, { riskBudgetUsd: superBudget }),
-    conservative: buildSuperposition(superAnchor, [...structural, ...toSuperposeLegs(0)], 0, { riskBudgetUsd: superBudget }),
-  };
+  const directional = await buildDirectionalSuperposition(
+    superAnchor, superBudget, universeById,
+    [...structural, ...toSuperposeLegs(1)], [...structural, ...toSuperposeLegs(0)],
+  );
 
   return {
     strategies: out

@@ -103,5 +103,6 @@ function mkLeg(m: NormalizedMarket, side: "YES" | "NO", pWin: number, pFail: num
     dimension: "continent",
     mechanism,
     tier: "ANALYTIC",
+    marketId: m.id,
   };
 }

@@ -29,7 +29,7 @@ const CREDIBLE_LEVEL = 0.95;
 const MIN_SAMPLES = 20;
 
 /** All-in executable price + capacity for BUYING one side of a market, off its real book. */
-async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetUsd: number): Promise<{ price: number; capacityUsd: number } | null> {
+export async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetUsd: number): Promise<{ price: number; capacityUsd: number } | null> {
   const token = side === "no" ? m.noTokenId : m.yesTokenId;
   let book: Book | null = null;
   if (m.venue === "polymarket") {

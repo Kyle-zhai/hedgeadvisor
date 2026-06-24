@@ -47,6 +47,8 @@ export interface SuperposeLeg {
   /** Confidence tier. ANALYTIC legs carry EXACT conditionals (a structural certainty like A ⊆ B) and
    *  bypass the noise margin; default MODELED (LLM-elicited). */
   tier?: Tier;
+  /** Source market id (for re-pricing q at the real executable book cost before building). */
+  marketId?: string;
 }
 
 export interface PlacedLeg {
