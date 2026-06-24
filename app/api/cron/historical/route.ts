@@ -31,9 +31,16 @@ const Job = z.object({
 });
 
 function configuredJobs(): HistoricalBackfillJob[] {
-  const raw = process.env.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON;
-  if (!raw) return [];
-  return z.array(Job).max(150).parse(JSON.parse(raw)) as HistoricalBackfillJob[];
+  // The manifest can outgrow GitHub's 48KB per-variable limit, so we concatenate any of the numbered
+  // overflow variables (_2, _3, ...). Each is an independent JSON array of jobs.
+  const raws = [
+    process.env.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON,
+    process.env.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON_2,
+    process.env.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON_3,
+  ].filter((raw): raw is string => Boolean(raw && raw.trim()));
+  if (!raws.length) return [];
+  const merged = raws.flatMap((raw) => JSON.parse(raw) as unknown[]);
+  return z.array(Job).max(300).parse(merged) as HistoricalBackfillJob[];
 }
 
 /** Manual/idempotent historical backfill. Keep this out of the hourly loop: archived prices do not
