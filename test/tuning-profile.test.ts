@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { __buildProfileForTest, parseRelationKey, lookupBucket } from "@/lib/relate/tuningProfile";
+import { __buildProfileForTest, __bucketCountsForTest, parseRelationKey, lookupBucket } from "@/lib/relate/tuningProfile";
 
 const V = "@v5";
 const key = (role: string, mech: string, side: string) =>
@@ -41,6 +41,17 @@ describe("tuning profile — learn general rules, not per-template lookup", () =
     const hit = lookupBucket(profile, "entity_event", "totally_new_mechanism", "no", 4);
     expect(hit).toBeTruthy();
     expect(hit!.pGivenFails).toBeGreaterThan(hit!.pGivenWins);
+  });
+
+  it("bucket COUNTS (optimizer's calibration source) pool per-template into role|side AND role|mech|side", () => {
+    const c = { anchorPayCandidatePay: 1, anchorPayCandidateNoPay: 2, anchorNoPayCandidatePay: 3, anchorNoPayCandidateNoPay: 4 };
+    const counts = __bucketCountsForTest(new Map([
+      [key("cross_domain", "economic.a.b", "yes"), c],
+      [key("cross_domain", "economic.c.d", "yes"), c], // different template, same role+mech+side
+    ]));
+    // both buckets pool the TWO templates (the optimizer now calibrates from this, not a per-template lookup)
+    expect(counts.get("cross_domain|yes")).toEqual({ anchorPayCandidatePay: 2, anchorPayCandidateNoPay: 4, anchorNoPayCandidatePay: 6, anchorNoPayCandidateNoPay: 8 });
+    expect(counts.get("cross_domain|economic|yes")).toEqual({ anchorPayCandidatePay: 2, anchorPayCandidateNoPay: 4, anchorNoPayCandidatePay: 6, anchorNoPayCandidateNoPay: 8 });
   });
 
   it("withholds a rule when a bucket lacks evidence", () => {

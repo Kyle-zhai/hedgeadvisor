@@ -13,6 +13,7 @@
  * thousands of templates), so the moat starts shaping the engine long before any single template matures.
  */
 import { loadAllConditionalCounts, calibrateConditionalPayoff } from "@/lib/association";
+import type { ConditionalCounts } from "@/lib/association/types";
 
 export interface BucketStat {
   /** realized P(bought side pays | anchor FAILS) — the fail-state cover rate for this structural bucket. */
@@ -45,10 +46,13 @@ export function bucketKeys(role: string, mechType: string, side: string): string
 }
 
 interface AggCells { app: number; apn: number; anp: number; ann: number }
+type Cells = ConditionalCounts;
 
-function buildProfile(all: Map<string, { anchorPayCandidatePay: number; anchorPayCandidateNoPay: number; anchorNoPayCandidatePay: number; anchorNoPayCandidateNoPay: number }>): TuningProfile {
+/** Re-bucket every per-template count into the coarse structural buckets (role|side AND role|mech|side),
+ *  summing the cluster-normalized cells. This is the generalization step: a bucket pools across templates. */
+function aggregateBuckets(all: Map<string, Cells>): Map<string, AggCells> {
   const agg = new Map<string, AggCells>();
-  const add = (k: string, c: { anchorPayCandidatePay: number; anchorPayCandidateNoPay: number; anchorNoPayCandidatePay: number; anchorNoPayCandidateNoPay: number }) => {
+  const add = (k: string, c: Cells) => {
     const b = agg.get(k) ?? { app: 0, apn: 0, anp: 0, ann: 0 };
     b.app += c.anchorPayCandidatePay; b.apn += c.anchorPayCandidateNoPay;
     b.anp += c.anchorNoPayCandidatePay; b.ann += c.anchorNoPayCandidateNoPay;
@@ -60,6 +64,27 @@ function buildProfile(all: Map<string, { anchorPayCandidatePay: number; anchorPa
     add(`${p.role}|${p.side}`, counts);
     add(`${p.role}|${p.mechType}|${p.side}`, counts);
   }
+  return agg;
+}
+
+const cellsOf = (b: AggCells): Cells => ({
+  anchorPayCandidatePay: b.app, anchorPayCandidateNoPay: b.apn,
+  anchorNoPayCandidatePay: b.anp, anchorNoPayCandidateNoPay: b.ann,
+});
+
+/** The generalizable bucket COUNTS (role×mechanism×side), pooled across all templates. The robust
+ *  optimizer calibrates a candidate from its bucket (not a per-relation_key lookup), so a never-seen
+ *  template still calibrates and buckets cross the sample threshold far sooner. Empty without a DB. */
+export async function loadBucketCounts(): Promise<Map<string, Cells>> {
+  const all = await loadAllConditionalCounts().catch(() => new Map());
+  const agg = aggregateBuckets(all as Map<string, Cells>);
+  const out = new Map<string, Cells>();
+  for (const [k, b] of agg) out.set(k, cellsOf(b));
+  return out;
+}
+
+function buildProfile(all: Map<string, Cells>): TuningProfile {
+  const agg = aggregateBuckets(all);
   const profile: TuningProfile = new Map();
   for (const [k, b] of agg) {
     const cal = calibrateConditionalPayoff(
@@ -99,3 +124,10 @@ export function lookupBucket(profile: TuningProfile, role: string, mechType: str
 
 /** Test seam: build a profile from explicit per-template counts without a DB. */
 export const __buildProfileForTest = buildProfile;
+
+/** Test seam: the bucket COUNTS aggregation the robust optimizer calibrates from (no DB). */
+export const __bucketCountsForTest = (all: Map<string, Cells>): Map<string, Cells> => {
+  const out = new Map<string, Cells>();
+  for (const [k, b] of aggregateBuckets(all)) out.set(k, cellsOf(b));
+  return out;
+};

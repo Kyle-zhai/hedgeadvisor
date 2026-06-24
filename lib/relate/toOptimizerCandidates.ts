@@ -19,8 +19,9 @@ import type { Book } from "@/lib/types";
 import { fetchBooks } from "@/lib/polymarket";
 import { fetchKalshiBook } from "@/lib/kalshi";
 import { walkBookBuyBudgetCapped, bandDepthUsd, kalshiTakerFeeUsd, takerFeeUsd } from "@/lib/netcost";
-import { calibrateConditionalPayoff, loadConditionalCounts, type OptimizerCandidate } from "@/lib/association";
+import { calibrateConditionalPayoff, type OptimizerCandidate } from "@/lib/association";
 import { mechanismSignature, relationKey, relationRole } from "./relationKey";
+import { bucketKeys, loadBucketCounts } from "./tuningProfile";
 import type { CandidatePair, NormalizedMarket, PairClassification } from "./types";
 import { norm } from "@/lib/polymarket/text";
 
@@ -74,6 +75,12 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
   // leg is a standalone positive bet on a DIFFERENT event that tends to pay when the anchor fails.
   const out: OptimizerCandidate[] = [];
   let hypothesisCount = 0;
+  // GENERALIZABLE calibration source: realized conditional payoff per coarse structural BUCKET (relation
+  // ROLE × mechanism TYPE × bought SIDE), pooled across ALL templates. This REPLACES the old per-relation_key
+  // lookup — a never-seen template now calibrates from its bucket (the engine LEARNS a transferable rule, it
+  // does not match the pair against its own history), and buckets cross the evidence threshold far sooner than
+  // any single template. Empty without a DB ⇒ no CALIBRATED legs (HYPOTHESIS-only), exactly as before.
+  const bucketCounts = await loadBucketCounts().catch(() => new Map());
 
   // Most-liquid candidate first so the per-relation_key dedup keeps the best one (pre-price proxy).
   const ordered = [...classified].sort((a, b) => Number(b.pair.b.liquidityOk) - Number(a.pair.b.liquidityOk) || b.pair.b.probYes - a.pair.b.probYes);
@@ -113,17 +120,28 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
     const sides: Array<"yes" | "no"> = preferredSide
       ? [preferredSide, preferredSide === "yes" ? "no" : "yes"]
       : ["yes", "no"];
+    const mechType = mechanism?.split(".")[0] ?? "rule";
     let foundCalibrated = false;
     for (const side of sides) {
-      const key = relationKey(anchorFamily, candidateFamily, predicate, role, side, mechanism);
-      const counts = reusableCohort ? await loadConditionalCounts(key).catch(() => null) : null;
-      const calibration = counts ? calibrateConditionalPayoff(counts, CREDIBLE_LEVEL, MIN_SAMPLES) : undefined;
-      if (!calibration?.sufficientEvidence) continue;
+      // Calibrate from the most-specific structural BUCKET with enough evidence (role|mech|side, else
+      // role|side), pooled across ALL templates — NOT this pair's own relation_key history. INSTANCE_ONLY
+      // mechanisms never pool (reusableCohort gate).
+      let calibration: ReturnType<typeof calibrateConditionalPayoff> | undefined;
+      let bucketKey: string | undefined;
+      if (reusableCohort) {
+        for (const bk of bucketKeys(role, mechType, side)) {
+          const counts = bucketCounts.get(bk);
+          if (!counts) continue;
+          const cal = calibrateConditionalPayoff(counts, CREDIBLE_LEVEL, MIN_SAMPLES);
+          if (cal.sufficientEvidence) { calibration = cal; bucketKey = bk; break; }
+        }
+      }
+      if (!calibration || !bucketKey) continue;
       const priced = await priceSide(m, side, pricingBudgetUsd);
       if (!priced) continue;
       foundCalibrated = true;
       out.push({
-        id: `cal:${key}:${m.id}`,
+        id: `cal:${bucketKey}:${m.id}`,
         label: `${side === "no" ? "NOT " : ""}${m.title} · ${m.venue}`,
         venue: m.venue,
         side,
