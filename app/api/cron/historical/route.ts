@@ -33,7 +33,7 @@ const Job = z.object({
 function configuredJobs(): HistoricalBackfillJob[] {
   const raw = process.env.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON;
   if (!raw) return [];
-  return z.array(Job).max(50).parse(JSON.parse(raw)) as HistoricalBackfillJob[];
+  return z.array(Job).max(150).parse(JSON.parse(raw)) as HistoricalBackfillJob[];
 }
 
 /** Manual/idempotent historical backfill. Keep this out of the hourly loop: archived prices do not

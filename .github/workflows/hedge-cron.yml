@@ -110,7 +110,7 @@ jobs:
       - name: Historical relation backfill (manual opt-in only)
         if: github.event_name == 'workflow_dispatch' && inputs.run_historical_backfill
         run: |
-          code=$(curl -s -o /tmp/historical.json -w '%{http_code}' --max-time 290 \
+          code=$(curl -s -o /tmp/historical.json -w '%{http_code}' --max-time 780 \
             -H "authorization: Bearer ${CRON_SECRET}" \
             "http://localhost:3000/api/cron/historical")
           cat /tmp/historical.json 2>/dev/null; echo
