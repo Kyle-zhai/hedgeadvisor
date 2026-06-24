@@ -85,3 +85,18 @@ describe("reliability backstops", () => {
     expect(["medium", "low"]).toContain(r.confidence);
   });
 });
+
+describe("honesty: a weakly-correlated pair is NOT described as a hedge", () => {
+  // Regression for the reasoning-string sign bug: a 'related' pair with a 'diversify' signal (|φ| ≤ 0.1)
+  // used to fall through to the negative-φ string and tell the user a POSITIVELY-correlated pair was
+  // "negatively correlated" and that "Buying Yes-B hedges" — the opposite of the truth.
+  test("weakly POSITIVE φ ⇒ 'does not meaningfully hedge', never 'negatively correlated ... Buying Yes-B hedges'", () => {
+    const r = buildEventRelation({ pA: 0.985, pB: 0.25, estimateRho: 0.25, labelA: "A", labelB: "B" });
+    expect(r.relation).toBe("related");
+    expect(r.hedgeSignal).toBe("diversify");
+    expect(r.correlation).toBeGreaterThan(0); // genuinely positive
+    expect(r.reasoning).toContain("does not meaningfully hedge");
+    expect(r.reasoning).not.toContain("negatively correlated");
+    expect(r.reasoning).not.toMatch(/Buying Yes-.* hedges/);
+  });
+});

@@ -124,7 +124,13 @@ function reasoningFor(rel: RelationType, phi: number, signal: HedgeSignal, ratio
     const side = ratio < 0 ? `buy No-${b} at about ${Math.abs(ratio).toFixed(2)}:1` : `take the opposite side at about ${ratio.toFixed(2)}:1`;
     return `"${a}" and "${b}" share the same exposure (φ=${phiStr}); risk stacks rather than diversifies. To hedge, ${side}, which removes only about ${r2} of the variance.`;
   }
-  // related + negative φ ⇒ natural hedge
+  if (signal === "diversify") {
+    // |φ| ≤ SIGNAL_TAU: too weak to hedge in either direction. NEVER tell the user a positive φ is a
+    // hedge — say plainly it does not hedge (the old code fell through to the negative-φ string below
+    // and mislabeled a +φ pair as "negatively correlated ... buy Yes-B hedges").
+    return `"${a}" and "${b}" are only weakly ${phi >= 0 ? "positively" : "negatively"} correlated (φ=${phiStr}); "${b}" does not meaningfully hedge "${a}", though it can diversify.`;
+  }
+  // related + genuinely negative φ (signal === "hedge", φ < −SIGNAL_TAU) ⇒ natural hedge
   return `"${a}" and "${b}" are negatively correlated (φ=${phiStr}). Buying Yes-${b} at about ${Math.abs(ratio).toFixed(2)}:1 hedges "${a}", removing about ${r2} of the variance.`;
 }
 

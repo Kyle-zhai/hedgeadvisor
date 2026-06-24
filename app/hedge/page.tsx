@@ -70,13 +70,25 @@ interface HedgeComboLeg {
 }
 interface HedgeCombo {
   legs: HedgeComboLeg[]; coverage: number; totalCostUsd: number;
-  expectedReductionUsd: number; hedgedLossUsd: number; keptIfWinUsd: number; rationale: string;
+  expectedReductionUsd: number; hedgedLossUsd: number; strictWorstLossUsd?: number; keptIfWinUsd: number; rationale: string;
   tier?: "CALIBRATED" | "MODELED";
 }
+type Tier = "ANALYTIC" | "CALIBRATED" | "MODELED";
+interface SuperposeLeg {
+  id: string; marketTitle: string; title: string; side: "YES" | "NO"; q: number;
+  pWin: number; pFail: number; dimension: string; costUsd: number; shares: number; edgeWin: number; edgeFail: number; tier?: Tier;
+}
+interface Superposition {
+  direction: number; mode: "aggressive" | "conservative" | "balanced"; legs: SuperposeLeg[];
+  totalCostUsd: number; winPnlUsd: number; failPnlUsd: number; nakedWinPnlUsd: number; nakedFailPnlUsd: number;
+  strictWorstUsd: number; bestCaseUsd: number; evUsd: number; nakedEvUsd: number; coherent: boolean; tier?: Tier;
+}
+const tierLabel = (t?: Tier) => t === "ANALYTIC" ? "analytic" : t === "CALIBRATED" ? "calibrated" : "modeled";
 interface DiscoverResult {
   status: "ok" | "ambiguous" | "not_found";
   strategies?: HedgeStrategy[];
   combos?: HedgeCombo[];
+  directional?: { aggressive: Superposition; conservative: Superposition };
   anchor?: { venue: Venue; title: string; marketTitle: string; probYes: number; url: string };
   relations?: DiscoveredRelation[];
   robustHedge?: RobustHedge;
@@ -174,6 +186,9 @@ export default function HedgePage() {
 
   const anchor = data?.anchor;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Aggressive↔conservative direction knob for the stacked superposition strategy (both come from the server).
+  const [direction, setDirection] = useState<"conservative" | "aggressive">("conservative");
+  const sup = direction === "aggressive" ? data?.directional?.aggressive : data?.directional?.conservative;
   // Calibrated/structural legs only appear in the optimizer result (the trustworthy OPTIMAL card).
   const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED"), [data]);
   const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
@@ -185,14 +200,20 @@ export default function HedgePage() {
   const currentMaxLoss = stakeNum; // unhedged: you lose your stake if the bet fails
   // OPTIMAL card metrics, calibrated only, NOT affected by an exploratory selection.
   const calHedgedLoss = rh?.modeledLossIfPrimaryFailsUsd ?? stakeNum;
+  // Strict, probability-free worst case: a soft leg can pay $0, so the true floor is higher than the
+  // modeled conditional loss. The optimizer already computes it; surface it so "hedged loss" isn't read
+  // as a guaranteed cap.
+  const calStrictWorst = rh?.strictWorstLossIfPrimaryFailsUsd ?? stakeNum;
   const calSpend = rh?.spendUsd ?? 0;
   const calKept = rh?.keepIfPrimaryWinsFloorUsd ?? baseWinnings;
   const noActionReason = rh?.reason ?? "No candidate qualified after the evidence, uncertainty, price, and liquidity gates.";
 
   // Cross-event hedge COMBOS come from the SERVER (data.combos). Each combo bundles 1–4 complementary legs;
-  // each leg's correlation is the elicited conditional-probability signed φ (~96% held-out sign accuracy),
-  // NOT a keyword label, and the payoff is priced from those real conditionals. selectedId holds the combo
-  // index as a string ("0".."3"); null = Hold.
+  // each leg's correlation is the elicited conditional-probability signed φ (NOT a keyword label), and the
+  // payoff is priced from those real conditionals. The elicited sign is a low-confidence MODELED signal —
+  // the WC-anchor eval (REFOCUS §4) measured only 36% sign accuracy on single-nation champions — which is
+  // exactly why every leg is labeled MODELED until settlement calibration promotes it. selectedId holds the
+  // combo index as a string ("0".."3"); null = Hold.
   const combos = useMemo(() => data?.combos ?? [], [data]);
   const selected = selectedId != null ? combos[Number(selectedId)] ?? null : null;
 
@@ -220,8 +241,9 @@ export default function HedgePage() {
         <p className="sub" style={{ marginTop: 0 }}>
           Enter a bet you hold or are about to place. The engine builds a live cross-venue market universe and looks for
           positive-sum companion bets: standalone bets on a DIFFERENT event that tend to pay when your bet does not, so ideally
-          both win and at worst one wins. We never hedge by shorting your own bet, and we keep positively-correlated markets
-          (which would fail together with it) out of the companion layer.
+          both win and at worst one wins. We never hedge by shorting your own bet, and we keep positively-correlated SIDES
+          (the side that would fail together with your bet) out of the companion layer; a market that moves with your bet can
+          still appear via its opposite (anti-correlated) side.
         </p>
         <form className="formrow" onSubmit={(e) => { e.preventDefault(); run(query, conservatism); }} style={{ alignItems: "flex-start", gap: 12 }}>
           <label className="combo-label" style={{ flex: 3, minWidth: 280 }}>Bet
@@ -298,7 +320,7 @@ export default function HedgePage() {
             <p className="sub" style={{ marginTop: 6 }}>{hasHedge ? rh?.reason : noActionReason}</p>
             <div className="metric-strip" style={{ marginTop: 4 }}>
               <div className="metric"><div className="label">Current max loss</div><div className="value pnl-neg">${currentMaxLoss.toFixed(2)}</div><div className="detail">unhedged, if your bet fails</div></div>
-              <div className="metric"><div className="label">Hedged max loss</div><div className={`value ${hasHedge ? "pnl-pos" : ""}`}>${calHedgedLoss.toFixed(2)}</div><div className="detail">{hasHedge ? "after the hedge" : "no hedge applied"}</div></div>
+              <div className="metric"><div className="label">Hedged loss (modeled)</div><div className={`value ${hasHedge ? "pnl-pos" : ""}`}>${calHedgedLoss.toFixed(2)}</div><div className="detail">{hasHedge ? `strict worst $${calStrictWorst.toFixed(2)} · a soft leg can pay $0` : "no hedge applied"}</div></div>
               <div className="metric"><div className="label">Hedge spend</div><div className="value">${calSpend.toFixed(2)}</div><div className="detail">{rh ? `budget $${rh.budgetUsd.toFixed(2)}` : "nothing to buy"}</div></div>
               <div className="metric"><div className="label">Kept if you win</div><div className="value pnl-pos">${calKept.toFixed(2)}</div><div className="detail">winnings, after any cost</div></div>
             </div>
@@ -362,7 +384,8 @@ export default function HedgePage() {
                   <div className="kv"><span className="k">Total hedge cost</span><span className="v">${selected.totalCostUsd.toFixed(2)}</span></div>
                   <div className="kv"><span className="k">Expected downside cut</span><span className="v pnl-pos">${selected.expectedReductionUsd.toFixed(2)}</span></div>
                   <div className="kv"><span className="k">Kept if your bet wins</span><span className="v pnl-pos">${selected.keptIfWinUsd.toFixed(2)}</span></div>
-                  <div className="kv"><span className="k">Loss if your bet fails</span><span className="v">${actHedgedLoss.toFixed(2)}</span></div>
+                  <div className="kv"><span className="k">Loss if fail (modeled)</span><span className="v">${actHedgedLoss.toFixed(2)}</span></div>
+                  <div className="kv"><span className="k">Strict worst case</span><span className="v" title="your bet fails AND no leg pays: stake plus the whole premium">${(selected.strictWorstLossUsd ?? stakeNum + selected.totalCostUsd).toFixed(2)}</span></div>
                 </>
               )}
               <div className="note-box" style={{ marginTop: 9 }}>
@@ -431,6 +454,63 @@ export default function HedgePage() {
             )}
           </div>
 
+          {/* SUPERPOSITION: one stacked strategy with an aggressive↔conservative direction knob. Aggressive
+              stacks win-paying legs (higher payoff if your bet wins); conservative stacks fail-paying legs
+              (smaller loss if it fails). Both MODELED + EV-negative; the knob reshapes the conditional payoff. */}
+          {data?.directional && (
+            <div className="card" style={{ background: "var(--bg-subtle)" }}>
+              <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                Stacked strategy {sup && sup.legs.length > 0
+                  ? <span className={`combo-tier ${sup.tier === "MODELED" ? "mod" : "cal"}`} title={sup.tier === "ANALYTIC" ? "structurally certain — the relation is logically exact, not a model guess" : sup.tier === "CALIBRATED" ? "settlement-proven posterior" : "LLM-elicited prior (low confidence)"}>{tierLabel(sup.tier)}</span>
+                  : <span className="badge PARTIAL">MODELED</span>}
+                <div role="radiogroup" aria-label="Strategy direction" style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  <button type="button" role="radio" aria-checked={direction === "conservative"} className={`chip${direction === "conservative" ? " on" : ""}`} onClick={() => setDirection("conservative")}>Conservative · lose less</button>
+                  <button type="button" role="radio" aria-checked={direction === "aggressive"} className={`chip${direction === "aggressive" ? " on" : ""}`} onClick={() => setDirection("aggressive")}>Aggressive · win more</button>
+                </div>
+              </div>
+              <p className="sub" style={{ marginTop: 6, marginBottom: 10, color: "var(--ink-2)" }}>
+                One stacked bet, two ways to lean. Every leg is conditioned on the SAME pivotal event — your bet&apos;s
+                outcome — so the legs are logically related, not a grab bag. {direction === "aggressive"
+                  ? "Aggressive stacks bets that pay MORE when your bet wins: higher upside if you are right, a bigger loss if you are wrong."
+                  : "Conservative stacks bets that pay when your bet fails: a smaller loss if you are wrong, a little less kept if you are right."}
+              </p>
+              {sup && sup.legs.length > 0 ? (
+                <>
+                  <div className="metric-strip" style={{ marginTop: 4 }}>
+                    <div className="metric"><div className="label">If your bet WINS</div><div className={`value ${sup.winPnlUsd >= sup.nakedWinPnlUsd ? "pnl-pos" : ""}`}>+${sup.winPnlUsd.toFixed(2)}</div><div className="detail">naked +${sup.nakedWinPnlUsd.toFixed(2)} · best ${sup.bestCaseUsd >= 0 ? "+" : ""}${sup.bestCaseUsd.toFixed(2)}</div></div>
+                    <div className="metric"><div className="label">If your bet FAILS</div><div className={`value ${sup.failPnlUsd > sup.nakedFailPnlUsd ? "pnl-pos" : "pnl-neg"}`}>${sup.failPnlUsd.toFixed(2)}</div><div className="detail">naked ${sup.nakedFailPnlUsd.toFixed(2)} · strict worst ${sup.strictWorstUsd.toFixed(2)}</div></div>
+                    <div className="metric"><div className="label">Extra staked</div><div className="value">${sup.totalCostUsd.toFixed(2)}</div><div className="detail">{sup.legs.length} leg{sup.legs.length > 1 ? "s" : ""}, stacked</div></div>
+                    <div className="metric"><div className="label">EV</div><div className="value pnl-neg">${sup.evUsd.toFixed(2)}</div><div className="detail">still negative (the vig)</div></div>
+                  </div>
+                  <div className="table-wrap" style={{ marginTop: 8 }}>
+                    <table style={{ minWidth: 600 }}>
+                      <thead><tr><th>Leg</th><th>Facet</th><th style={{ textAlign: "right" }}>Stake</th><th style={{ textAlign: "right" }}>Price</th><th style={{ textAlign: "right" }}>{direction === "aggressive" ? "Pays if win" : "Pays if fail"}</th></tr></thead>
+                      <tbody>{sup.legs.map((l) => (
+                        <tr key={l.id}>
+                          <td><strong className={`strat-buy ${l.side === "YES" ? "yes" : "no"}`}>BUY {l.side}</strong> {l.title} <VenueTag venue={"polymarket"} short /> <span className={`combo-tier ${l.tier === "MODELED" ? "mod" : "cal"}`}>{tierLabel(l.tier)}</span></td>
+                          <td><span className="combo-dim">{l.dimension}</span></td>
+                          <td style={{ textAlign: "right" }}>${l.costUsd.toFixed(2)}</td>
+                          <td style={{ textAlign: "right" }}>{cents(l.q)}</td>
+                          <td style={{ textAlign: "right" }}>{Math.round((direction === "aggressive" ? l.pWin : l.pFail) * 100)}%</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                  <div className="note-box" style={{ marginTop: 9 }}>
+                    {sup.tier === "ANALYTIC"
+                      ? "Structurally certain: the relationship is logically exact (a champion is a champion from its own continent), so this leg's payoff is not a model guess."
+                      : "Modeled, not settled: whether this companion really pays is a model assumption until settlement data proves it."}{" "}
+                    {sup.coherent ? `All ${sup.legs.length} leg${sup.legs.length > 1 ? "s" : ""} lean the same way (they ${direction === "aggressive" ? "pay when your bet wins" : "pay when your bet fails"}).` : ""} EV stays negative — you pay the vig and the opposite outcome gets worse; the knob reshapes the payoff, it does not beat the market.
+                  </div>
+                </>
+              ) : (
+                <div className="note-box" style={{ marginTop: 4 }}>
+                  No {direction} stacked strategy qualifies for this bet right now: there is no companion market that {direction === "aggressive" ? "reliably pays MORE when your bet wins" : "reliably pays when your bet fails"}. That is the honest answer, not a gap — try the other direction.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Descriptive reference: the full structural φ map (not actionable on its own). */}
           {structuralRels.length > 0 && (
             <div className="card">
@@ -449,8 +529,8 @@ export default function HedgePage() {
       <div className="disclaimer">
         Not financial advice. Every hedge here is positive-sum, never a short of your own bet: each leg is a standalone
         positive bet on a different event that tends to pay when your bet does not, so ideally both win and at worst one wins.
-        A companion must be negatively correlated to qualify; positively-correlated markets are excluded because they fail
-        together with your bet. Two layers, read them differently. The OPTIMAL hedge is the trustworthy output: legs priced off
+        A companion must be negatively correlated to qualify; a positively-correlated SIDE is excluded because it fails
+        together with your bet (the same market can still qualify on its opposite, anti-correlated side). Two layers, read them differently. The OPTIMAL hedge is the trustworthy output: legs priced off
         the real book (cost), capped by depth (capacity), admitted only when settled-outcome calibration proves the leg pays more
         often when your bet fails (uncertainty via credible bounds). The EXPLORATORY layer is low confidence by design: cross-event
         and cross-domain mechanisms are model-inferred and shown without payoff probabilities or position sizes. Only historical

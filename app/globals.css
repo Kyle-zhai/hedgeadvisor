@@ -280,6 +280,7 @@ table th[style*="right"], table td[style*="right"] { white-space: nowrap; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .chip { padding: 5px 9px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); color: var(--ink-2); background: var(--surface); font-size: 11px; cursor: pointer; }
 .chip:hover { color: var(--accent-ink); border-color: var(--accent); }
+.chip.on { color: #fff; background: var(--accent); border-color: var(--accent); font-weight: 600; }
 
 .chart-frame { width: 100%; height: 260px; margin-top: 8px; }
 .chart-frame.compact { height: 190px; }

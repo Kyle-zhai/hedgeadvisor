@@ -15,6 +15,8 @@ import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
 import { marketDimension, eventFamily, relationRole, mechanismSignature } from "./relationKey";
 import { loadTuningProfile, lookupBucket } from "./tuningProfile";
+import { buildSuperposition, type SuperposeLeg, type Superposition } from "./superpose";
+import { deriveStructuralCompanions } from "./structuralCompanions";
 import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
@@ -169,7 +171,9 @@ export interface DiscoveredRelation {
 }
 
 /** A validated cross-event hedge strategy. Correlation comes from elicited conditional probabilities
- *  (Fréchet-projected signed φ, ~92% sign accuracy), NOT the unreliable mechanism MUTEX/CAUSAL label.
+ *  (Fréchet-projected signed φ), NOT the unreliable mechanism MUTEX/CAUSAL label. The elicited sign is a
+ *  LOW-CONFIDENCE MODELED signal (the WC-anchor eval in REFOCUS §4 measured only 36% sign accuracy on
+ *  single-nation champions), so every such leg is MODELED until settlement calibration promotes it.
  *  Inferred / exploratory layer: priced from real prices + real conditionals, never the calibrated optimizer. */
 export interface HedgeStrategy {
   marketId: string;
@@ -220,8 +224,11 @@ export interface HedgeCombo {
   legs: HedgeComboLeg[];
   coverage: number;             // P(at least one leg pays | your bet fails)
   totalCostUsd: number;
-  expectedReductionUsd: number; // expected downside cut if your bet fails
+  expectedReductionUsd: number; // expected downside cut if your bet fails (MODELED: assumes legs pay at pGivenFails)
   hedgedLossUsd: number;
+  /** STRICT worst case if your bet fails AND no leg pays: you lose the stake AND the whole premium. Every
+   *  soft leg can pay $0, so this is the honest probability-free floor, always ≥ the modeled hedgedLossUsd. */
+  strictWorstLossUsd: number;
   keptIfWinUsd: number;
   rationale: string;
   tier: "CALIBRATED" | "MODELED"; // the combo's confidence = its WEAKEST leg (any MODELED leg ⇒ MODELED)
@@ -231,6 +238,10 @@ export interface DiscoverResult {
   status: "ok" | "ambiguous" | "not_found";
   strategies?: HedgeStrategy[];
   combos?: HedgeCombo[];
+  /** The AGGRESSIVE↔CONSERVATIVE superposition: one stacked strategy per direction, from the same elicited
+   *  conditionals. Aggressive raises the payoff if your bet WINS; conservative cuts the loss if it FAILS.
+   *  Both are MODELED (LLM-elicited) and EV-negative; the knob reshapes the conditional payoff, not the EV. */
+  directional?: { aggressive: Superposition; conservative: Superposition };
   anchor?: { id: string; venue: "polymarket" | "kalshi"; title: string; marketTitle: string; probYes: number; url: string };
   relations?: DiscoveredRelation[];
   /** The ACTIONABLE hedge: the cost/capacity/uncertainty-constrained robust optimizer's plan over the
@@ -304,7 +315,8 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>
  * is unreliable for sizing (it conflates "different party" with "mutually exclusive" — e.g. it wrongly
  * marks a Democratic-nominee market as a MUTEX hedge for a Republican's presidency). So we do NOT trust
  * it: we elicit P(candidate pays | anchor wins) and P(candidate pays | anchor fails) and derive a
- * Fréchet-projected SIGNED φ (empirically ~92% sign accuracy). A candidate is a genuine hedge only when
+ * Fréchet-projected SIGNED φ. This is a MODELED prior (measured at only ~36% sign accuracy on the WC
+ * champion eval, REFOCUS §4), gated by settlement calibration before it is ever trusted. A candidate is a genuine hedge only when
  * its bought side pays MEANINGFULLY more often when the anchor fails than when it wins, and more than its
  * own base rate. Everything is then priced from the real conditionals. Exploratory layer only.
  */
@@ -313,7 +325,9 @@ async function buildCrossEventStrategies(
   relations: DiscoveredRelation[],
   stakeUsd: number,
   baseWinnings: number,
-): Promise<HedgeStrategy[]> {
+  entryPrice: number,
+  universe: NormalizedMarket[],
+): Promise<{ strategies: HedgeStrategy[]; directional: { aggressive: Superposition; conservative: Superposition } }> {
   const hedgeLikely = (r: DiscoveredRelation) => {
     const h = r.hypothesis;
     if (!h) return 0;
@@ -356,7 +370,19 @@ async function buildCrossEventStrategies(
   const diverse = eligible.filter((r) => r.recall === "diversity").slice(0, 10);
   const similar = eligible.filter((r) => r.recall !== "diversity").slice(0, 16);
   const cands = [...new Map([...similar, ...diverse].map((r) => [r.market.id, r])).values()].slice(0, 24);
-  if (cands.length === 0) return [];
+  if (cands.length === 0) {
+    // No LLM candidates — but logically-certain structural companions (continent basket) still apply.
+    const superAnchor = { winProb: Math.min(0.999, Math.max(0.001, anchor.probYes)), stakeUsd, entryPrice };
+    const superBudget = Math.min(0.5 * baseWinnings, stakeUsd);
+    const structural = deriveStructuralCompanions({ title: anchor.title, probYes: superAnchor.winProb }, universe);
+    return {
+      strategies: [],
+      directional: {
+        aggressive: buildSuperposition(superAnchor, structural, 1, { riskBudgetUsd: superBudget }),
+        conservative: buildSuperposition(superAnchor, structural, 0, { riskBudgetUsd: superBudget }),
+      },
+    };
+  }
   const anchorTitle = `${anchor.title} (${anchor.marketTitle})`;
   const ap = Math.min(0.999, Math.max(0.001, anchor.probYes));
   const PHI_MIN = 0.12; // meaningful dependence
@@ -438,9 +464,52 @@ async function buildCrossEventStrategies(
       tier, samples,
     });
   }
-  return out
-    .sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd || b.confidence - a.confidence)
-    .slice(0, 10); // keep extra legs as raw material for combo construction
+  // ── SUPERPOSITION: the AGGRESSIVE↔CONSERVATIVE direction knob, built from the SAME elicited conditionals
+  // (no extra LLM cost). A leg pays-on-WIN with prob pW and pays-on-FAIL with prob pF; its NO side flips both.
+  // Conservative stacks fail-paying legs (smaller loss if you fail); aggressive stacks win-paying legs (higher
+  // payoff if you win). EV stays negative either way — the price already carries the vig. The legs are logically
+  // related because every leg is conditioned on the SAME pivotal event (your bet's outcome) and shares its sign. ──
+  const toSuperposeLegs = (direction: number): SuperposeLeg[] => {
+    const legs: SuperposeLeg[] = [];
+    for (const x of elicited) {
+      if (!x || x.conf < CONF_MIN) continue;
+      const { r, pW, pF, reason } = x;
+      const qYes = Math.min(0.98, Math.max(0.02, r.market.probYes));
+      const sides = [
+        { side: "YES" as const, q: qYes, win: pW, fail: pF },
+        { side: "NO" as const, q: 1 - qYes, win: 1 - pW, fail: 1 - pF },
+      ];
+      // aggressive (λ≥.5) wants the side that leans WIN; conservative wants the side that leans FAIL.
+      const lean = (s: typeof sides[number]) => (direction >= 0.5 ? s.win - s.fail : s.fail - s.win);
+      const pick = lean(sides[0]) >= lean(sides[1]) ? sides[0] : sides[1];
+      if (lean(pick) <= 0) continue; // no directional tilt on either side ⇒ not a companion for this direction
+      legs.push({
+        id: r.market.id, marketTitle: r.market.marketTitle, title: r.market.title, side: pick.side,
+        q: Math.min(0.98, Math.max(0.02, pick.q)), pWin: pick.win, pFail: pick.fail,
+        dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
+        mechanism: reason.slice(0, 160),
+      });
+    }
+    return legs;
+  };
+  const superAnchor = { winProb: ap, stakeUsd, entryPrice };
+  // Companion budget = min(half the potential winnings, the stake) — a longshot's winnings are huge, so the
+  // stake cap keeps the companion spend sane (you never risk more on companions than the bet itself).
+  const superBudget = Math.min(0.5 * baseWinnings, stakeUsd);
+  // ANALYTIC structural companions (continent basket: anchor ⊆ own continent = amplifier, ⟂ others = hedge)
+  // are deterministic and appear EVERY run, ahead of the per-draw MODELED elicited legs.
+  const structural = deriveStructuralCompanions({ title: anchor.title, probYes: ap }, universe);
+  const directional = {
+    aggressive: buildSuperposition(superAnchor, [...structural, ...toSuperposeLegs(1)], 1, { riskBudgetUsd: superBudget }),
+    conservative: buildSuperposition(superAnchor, [...structural, ...toSuperposeLegs(0)], 0, { riskBudgetUsd: superBudget }),
+  };
+
+  return {
+    strategies: out
+      .sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd || b.confidence - a.confidence)
+      .slice(0, 10), // keep extra legs as raw material for combo construction
+    directional,
+  };
 }
 
 // Facets (DIMENSIONS) of an event a hedge leg can cover. A combo must span GENUINELY ORTHOGONAL dimensions —
@@ -541,6 +610,8 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       totalCostUsd: Number(totalCost.toFixed(2)),
       expectedReductionUsd: Number(Math.max(0, cut).toFixed(2)),
       hedgedLossUsd: Number((stakeUsd - Math.max(0, cut)).toFixed(2)),
+      // strict worst case: bet fails AND no soft leg pays ⇒ stake lost + full premium spent.
+      strictWorstLossUsd: Number((stakeUsd + totalCost).toFixed(2)),
       keptIfWinUsd: Number((baseWinnings - totalCost).toFixed(2)),
       // combo confidence = its WEAKEST leg: any LLM-prior (MODELED) leg keeps the whole combo MODELED.
       tier: picks.every(({ s }) => s.tier === "CALIBRATED") ? "CALIBRATED" : "MODELED",
@@ -685,19 +756,25 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   });
 
   // Validated cross-event hedge strategies (user-facing only; the cron leaves withStrategies off).
-  const baseWinnings = stakeUsd * (1 - anchor.probYes) / Math.max(0.01, anchor.probYes);
-  const strategies = req.withStrategies
+  // Upside basis is the user's OWN entry (your winnings = stake·(1−entry)/entry), so the combo/strategy
+  // cards share the same basis as the optimizer card above (which already prices off entryPrice). Falls
+  // back to the current de-vigged price when no entry was supplied (entryPrice defaults to anchor.probYes).
+  const baseWinnings = stakeUsd * (1 - entryPrice) / entryPrice;
+  const strategyResult = req.withStrategies
     ? await buildCrossEventStrategies(
         { title: anchor.title, marketTitle: anchor.marketTitle, eventKey: anchor.eventKey, url: anchor.url, probYes: anchor.probYes, category: anchor.category, eventFamily: anchor.eventFamily },
-        relations, stakeUsd, baseWinnings,
-      ).catch(() => [])
-    : undefined;
+        relations, stakeUsd, baseWinnings, entryPrice, universe,
+      ).catch(() => null)
+    : null;
+  const strategies = strategyResult?.strategies;
+  const directional = strategyResult?.directional;
   const combos = strategies && strategies.length ? buildCombos(strategies, stakeUsd, baseWinnings) : undefined;
 
   return {
     status: "ok",
     strategies,
     combos,
+    directional,
     anchor: { id: anchor.id, venue: anchor.venue, title: anchor.title, marketTitle: anchor.marketTitle, probYes: Number(anchor.probYes.toFixed(4)), url: anchor.url },
     relations,
     robustHedge,

@@ -55,16 +55,22 @@ export function normalizeKalshiBook(raw: KalshiRawOrderbook, side: "yes" | "no",
   const bids = ownBids.slice().sort((a, b) => b.price - a.price); // DESCENDING (best first)
   const asks = asksFromOppositeBids(oppBids).sort((a, b) => a.price - b.price); // ASCENDING (best first)
 
-  if (bids.length === 0 || asks.length === 0) {
-    throw new CannotPriceError(`empty Kalshi book for ${tokenId} (${side})`);
+  // A side is BUYABLE as long as asks exist (synthesized from the opposite side's resting bids). Don't
+  // drop a buyable hedge leg just because no one is currently bidding to take THIS side off you (an empty
+  // exit book): only a missing ask makes a buy unpriceable. The fully-empty book still throws (no asks).
+  if (asks.length === 0) {
+    throw new CannotPriceError(`empty Kalshi book for ${tokenId} (${side}) — no buyable ask`);
   }
-  const bestBid = bids[0].price;
   const bestAsk = asks[0].price;
+  // With no resting bids, synthesize bestBid = 0 and reference the midpoint off the ask. We never fabricate
+  // an exit price; a buyer's slippage is measured from the real ask, which stays honest.
+  const bestBid = bids.length ? bids[0].price : 0;
+  const midpoint = bids.length ? (bestBid + bestAsk) / 2 : bestAsk;
   if (bestAsk >= 0.99 && bestBid <= 0.01) {
     throw new CannotPriceError(`degenerate Kalshi book for ${tokenId} (${bestBid}/${bestAsk})`);
   }
-  if (bestAsk <= bestBid) {
+  if (bids.length && bestAsk <= bestBid) {
     throw new CannotPriceError(`crossed Kalshi book for ${tokenId} (${bestBid}/${bestAsk})`);
   }
-  return { bids, asks, bestBid, bestAsk, midpoint: (bestBid + bestAsk) / 2, tokenId };
+  return { bids, asks, bestBid, bestAsk, midpoint, tokenId };
 }

@@ -9,7 +9,7 @@
 
 import { fetchBooks, fetchMidpoints, resolveBet, resolveAnyPosition } from "@/lib/polymarket";
 import { devigDetailed } from "@/lib/correlation";
-import { walkBookBuyBudgetCapped } from "@/lib/netcost";
+import { walkBookBuyBudgetCapped, takerFeeUsd } from "@/lib/netcost";
 import { buildMarketDeepLink } from "@/lib/execute";
 import { buildCombo, detectStructuralJoint, sharesEntity, type PricedComboLeg, type ComboResult, type StructLeg } from "@/lib/combo";
 import { marginalBand, jointAllHit } from "@/lib/estimate";
@@ -83,6 +83,8 @@ export async function runCombo(req: ComboRequest): Promise<ComboResponse> {
         } catch {
           /* keep snapshot price */
         }
+        // Real taker fee on the buy (combo.ts's build-cost honesty claim includes the fee). 0-fee books add nothing.
+        if (price > 0 && price < 1) price = Math.min(0.999, price + takerFeeUsd(1, price, "buy", { rate: ref.feeRate, exponent: ref.feeExponent, takerOnly: ref.feeTakerOnly }));
         if (legQ > price) {
           price = legQ;
           capacityHit = true;
@@ -129,6 +131,8 @@ export async function runCombo(req: ComboRequest): Promise<ComboResponse> {
     } catch {
       /* keep the snapshot price */
     }
+    // Real taker fee on the buy (combo.ts's build-cost honesty claim includes the fee). 0-fee books add nothing.
+    if (price > 0 && price < 1) price = Math.min(0.999, price + takerFeeUsd(1, price, "buy", { rate: ref.feeRate, exponent: ref.feeExponent, takerOnly: ref.feeTakerOnly }));
     // Honesty floor: you can't pay BELOW fair value on a real book. A NO leg is priced on a
     // SEPARATE book from its de-vigged YES probability, so a stale/thin fallback can imply
     // price < fair (→ positive EV). Floor the pay price at fair and flag it as not-clean-fill.

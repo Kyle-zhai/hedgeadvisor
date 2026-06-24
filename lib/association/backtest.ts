@@ -75,10 +75,16 @@ export function walkForwardAssociationBacktest(
 
   for (const test of rows) {
     const testTime = Date.parse(test.resolvedAt);
-    const train = rows.filter((row) => row.relationKey === test.relationKey
-      && row.clusterKey !== test.clusterKey
+    // Same-relation rows that resolved strictly earlier than the test = the eligible history pool.
+    const earlierSameRelation = rows.filter((row) => row.relationKey === test.relationKey
+      && row.sampleKey !== test.sampleKey
       && Date.parse(row.resolvedAt) < testTime);
-    if (train.some((row) => Date.parse(row.resolvedAt) >= testTime || row.clusterKey === test.clusterKey)) leakageViolations++;
+    // Walk-forward training EXCLUDES the test's own cluster (one real-world event can't predict itself).
+    const train = earlierSameRelation.filter((row) => row.clusterKey !== test.clusterKey);
+    // leakageViolations counts test points that HAD same-cluster prior history we deliberately withheld —
+    // the live proof the cluster-disjoint gate is doing work. (The old check ran on the already-filtered
+    // `train`, so its predicate was vacuously false and always reported zero, giving false assurance.)
+    if (earlierSameRelation.some((row) => row.clusterKey === test.clusterKey)) leakageViolations++;
     if (train.length === 0) continue;
     const calibration = calibrateConditionalPayoff(normalizedTrainingCounts(train), credibleLevel, minSamples);
     const predicted = test.anchorPays ? calibration.payGivenAnchorPays.mean : calibration.payGivenAnchorFails.mean;
