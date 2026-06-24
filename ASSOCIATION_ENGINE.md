@@ -149,3 +149,21 @@ event-instance/anchor-branch is normalized at read time so incremental cron inge
 stale weights. Both candidate YES and NO are calibrated independently. A soft hedge becomes
 actionable only after both anchor branches meet the minimum effective sample requirement and the
 credible intervals show conservative hedge specificity.
+
+## Generalized rule-learning — tune the engine, not a per-question lookup (2026-06-23)
+
+The per-template `loadConditionalCounts(relationKey)` path above answers ONE specific pair from its own
+history, so a never-seen template always misses. The combo engine (`buildCrossEventStrategies`) instead uses
+a learned **tuning profile** (`lib/relate/tuningProfile.ts`): `loadAllConditionalCounts` pools every settled
+observation, then re-buckets them across templates by coarse STRUCTURE — relation **role** × mechanism
+**type** × bought **side** — and fits each bucket's realized `P(pays | anchor fails)` with the same
+beta-binomial. These buckets are generalizable rules: a brand-new pair is tuned by its bucket (role+mechanism)
+with no lookup of its specific history, and coarse buckets cross the sample threshold far sooner than any one
+template. A leg's LLM-elicited φ prior is Bayes-shrunk toward its bucket's realized rate (κ pseudo-samples);
+a bucket with ≥20 balanced samples and positive specificity promotes the leg to **CALIBRATED**, else it stays
+**MODELED**. `/api/diag/stats` `learnedRules` exposes the current profile (e.g. `same_entity|no` → +0.40
+specificity, `cross_domain|yes` → −0.40 — the engine learning that cross-domain links are unreliable hedges).
+
+**Confidence ladder + combos.** Each recommended leg, and each multi-leg combo (≤4 legs, one per orthogonal
+dimension via `eventDimension`), is tagged `ANALYTIC` / `CALIBRATED` / `MODELED`; a combo's tier is its
+weakest leg. The ladder and the rule-learning degrade to MODELED with zero cost when `DATABASE_URL` is unset.

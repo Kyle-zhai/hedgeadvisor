@@ -10,6 +10,8 @@ HedgeAdvisor does **not** predict whether your bet wins. It answers: **if your b
 
 这个产品不预测你会不会赢。它找的是正和的"伴随注":在别的事件上、当你这注没中时反而可能获益的注 —— 最好两个都中,最差只中一个。绝不做空你自己的注。
 
+**Evolved goal (2026-06-23).** The recommendation is now a multi-leg **COMBO** (≤4 legs), each on a genuinely **orthogonal dimension** of how your bet can fail — never several restatements of one factor (all goal/score/margin metrics of a match are one `scoreline` dimension; truly different facets are discipline / timing / narrative / a specific player, or cross-domain facets like macro-policy / asset-price / geopolitics). It prefers a cross-event leg when a different event genuinely correlates, else falls back to same-event cross-dimension ("team loses ↔ announcer says 'upset'"); a facet-poor event honestly yields one leg. Every leg carries a confidence tier — **ANALYTIC** (structural) / **CALIBRATED** (settlement-proven) / **MODELED** (LLM-prior) — and a combo's tier is its weakest leg. Crucially, the settlement moat is used to learn **generalizable rules** (realized payoff per role × mechanism × side bucket) that tune the engine for **any** question including unseen ones, NOT a per-question answer lookup — and those rules sharpen automatically as events resolve.
+
 ## Users
 
 Prediction-market bettors on **Polymarket and Kalshi** who already hold or are about to place a bet and want an honest, cost-aware read on whether and how to hedge it across both venues. They arrive mid-task: "I'm long France to win the World Cup, is there anything that pays if they don't?" They value the truth over a sold edge, including the frequent honest answer: "there is no clean positive-sum hedge here, hold the bet as is."
@@ -20,7 +22,7 @@ HedgeAdvisor turns a real bet into an honest, costed view, priced at the real ex
 
 Four surfaces, each one job, no overlap:
 
-- **Hedge** (`/hedge`) — the single hedge surface. Given a bet you hold or plan, it builds a live cross-venue market universe and finds positive-sum companion bets, in two layers: an **Optimal** layer (settlement-calibrated or logically certain; trustworthy) and an **Exploratory** layer (model-inferred cross-event mechanisms; low confidence). Positively-correlated markets that would fail together with your bet are kept OUT of the companion layers (they amplify, not hedge).
+- **Hedge** (`/hedge`) — the single hedge surface. Given a bet you hold or plan, it builds a live cross-venue market universe and recommends multi-leg **combos** of positive-sum companion bets, one leg per orthogonal dimension of how your bet fails. Each leg carries its confidence tier (ANALYTIC / CALIBRATED / MODELED) and same-event-vs-cross-event scope; the combo's tier is its weakest leg. Positively-correlated markets that would fail together with your bet are kept OUT (they amplify, not hedge), and a facet-poor event honestly returns one leg or none.
 - **Combo** (`/combo`) — a parlay truth-checker: real legging-in cost, fair value, compounded vig, and structural-impossibility detection for a multi-leg bet you specify. Not a hedge recommender.
 - **Cross-venue** (`/link`) — finds the same outcome on Polymarket vs Kalshi and shows the cheaper execution venue, net of fees. An execution comparison, not a hedge.
 - **Markets** (`/markets`) — a read-only live market ledger.

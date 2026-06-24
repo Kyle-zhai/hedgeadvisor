@@ -3,6 +3,8 @@
 > ⚠️ 下面"## 状态总览"及之后是 2026-06-21 之前的历史变更日志(记录的对冲模型是已被否决的"做空自己"
 > 版本:补集 / reach-final NO / 对手篮子 / express↔protect)。**当前目标见本节,以本节为准。**
 > 北极星与表面图详见 [REFOCUS.md](REFOCUS.md) 与 [PRODUCT.md](PRODUCT.md)。
+>
+> **最新(2026-06-23):引擎已重建为「多腿正交维度 combo + 置信阶梯(ANALYTIC/CALIBRATED/MODELED)+ 从结算数据学通用规则(不查表)」。完整目标见 [REFOCUS.md](REFOCUS.md) §7。下一步是数据驱动(让护城河攒数据点亮 CALIBRATED + 拓宽跨域宇宙),不是再写引擎。**
 
 ## 现状与当前目标(2026-06-21)
 

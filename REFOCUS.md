@@ -97,3 +97,45 @@ present; removing them is a separate, verified cleanup (they live in the same 86
 - The φ relation math (exact for structural, Fréchet-clamped estimate otherwise); price co-movement is
   never used as φ.
 - L2 non-custodial execution stays fail-closed and legally gated (never auto-enabled).
+
+---
+
+## 7. Status as of 2026-06-23 — the engine the goal grew into
+
+Everything above stands. The goal grew five layers on top of "one positive-sum companion leg":
+
+1. **Output is a multi-leg COMBO (≤4 legs), each on a genuinely ORTHOGONAL dimension of how the bet fails.**
+   Not several restatements of one factor. Every goal/score/margin/result metric of a match is ONE dimension
+   (`scoreline`) and never stacks; truly different facets are the ones the score does not determine
+   (discipline / timing / narrative / individual / method), and cross-domain facets
+   (`election` / `macro-policy` / `macro-econ` / `asset-price` / `company` / `geopolitics` …) come from a
+   template ontology (`lib/relate/ontology.ts` `eventDimension`). Each leg is tagged **same-event** vs
+   **cross-event**; priority is a cross-event leg when a different event genuinely correlates, else fall back
+   to same-event cross-dimension (the canonical "team loses ↔ announcer says 'upset'"). A facet-poor event
+   honestly yields **one leg**; combos keep cost ≤ ½ upside so kept-if-win stays positive.
+
+2. **Confidence ladder, per leg AND per combo.** `ANALYTIC` (structural certainty) → `CALIBRATED`
+   (settlement-proven posterior) → `MODELED` (LLM-elicited conditional φ prior; the renamed Exploratory tier).
+   A combo's tier is its WEAKEST leg. Tags are shown in the UI with the backing sample count.
+
+3. **Correlation is domain-adapted, NOT traditional price-history quant.** These markets are short-lived and
+   resolve once, so there is no price time-series to correlate. Correlation lives at the recurring
+   **template/structure** level: an LLM conditional-φ prior, sharpened by settlement outcomes pooled across
+   instances of the same template. Quant techniques (RMT denoising, cointegration, copula tail dependence)
+   are reference only, applied to the settlement-conditional layer, never to price returns.
+
+4. **The moat yields GENERALIZABLE RULES, not a per-question answer table.** Settlement observations are
+   re-bucketed by coarse STRUCTURE (relation ROLE × mechanism TYPE × bought SIDE) and each bucket's realized
+   `P(pays | anchor fails)` is a learned rule (`lib/relate/tuningProfile.ts`). A brand-new, never-seen pair is
+   tuned by its bucket — no lookup of its specific history. Coarse buckets learn from far fewer samples than
+   per-template calibration. This replaced the old `loadConditionalCounts(relationKey)` per-template lookup.
+   The engine has already learned, from live data, that same-entity-NO is a strong hedge (+0.40) and
+   cross-domain-YES links are unreliable (−0.25) — and will auto-suppress the latter as the bucket matures.
+
+5. **Self-improving flywheel, Kalshi-first.** The snapshot/relations crons freeze candidate pairs before
+   resolution; the settle cron (job-driven + a snapshot-driven frozen-pair drain) writes observations after;
+   the learned rules sharpen automatically with no code change. Kalshi's fine-grained templated series supply
+   the orthogonal dimensions. `/api/diag/stats` `learnedRules` exposes the current rule set.
+
+The honesty backbone is unchanged and now stronger: a leg admits as CALIBRATED only on its bucket's evidence,
+labels MODELED otherwise, and an empty or one-leg combo remains the honest answer when the structure warrants it.

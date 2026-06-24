@@ -1,10 +1,18 @@
 # HedgeAdvisor
 
-Cost-aware hedge recommender for Polymarket prediction markets. You enter a position
-you hold or like (e.g. "Spain wins the World Cup"); HedgeAdvisor finds a correlated
-hedge, prices it at the **real executable cost** (it walks the live order book — never
-the displayed midpoint), and tells you honestly whether it's worth it. "Don't bother"
-is a first-class answer.
+Cost-aware, honest hedge recommender for **Polymarket + Kalshi** prediction markets. You enter a
+position you hold or like (e.g. "Spain wins the World Cup"); HedgeAdvisor recommends a positive-sum
+**multi-leg combo** — up to 4 companion bets, each on a genuinely **orthogonal dimension** of how your
+bet can fail (its scoreline, a red card, what the announcer says, or a cross-domain market like
+macro-policy / asset-price) — priced at the **real executable cost** (it walks the live order book,
+never the displayed midpoint). Every leg is tagged by confidence (ANALYTIC / CALIBRATED / MODELED) and
+same-event-vs-cross-event scope; a facet-poor event honestly returns one leg, and "don't bother" is a
+first-class answer. The settlement moat is used to learn **generalizable rules** that tune the engine for
+any question (not a per-question lookup), and those rules sharpen as events resolve. See
+[`REFOCUS.md`](REFOCUS.md) §7 for the current engine and [`ASSOCIATION_ENGINE.md`](ASSOCIATION_ENGINE.md)
+for the rule-learning.
+
+> The original cost-aware single-hedge MVP is described below; it remains the pricing/honesty backbone.
 
 Built from [`HedgeAdvisor-MVP-TechSpec.md`](HedgeAdvisor-MVP-TechSpec.md). Execution
 boundary in [`HedgeAdvisor-Execution-Compliance.md`](HedgeAdvisor-Execution-Compliance.md).
