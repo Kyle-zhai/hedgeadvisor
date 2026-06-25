@@ -80,18 +80,23 @@ export function deriveAutoJobs(events: PmEvent[]): HistoricalBackfillJob[] {
       const withT = markets.map((m) => ({ m, t: threshold(label(m)) })).filter((x): x is { m: PmMarket; t: number } => x.t !== null);
       if (withT.length < 3) continue; // need a real ladder, not an incidental number
       withT.sort((a, b) => a.t - b.t);
-      for (let i = 0; i + 1 < withT.length; i++) {
+      // Thresholds of ONE quantity are CORRELATED (driven by the same price), so all pairs from this
+      // event share ONE clusterKey (the cluster-normalizer down-weights them) and we emit at most 2 — not
+      // N−1 — to avoid one event flooding the bucket with near-duplicate samples.
+      let emitted = 0;
+      for (let i = 0; i + 1 < withT.length && emitted < 2; i++) {
+        if (withT[i].t === withT[i + 1].t) continue;
         const lower = withT[i].m; // smaller threshold = SUPERSET
         const higher = withT[i + 1].m; // larger threshold ⊆ lower
-        if (withT[i].t === withT[i + 1].t) continue;
         jobs.push({
           id: `auto-ladder-${ev.slug}-${i}`.slice(0, 150),
-          clusterKey: `auto:${ev.slug}:t${i}`,
+          clusterKey: `auto:${ev.slug}`,
           anchor: { venue: "polymarket", eventKey: ev.slug, marketId: higher.conditionId! },
           candidate: { venue: "polymarket", eventKey: ev.slug, marketId: lower.conditionId! },
           relation: { anchorFamily: fam, candidateFamily: fam, predicate: "auto_threshold_subset", role: "same_entity", side: "yes", mechanismSignature: sig("logical", "same_entity", "positive", "implies"), relationDirection: "POSITIVE" },
           leadHours: 72,
         });
+        emitted++;
       }
     }
   }
