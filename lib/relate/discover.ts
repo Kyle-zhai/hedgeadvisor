@@ -465,6 +465,10 @@ async function buildCrossEventStrategies(
       samples = bucket.samplesFail + bucket.samplesWin;
       const w = bucket.samplesFail / (bucket.samplesFail + BUCKET_PRIOR_STRENGTH); // evidence weight on the rule
       pFside = Math.min(0.999, Math.max(qSide, w * bucket.pGivenFails + (1 - w) * pFsideModeled));
+      // FRÉCHET FEASIBILITY re-clamp: even a strong bucket can't make a leg pay more on the anchor's
+      // failure than its OWN marginal allows (P(pay|fail) ≤ P(side)/P(anchor fails)). Stops a coarse
+      // 2-way-exclusive rule from over-crediting a longshot rival in a multi-outcome field.
+      pFside = Math.min(pFside, qSide / Math.max(0.05, 1 - ap));
       if (Math.min(bucket.samplesFail, bucket.samplesWin) >= CALIB_MIN_SAMPLES) tier = "CALIBRATED";
     }
     const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails

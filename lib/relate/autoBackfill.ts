@@ -46,9 +46,8 @@ function threshold(text: string): number | null {
 }
 
 /** Deterministically derive structural backfill jobs from settled Polymarket events. */
-export function deriveAutoJobs(events: PmEvent[], startCounter = 0): HistoricalBackfillJob[] {
+export function deriveAutoJobs(events: PmEvent[]): HistoricalBackfillJob[] {
   const jobs: HistoricalBackfillJob[] = [];
-  let counter = startCounter;
   for (const ev of events) {
     if (!ev.slug || !ev.closed) continue;
     const markets = (ev.markets ?? []).filter((m) => m.conditionId && yesWon(m) !== null && label(m));
@@ -56,27 +55,26 @@ export function deriveAutoJobs(events: PmEvent[], startCounter = 0): HistoricalB
     const fam = canonicalEventClass(ev.title, ev.title);
 
     if (ev.negRisk) {
-      // single-winner mutually-exclusive event ⇒ cross_entity|logical rivals
-      const winner = markets.find((m) => yesWon(m) === true);
-      if (!winner) continue;
-      const rivals = markets
-        .filter((m) => m !== winner)
-        .sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
-        .slice(0, 2);
-      for (const rival of rivals) {
-        // alternate anchor winner/loser so the win-branch and fail-branch both accumulate
-        const anchorWinner = counter++ % 2 === 0;
-        const anchor = anchorWinner ? winner : rival;
-        const candidate = anchorWinner ? rival : winner;
-        jobs.push({
-          id: `auto-rival-${ev.slug}-${anchor.conditionId!.slice(2, 8)}`.slice(0, 150),
-          clusterKey: `auto:${ev.slug}`,
-          anchor: { venue: "polymarket", eventKey: ev.slug, marketId: anchor.conditionId! },
-          candidate: { venue: "polymarket", eventKey: ev.slug, marketId: candidate.conditionId! },
-          relation: { anchorFamily: fam, candidateFamily: fam, predicate: "auto_exclusive_rival", role: "cross_entity", side: "yes", mechanismSignature: sig("logical", "cross_entity", "negative", "inhibits"), relationDirection: "NEGATIVE" },
-          leadHours: 72,
-        });
-      }
+      // Only GENUINELY 2-WAY exclusives are logical hedges (candidate wins ⟺ anchor fails). Drop
+      // near-zero-volume outcomes; if exactly TWO real contenders remain it is a true 2-way race
+      // (e.g. Dem vs Rep). A multi-outcome FIELD (32-team World Cup) is NOT logically exclusive — a
+      // single rival rarely wins when the anchor fails — so we skip it (avoids a tautological +1 bucket).
+      const maxVol = Math.max(...markets.map((m) => m.volumeNum ?? 0), 1);
+      const mains = markets.filter((m) => (m.volumeNum ?? 0) >= 0.05 * maxVol).sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0));
+      if (mains.length !== 2) continue;
+      // Anchor chosen by a STABLE slug hash (never by who won) so both branches fill from real outcomes,
+      // not from a winner-paired-with-loser construction. candidate_pays then reflects the true result.
+      const flip = [...ev.slug].reduce((h, ch) => (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0, 7) % 2 === 0;
+      const anchor = flip ? mains[0] : mains[1];
+      const candidate = flip ? mains[1] : mains[0];
+      jobs.push({
+        id: `auto-rival-${ev.slug}-${anchor.conditionId!.slice(2, 8)}`.slice(0, 150),
+        clusterKey: `auto:${ev.slug}`,
+        anchor: { venue: "polymarket", eventKey: ev.slug, marketId: anchor.conditionId! },
+        candidate: { venue: "polymarket", eventKey: ev.slug, marketId: candidate.conditionId! },
+        relation: { anchorFamily: fam, candidateFamily: fam, predicate: "auto_exclusive_rival", role: "cross_entity", side: "yes", mechanismSignature: sig("logical", "cross_entity", "negative", "inhibits"), relationDirection: "NEGATIVE" },
+        leadHours: 72,
+      });
     } else {
       // possible numeric-threshold LADDER on one quantity ⇒ same_entity|logical subset (higher ⊆ lower)
       const withT = markets.map((m) => ({ m, t: threshold(label(m)) })).filter((x): x is { m: PmMarket; t: number } => x.t !== null);

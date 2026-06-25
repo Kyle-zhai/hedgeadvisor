@@ -76,6 +76,14 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
       pFail = fail.mean - c * (fail.mean - fail.lower);
       pWin = win.mean + c * (win.upper - win.mean);
       uncertainty = (fail.upper - fail.lower) + (win.upper - win.lower);
+      // FRÉCHET FEASIBILITY: a leg cannot pay MORE often conditional on the anchor failing than its own
+      // marginal allows — P(pay|fail) ≤ P(pay)/P(fail). A coarse settlement bucket (learned from genuine
+      // 2-way exclusives) would otherwise claim a tiny-marginal candidate (a longshot "rival" of a
+      // multi-way field) is a near-certain hedge. The executable price bounds the de-vigged marginal, so
+      // clamp the conditional payoff to the candidate's own probability mass. Mirrors the combo path's clamp.
+      const anchorFailP = Math.max(0.02, 1 - primaryPrice);
+      pFail = Math.min(pFail, Math.min(1, price / anchorFailP));
+      pWin = Math.max(pWin, Math.max(0, (price - anchorFailP) / Math.max(0.02, primaryPrice)));
       // At the strict end, a soft leg must remain hedge-specific across the full credible interval.
       if (c >= 0.8 && cal.hedgeSpecificityLower <= 0) {
         rejected.push({ candidateId: candidate.id, reason: "credible intervals do not prove the leg pays more often when the anchor fails" });
