@@ -369,10 +369,15 @@ export function calibrateLeg(
   let pFside = pFsideModeled;
   if (!bucket) return { pWside, pFside, tier: "MODELED", samples: 0 };
   const ap = Math.min(0.999, Math.max(0.001, anchorWinProb));
-  const wF = bucket.samplesFail / (bucket.samplesFail + BUCKET_PRIOR_STRENGTH);
-  const wW = bucket.samplesWin / (bucket.samplesWin + BUCKET_PRIOR_STRENGTH);
-  pFside = wF * bucket.pGivenFails + (1 - wF) * pFsideModeled;
-  pWside = wW * bucket.pGivenWins + (1 - wW) * pWsideModeled;
+  // Weight BOTH branches by the WEAKER branch's evidence (min samples). The hedge-vs-amplifier CONTRAST
+  // (pFside − pWside, which decides admission) is only as trustworthy as the thinner branch, so an
+  // ASYMMETRIC bucket (e.g. 5 fail / 18 win) cannot pull the win-branch harder than the fail-branch and
+  // manufacture a spurious directional flip that vetoes a confident MODELED leg. A genuinely calibrated
+  // bucket (≥20 BOTH branches) still earns enough weight to correctly disqualify a mis-signed leg.
+  const m = Math.min(bucket.samplesFail, bucket.samplesWin);
+  const w = m / (m + BUCKET_PRIOR_STRENGTH); // κ pseudo-samples of LLM prior, evidence on the weaker branch
+  pFside = w * bucket.pGivenFails + (1 - w) * pFsideModeled;
+  pWside = w * bucket.pGivenWins + (1 - w) * pWsideModeled;
   // FRÉCHET FEASIBILITY: P(pay | anchor fails) ≤ P(side)/P(anchor fails); P(pay | anchor wins) ≤ P(side)/P(anchor wins).
   pFside = Math.min(0.999, Math.max(0.001, Math.min(pFside, qSide / Math.max(0.05, 1 - ap))));
   pWside = Math.min(0.999, Math.max(0.001, Math.min(pWside, qSide / Math.max(0.05, ap))));

@@ -40,4 +40,19 @@ describe("calibrateLeg — the single moat-driven calibration path (hedge + ampl
     expect(r.tier).toBe("MODELED");
     expect(r.samples).toBe(9);
   });
+
+  // Regression (review 626354c): a THIN, ASYMMETRIC bucket must NOT out-weigh a confident LLM hedge by
+  // pulling the win-branch harder than the fail-branch. Weighting both branches by the WEAKER branch's
+  // evidence keeps the fail>win ordering the LLM asserted, so the leg stays admissible.
+  test("thin asymmetric bucket (5 fail / 18 win) does NOT flip a confident MODELED hedge", () => {
+    const r = calibrateLeg(bucket({ pGivenFails: 0.30, pGivenWins: 0.70, specificity: -0.40, samplesFail: 5, samplesWin: 18 }), 0.30, 0.55, 0.40, 0.5);
+    expect(r.tier).toBe("MODELED"); // not enough evidence to be calibrated
+    expect(r.pFside).toBeGreaterThan(r.pWside); // the hedge ordering survives — leg NOT spuriously vetoed
+  });
+
+  test("but a CALIBRATED amplifier bucket (≥20 BOTH) DOES correctly disqualify a mis-signed hedge", () => {
+    const r = calibrateLeg(bucket({ pGivenFails: 0.10, pGivenWins: 0.90, specificity: -0.80, samplesFail: 40, samplesWin: 40 }), 0.30, 0.55, 0.40, 0.5);
+    expect(r.tier).toBe("CALIBRATED");
+    expect(r.pFside).toBeLessThan(r.pWside); // strong amplifier evidence rightly overrides the LLM's hedge claim
+  });
 });
