@@ -14,7 +14,7 @@ import { elicitConditionalWithQwen } from "@/lib/association";
 import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
 import { marketDimension, eventFamily, relationRole, mechanismSignature } from "./relationKey";
-import { loadTuningProfile, lookupBucket } from "./tuningProfile";
+import { loadTuningProfile, lookupBucket, type BucketStat } from "./tuningProfile";
 import { buildSuperposition, type SuperposeLeg, type SuperposeAnchor, type Superposition } from "./superpose";
 import { deriveStructuralCompanions } from "./structuralCompanions";
 import { selectRecallCandidates } from "./candidates";
@@ -341,6 +341,46 @@ async function buildDirectionalSuperposition(
   };
 }
 
+const CALIB_MIN_SAMPLES = 20; // pooled observations per branch in a bucket before a leg is admitted CALIBRATED
+const BUCKET_MIN_SAMPLES = 4; // minimum evidence before a learned bucket rule influences the prior at all
+const BUCKET_PRIOR_STRENGTH = 12; // κ: the LLM prior counts as κ pseudo-samples in the shrink toward the bucket
+
+/**
+ * Apply the LEARNED bucket rule (role × mechanism × side) to ONE leg's modeled conditionals, for BOTH
+ * branches: the FAIL branch shrinks toward bucket.pGivenFails (the hedge signal), the WIN branch toward
+ * bucket.pGivenWins (the amplifier signal), each weighted by κ pseudo-samples of evidence. Both are then
+ * re-clamped to the Fréchet-feasible bound so neither branch can claim a leg pays more often than its own
+ * marginal allows. Tier promotes to CALIBRATED only when BOTH branches carry ≥ CALIB_MIN_SAMPLES of real
+ * settlement evidence; a missing/weak bucket leaves the modeled values untouched at MODELED.
+ *
+ * Direction-AGNOSTIC: the caller decides whether the leg is a hedge (fail-leaning) or amplifier
+ * (win-leaning) via its own gate. This is the SINGLE calibration path now shared by the "optimal hedge"
+ * strategies AND the aggressive↔conservative superposition legs — so the superposition's confidence ladder
+ * (MODELED → CALIBRATED) is finally driven by the moat, not stuck at MODELED.
+ */
+export function calibrateLeg(
+  bucket: BucketStat | null,
+  pWsideModeled: number,
+  pFsideModeled: number,
+  qSide: number,
+  anchorWinProb: number,
+): { pWside: number; pFside: number; tier: "CALIBRATED" | "MODELED"; samples: number } {
+  let pWside = pWsideModeled;
+  let pFside = pFsideModeled;
+  if (!bucket) return { pWside, pFside, tier: "MODELED", samples: 0 };
+  const ap = Math.min(0.999, Math.max(0.001, anchorWinProb));
+  const wF = bucket.samplesFail / (bucket.samplesFail + BUCKET_PRIOR_STRENGTH);
+  const wW = bucket.samplesWin / (bucket.samplesWin + BUCKET_PRIOR_STRENGTH);
+  pFside = wF * bucket.pGivenFails + (1 - wF) * pFsideModeled;
+  pWside = wW * bucket.pGivenWins + (1 - wW) * pWsideModeled;
+  // FRÉCHET FEASIBILITY: P(pay | anchor fails) ≤ P(side)/P(anchor fails); P(pay | anchor wins) ≤ P(side)/P(anchor wins).
+  pFside = Math.min(0.999, Math.max(0.001, Math.min(pFside, qSide / Math.max(0.05, 1 - ap))));
+  pWside = Math.min(0.999, Math.max(0.001, Math.min(pWside, qSide / Math.max(0.05, ap))));
+  const tier: "CALIBRATED" | "MODELED" =
+    Math.min(bucket.samplesFail, bucket.samplesWin) >= CALIB_MIN_SAMPLES ? "CALIBRATED" : "MODELED";
+  return { pWside, pFside, tier, samples: bucket.samplesFail + bucket.samplesWin };
+}
+
 /**
  * Build the validated cross-event hedge strategy list. The mechanism-classification MUTEX/CAUSAL label
  * is unreliable for sizing (it conflates "different party" with "mutually exclusive" — e.g. it wrongly
@@ -417,9 +457,6 @@ async function buildCrossEventStrategies(
   // hallucinate, so hold it to a stricter bar than a same-event collateral leg.
   const DIVERSITY_PHI_MIN = 0.25;
   const DIVERSITY_CONF_MIN = 0.5;
-  const CALIB_MIN_SAMPLES = 20; // pooled observations per branch in a bucket before a leg is admitted CALIBRATED
-  const BUCKET_MIN_SAMPLES = 4; // minimum evidence before a learned bucket rule influences the prior at all
-  const BUCKET_PRIOR_STRENGTH = 12; // κ: the LLM prior counts as κ pseudo-samples in the shrink toward the bucket
   // The LEARNED tuning profile: realized conditional payoff per structural bucket (role × mechanism × side),
   // pooled across ALL templates. This is the generalizable rule, applied to every leg including unseen ones.
   const tuning = await loadTuningProfile();
@@ -443,7 +480,7 @@ async function buildCrossEventStrategies(
     if (Math.abs(phi) < phiMin || conf < confMin) continue;
     const buyYes = phi < 0; // anti-correlated → the candidate's YES pays when your bet fails
     const qSide = Math.min(0.98, Math.max(0.02, buyYes ? r.market.probYes : 1 - r.market.probYes));
-    const pWside = buyYes ? pW : 1 - pW; // P(bought side pays | anchor wins)
+    const pWsideModeled = buyYes ? pW : 1 - pW; // P(bought side pays | anchor wins), before calibration
     // P(bought side pays | anchor fails). The model's level often disagrees with the price; clamp to the
     // market-feasible bound P(side)/P(anchor fails) so the payoff stays consistent with the real price.
     const pFsideModeled = Math.min(buyYes ? pF : 1 - pF, qSide / Math.max(0.05, 1 - ap));
@@ -457,20 +494,11 @@ async function buildCrossEventStrategies(
     const candidateFamily = r.mechanismGraph?.candidateEventClass ?? eventFamily(r.market.marketTitle, r.market.category ?? "");
     const role = relationRole(`${anchor.title} ${anchor.marketTitle}`, { entity: r.market.title, family: candidateFamily, context: `${r.market.marketTitle} ${r.market.title}`, mechanismGraph: r.mechanismGraph });
     const mechType = mechanismSignature(r.mechanismGraph, r.hypothesis?.direction)?.split(".")[0] ?? "rule";
-    let tier: "CALIBRATED" | "MODELED" = "MODELED";
-    let samples = 0;
-    let pFside = pFsideModeled;
-    const bucket = lookupBucket(tuning, role, mechType, side, BUCKET_MIN_SAMPLES);
-    if (bucket && bucket.specificity > 0) {
-      samples = bucket.samplesFail + bucket.samplesWin;
-      const w = bucket.samplesFail / (bucket.samplesFail + BUCKET_PRIOR_STRENGTH); // evidence weight on the rule
-      pFside = Math.min(0.999, Math.max(qSide, w * bucket.pGivenFails + (1 - w) * pFsideModeled));
-      // FRÉCHET FEASIBILITY re-clamp: even a strong bucket can't make a leg pay more on the anchor's
-      // failure than its OWN marginal allows (P(pay|fail) ≤ P(side)/P(anchor fails)). Stops a coarse
-      // 2-way-exclusive rule from over-crediting a longshot rival in a multi-outcome field.
-      pFside = Math.min(pFside, qSide / Math.max(0.05, 1 - ap));
-      if (Math.min(bucket.samplesFail, bucket.samplesWin) >= CALIB_MIN_SAMPLES) tier = "CALIBRATED";
-    }
+    // Shrink BOTH branches toward what this STRUCTURE actually settled (the moat's learned rule), then
+    // Fréchet-clamp. The hedge gate below decides admission — a leg mapped to an amplifier-shaped bucket
+    // sees its fail payoff shrink below its win payoff and is correctly rejected as a hedge.
+    const cal = calibrateLeg(lookupBucket(tuning, role, mechType, side, BUCKET_MIN_SAMPLES), pWsideModeled, pFsideModeled, qSide, ap);
+    const { pWside, pFside, tier, samples } = cal;
     const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails
     if (edge <= 0 || pFside <= pWside) continue; // must beat its price on fail, and pay more on fail than win
     // Spend at most enough to cover the stake (stake*qSide) AND at most half the bet's own upside, so the
@@ -505,9 +533,18 @@ async function buildCrossEventStrategies(
       if (!x || x.conf < CONF_MIN) continue;
       const { r, pW, pF, reason } = x;
       const qYes = Math.min(0.98, Math.max(0.02, r.market.probYes));
+      // Map to the structural bucket (same role × mechanism as the hedge path) and CALIBRATE BOTH sides:
+      // the win-branch shrinks toward the bucket's amplifier signal, the fail-branch toward its hedge
+      // signal. So a superposition leg is promoted to CALIBRATED when the moat has real evidence for its
+      // structure — the aggressive AND conservative ladders are finally moat-driven, not stuck at MODELED.
+      const candidateFamily = r.mechanismGraph?.candidateEventClass ?? eventFamily(r.market.marketTitle, r.market.category ?? "");
+      const role = relationRole(`${anchor.title} ${anchor.marketTitle}`, { entity: r.market.title, family: candidateFamily, context: `${r.market.marketTitle} ${r.market.title}`, mechanismGraph: r.mechanismGraph });
+      const mechType = mechanismSignature(r.mechanismGraph, r.hypothesis?.direction)?.split(".")[0] ?? "rule";
+      const yesCal = calibrateLeg(lookupBucket(tuning, role, mechType, "yes", BUCKET_MIN_SAMPLES), pW, pF, qYes, ap);
+      const noCal = calibrateLeg(lookupBucket(tuning, role, mechType, "no", BUCKET_MIN_SAMPLES), 1 - pW, 1 - pF, 1 - qYes, ap);
       const sides = [
-        { side: "YES" as const, q: qYes, win: pW, fail: pF },
-        { side: "NO" as const, q: 1 - qYes, win: 1 - pW, fail: 1 - pF },
+        { side: "YES" as const, q: qYes, win: yesCal.pWside, fail: yesCal.pFside, tier: yesCal.tier },
+        { side: "NO" as const, q: 1 - qYes, win: noCal.pWside, fail: noCal.pFside, tier: noCal.tier },
       ];
       // aggressive (λ≥.5) wants the side that leans WIN; conservative wants the side that leans FAIL.
       const lean = (s: typeof sides[number]) => (direction >= 0.5 ? s.win - s.fail : s.fail - s.win);
@@ -515,7 +552,7 @@ async function buildCrossEventStrategies(
       if (lean(pick) <= 0) continue; // no directional tilt on either side ⇒ not a companion for this direction
       legs.push({
         id: r.market.id, marketId: r.market.id, marketTitle: r.market.marketTitle, title: r.market.title, side: pick.side,
-        q: Math.min(0.98, Math.max(0.02, pick.q)), pWin: pick.win, pFail: pick.fail,
+        q: Math.min(0.98, Math.max(0.02, pick.q)), pWin: pick.win, pFail: pick.fail, tier: pick.tier,
         dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
         mechanism: reason.slice(0, 160),
       });
