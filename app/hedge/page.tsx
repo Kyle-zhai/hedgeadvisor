@@ -480,7 +480,7 @@ export default function HedgePage() {
                     <div className="metric"><div className="label">If your bet WINS</div><div className={`value ${sup.winPnlUsd >= sup.nakedWinPnlUsd ? "pnl-pos" : ""}`}>+${sup.winPnlUsd.toFixed(2)}</div><div className="detail">naked +${sup.nakedWinPnlUsd.toFixed(2)} · best ${sup.bestCaseUsd >= 0 ? "+" : ""}${sup.bestCaseUsd.toFixed(2)}</div></div>
                     <div className="metric"><div className="label">If your bet FAILS</div><div className={`value ${sup.failPnlUsd > sup.nakedFailPnlUsd ? "pnl-pos" : "pnl-neg"}`}>${sup.failPnlUsd.toFixed(2)}</div><div className="detail">naked ${sup.nakedFailPnlUsd.toFixed(2)} · strict worst ${sup.strictWorstUsd.toFixed(2)}</div></div>
                     <div className="metric"><div className="label">Extra staked</div><div className="value">${sup.totalCostUsd.toFixed(2)}</div><div className="detail">{sup.legs.length} leg{sup.legs.length > 1 ? "s" : ""}, stacked</div></div>
-                    <div className="metric"><div className="label">EV</div><div className="value pnl-neg">${sup.evUsd.toFixed(2)}</div><div className="detail">still negative (the vig)</div></div>
+                    <div className="metric"><div className="label">EV</div><div className={`value ${sup.evUsd < sup.nakedEvUsd - 0.005 ? "pnl-neg" : ""}`}>${sup.evUsd.toFixed(2)}</div><div className="detail">{sup.evUsd < sup.nakedEvUsd - 0.005 ? "negative — you pay the vig" : "≈ EV of the bet alone"}</div></div>
                   </div>
                   <div className="table-wrap" style={{ marginTop: 8 }}>
                     <table style={{ minWidth: 600 }}>
@@ -500,7 +500,7 @@ export default function HedgePage() {
                     {sup.tier === "ANALYTIC"
                       ? "Structurally certain: the relationship is logically exact (a champion is a champion from its own continent), so this leg's payoff is not a model guess."
                       : "Modeled, not settled: whether this companion really pays is a model assumption until settlement data proves it."}{" "}
-                    {sup.coherent ? `All ${sup.legs.length} leg${sup.legs.length > 1 ? "s" : ""} lean the same way (they ${direction === "aggressive" ? "pay when your bet wins" : "pay when your bet fails"}).` : ""} EV stays negative — you pay the vig and the opposite outcome gets worse; the knob reshapes the payoff, it does not beat the market.
+                    {sup.coherent ? `All ${sup.legs.length} leg${sup.legs.length > 1 ? "s" : ""} lean the same way (they ${direction === "aggressive" ? "pay when your bet wins" : "pay when your bet fails"}).` : ""} EV never beats the market — you pay the vig and the opposite outcome gets worse; the knob reshapes the payoff, it does not beat the market.
                   </div>
                 </>
               ) : (

@@ -92,12 +92,18 @@ export function deriveStructuralCompanions(
 
 function mkLeg(m: NormalizedMarket, side: "YES" | "NO", pWin: number, pFail: number, mechanism: string): SuperposeLeg {
   const qYes = Math.min(0.98, Math.max(0.02, m.probYes));
+  // UN-floored de-vigged pay-prob of the bought side = the honest unconditional marginal. q above is
+  // floored at 0.02 for sizing sanity, but the marginal must NOT be floored: a sub-2% longshot's true
+  // fair (e.g. 1.1%) sits below its executable price, and flooring it to 2% would make the leg look
+  // EV-neutral/"free". Clamp only to a tiny epsilon.
+  const marginal = Math.min(0.9999, Math.max(0.0001, side === "YES" ? m.probYes : 1 - m.probYes));
   return {
     id: `struct:${m.id}:${side}`,
     marketTitle: m.marketTitle,
     title: side === "NO" ? `NOT ${m.title}` : m.title,
     side,
     q: side === "YES" ? qYes : Number((1 - qYes).toFixed(4)),
+    marginal,
     pWin,
     pFail,
     dimension: "continent",

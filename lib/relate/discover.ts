@@ -339,7 +339,14 @@ async function buildDirectionalSuperposition(
   // cannot execute, so we DROP it (an unbuyable leg has no place in an actionable strategy). With every
   // surviving leg priced above fair, the strategy EV is genuinely negative by construction.
   const applyExec = (legs: SuperposeLeg[]) =>
-    legs.flatMap((l) => { const q = l.marketId ? exec.get(key(l)) : undefined; return q != null ? [{ ...l, marginal: l.q, q }] : []; });
+    legs.flatMap((l) => {
+      const q = l.marketId ? exec.get(key(l)) : undefined;
+      if (q == null) return []; // unbuyable companion ⇒ dropped (can't honestly price it)
+      // Honest unconditional marginal = the leg's UN-floored de-vigged fair, but never above the price we
+      // actually pay (q): a market order can't be worth MORE than its executable cost, so clamp ≤ q. This
+      // makes each leg's EV term cost·(marginal/q − 1) ≤ 0 and STRICTLY < 0 for any real spread/fee.
+      return [{ ...l, marginal: Math.min(l.marginal ?? l.q, q), q }];
+    });
   return {
     aggressive: buildSuperposition(anchor, applyExec(aggLegs), 1, { riskBudgetUsd: budgetUsd }),
     conservative: buildSuperposition(anchor, applyExec(consLegs), 0, { riskBudgetUsd: budgetUsd }),
@@ -569,6 +576,9 @@ async function buildCrossEventStrategies(
       legs.push({
         id: r.market.id, marketId: r.market.id, marketTitle: r.market.marketTitle, title: r.market.title, side: pick.side,
         q: Math.min(0.98, Math.max(0.02, pick.q)), pWin: pick.win, pFail: pick.fail, tier: pick.tier,
+        // UN-floored de-vigged pay-prob of the bought side = the honest unconditional marginal (q above is
+        // floored at 0.02 for sizing; the marginal must not be, else a sub-2% longshot looks "free").
+        marginal: Math.min(0.9999, Math.max(0.0001, pick.side === "YES" ? r.market.probYes : 1 - r.market.probYes)),
         dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
         mechanism: reason.slice(0, 160),
       });
