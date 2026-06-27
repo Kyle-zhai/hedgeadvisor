@@ -328,10 +328,10 @@ async function buildDirectionalSuperposition(
   const key = (l: SuperposeLeg) => `${l.marketId}|${l.side}`;
   const uniq = new Map<string, SuperposeLeg>();
   for (const l of [...aggLegs, ...consLegs]) if (l.marketId && universeById.has(l.marketId) && !uniq.has(key(l))) uniq.set(key(l), l);
-  const exec = new Map<string, number>();
+  const exec = new Map<string, { q: number; preFee: number }>();
   await mapPool([...uniq.values()], 8, async (l) => {
     const priced = await priceSide(universeById.get(l.marketId!)!, l.side === "NO" ? "no" : "yes", budgetUsd).catch(() => null);
-    if (priced && priced.price > 0 && priced.price < 1) exec.set(key(l), priced.price);
+    if (priced && priced.price > 0 && priced.price < 1) exec.set(key(l), { q: priced.price, preFee: priced.preFee });
   });
   // HONESTY: keep ONLY legs we can price at the REAL executable book (walk + taker fee). A leg with no
   // fetchable book would otherwise keep its de-vigged FAIR price, making its EV contribution ≈ 0 and the
@@ -340,12 +340,16 @@ async function buildDirectionalSuperposition(
   // surviving leg priced above fair, the strategy EV is genuinely negative by construction.
   const applyExec = (legs: SuperposeLeg[]) =>
     legs.flatMap((l) => {
-      const q = l.marketId ? exec.get(key(l)) : undefined;
-      if (q == null) return []; // unbuyable companion ⇒ dropped (can't honestly price it)
-      // Honest unconditional marginal = the leg's UN-floored de-vigged fair, but never above the price we
-      // actually pay (q): a market order can't be worth MORE than its executable cost, so clamp ≤ q. This
-      // makes each leg's EV term cost·(marginal/q − 1) ≤ 0 and STRICTLY < 0 for any real spread/fee.
-      return [{ ...l, marginal: Math.min(l.marginal ?? l.q, q), q }];
+      const e = l.marketId ? exec.get(key(l)) : undefined;
+      if (e == null) return []; // unbuyable companion ⇒ dropped (can't honestly price it)
+      // Honest unconditional marginal: the lower of (a) the leg's UN-floored snapshot fair and (b) the
+      // executable PRE-FEE ask. Bounding by the pre-fee ask (from THIS side's own book) is load-bearing —
+      // the snapshot fair can OVERESTIMATE a side's value (e.g. a Kalshi NO marginal derived as 1−yesMid,
+      // or a stale cached mid), and if it exceeds q the EV term would zero out and a costed strategy would
+      // display as EV-neutral. Since true fair ≤ ask < q (= ask + fee), marginal ≤ preFee < q, so every
+      // funded leg's EV term cost·(marginal/q − 1) is STRICTLY < 0 — the paid fee always surfaces.
+      const marginal = Math.min(l.marginal ?? e.preFee, e.preFee);
+      return [{ ...l, marginal, q: e.q }];
     });
   return {
     aggressive: buildSuperposition(anchor, applyExec(aggLegs), 1, { riskBudgetUsd: budgetUsd }),

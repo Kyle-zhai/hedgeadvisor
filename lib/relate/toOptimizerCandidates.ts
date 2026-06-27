@@ -30,7 +30,7 @@ const CREDIBLE_LEVEL = 0.95;
 const MIN_SAMPLES = 20;
 
 /** All-in executable price + capacity for BUYING one side of a market, off its real book. */
-export async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetUsd: number): Promise<{ price: number; capacityUsd: number } | null> {
+export async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetUsd: number): Promise<{ price: number; capacityUsd: number; preFee: number } | null> {
   const token = side === "no" ? m.noTokenId : m.yesTokenId;
   let book: Book | null = null;
   if (m.venue === "polymarket") {
@@ -52,7 +52,9 @@ export async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetU
   const capacityUsd = fill.filledShares > 0
     ? Math.min(rawCapacity + perShareFee * fill.filledShares, fill.filledShares * allIn)
     : 0;
-  return { price: allIn, capacityUsd: Number(capacityUsd.toFixed(2)) };
+  // preFee = the executable fill price BEFORE the taker fee. True fair ≤ this ask < allIn (= ask + fee), so
+  // it is an honest upper bound on a leg's marginal that guarantees the paid fee surfaces as negative EV.
+  return { price: allIn, capacityUsd: Number(capacityUsd.toFixed(2)), preFee: p };
 }
 
 /** The side you'd BUY to hedge: a leg that pays when the anchor FAILS. A POSITIVELY-correlated leg

@@ -29,3 +29,16 @@ test("same leg WITHOUT marginal would clamp to naked (documents why marginal is 
   const sup = buildSuperposition(anchor, [leg], 0);
   expect(sup.evUsd).toBeLessThanOrEqual(sup.nakedEvUsd + 1e-9); // honesty backbone still holds (≤ naked)
 });
+
+// Defensive floor: even if a marginal somehow exceeded q (production now bounds marginal ≤ pre-fee ask < q
+// so this cannot happen, but the EV math must never claim better-than-market regardless), the per-leg term
+// Math.min(0, …) keeps EV ≤ naked — it must NEVER display a positive/free-money EV.
+test("marginal > q can never produce EV above naked (Math.min(0,…) floor)", () => {
+  const anchor: SuperposeAnchor = { winProb: 0.4, stakeUsd: 50, entryPrice: 0.4 };
+  const leg: SuperposeLeg = {
+    id: "x", marketId: "x", marketTitle: "m", title: "t",
+    side: "YES", q: 0.30, pWin: 0.0, pFail: 0.45, marginal: 0.40, dimension: "x", tier: "MODELED", // marginal > q
+  };
+  const sup = buildSuperposition(anchor, [leg], 0);
+  expect(sup.evUsd).toBeLessThanOrEqual(sup.nakedEvUsd + 1e-9); // never above naked, even with marginal > q
+});
