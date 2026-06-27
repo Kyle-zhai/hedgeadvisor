@@ -333,8 +333,13 @@ async function buildDirectionalSuperposition(
     const priced = await priceSide(universeById.get(l.marketId!)!, l.side === "NO" ? "no" : "yes", budgetUsd).catch(() => null);
     if (priced && priced.price > 0 && priced.price < 1) exec.set(key(l), priced.price);
   });
+  // HONESTY: keep ONLY legs we can price at the REAL executable book (walk + taker fee). A leg with no
+  // fetchable book would otherwise keep its de-vigged FAIR price, making its EV contribution ≈ 0 and the
+  // whole strategy look "free" — understating the vig. We cannot honestly state the cost of a companion we
+  // cannot execute, so we DROP it (an unbuyable leg has no place in an actionable strategy). With every
+  // surviving leg priced above fair, the strategy EV is genuinely negative by construction.
   const applyExec = (legs: SuperposeLeg[]) =>
-    legs.map((l) => { const q = l.marketId ? exec.get(key(l)) : undefined; return q != null ? { ...l, q } : l; });
+    legs.flatMap((l) => { const q = l.marketId ? exec.get(key(l)) : undefined; return q != null ? [{ ...l, marginal: l.q, q }] : []; });
   return {
     aggressive: buildSuperposition(anchor, applyExec(aggLegs), 1, { riskBudgetUsd: budgetUsd }),
     conservative: buildSuperposition(anchor, applyExec(consLegs), 0, { riskBudgetUsd: budgetUsd }),

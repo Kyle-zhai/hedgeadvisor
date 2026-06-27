@@ -49,6 +49,9 @@ export interface SuperposeLeg {
   tier?: Tier;
   /** Source market id (for re-pricing q at the real executable book cost before building). */
   marketId?: string;
+  /** De-vigged MARKET pay-probability of the bought side (the honest unconditional rate). Set when q is
+   *  re-priced to the executable book: marginal ≤ q (q carries the vig), so the leg can only LOWER EV. */
+  marginal?: number;
 }
 
 export interface PlacedLeg {
@@ -68,6 +71,8 @@ export interface PlacedLeg {
   /** f/q − 1: per-dollar return when the anchor FAILS. */
   edgeFail: number;
   tier: Tier;
+  /** De-vigged market marginal of the bought side (≤ q); drives the honest unconditional EV. */
+  marginal?: number;
 }
 
 export interface Superposition {
@@ -204,6 +209,7 @@ export function buildSuperposition(
         id: e.c.id, marketTitle: e.c.marketTitle, title: e.c.title, side: e.c.side,
         q: e.q, pWin: e.a, pFail: e.f, dimension: e.c.dimension, mechanism: e.c.mechanism,
         costUsd: c, shares: Number((c / e.q).toFixed(2)), edgeWin: e.edgeWin, edgeFail: e.edgeFail, tier: e.tier,
+        marginal: e.c.marginal,
       };
     });
 
@@ -216,10 +222,18 @@ export function buildSuperposition(
   const strictWorst = -(S + totalCost); // anchor fails, no leg pays
   const bestCase = W + legs.reduce((s, l) => s + l.costUsd * (1 / l.q - 1), 0); // anchor wins, all legs pay
   const nakedEv = pi * W + (1 - pi) * (-S);
-  // Honesty backbone: never DISPLAY a better-than-market EV. The executable price q already carries the
-  // vig (q ≥ the leg's de-vigged fair), so the TRUE unconditional EV cannot beat naked; optimistic
-  // elicited conditionals must not manufacture a positive-EV claim. Clamp at naked EV (cf. combo.ts EV≤0).
-  const ev = Math.min(pi * winPnl + (1 - pi) * failPnl, nakedEv);
+  // Honesty backbone: never DISPLAY a better-than-market EV. The UNCONDITIONAL EV uses each leg's MARKET
+  // marginal (de-vigged fair pay-rate) — NOT the optimistic elicited conditionals — because buying a
+  // vig-priced leg (q ≥ marginal) can only LOWER unconditional EV: each contributes cost·(marginal/q − 1)
+  // ≤ 0. (winPnl/failPnl above keep the engine's CONDITIONAL beliefs for the scenario display.) Using the
+  // raw conditionals here would let LLM optimism imply a positive EV that the clamp then masks as exactly
+  // naked (e.g. $0), making a vig-costing hedge look "free". Falls back to the conditional-implied marginal
+  // when no market marginal is attached (e.g. direct unit-test legs); still clamped at naked.
+  const legUncondEv = legs.reduce((s, l) => {
+    const marginal = l.marginal ?? (pi * l.pWin + (1 - pi) * l.pFail);
+    return s + Math.min(0, l.costUsd * (marginal / l.q - 1));
+  }, 0);
+  const ev = Math.min(nakedEv + legUncondEv, nakedEv);
   const coherent = legs.length > 0 && (
     mode === "aggressive" ? legs.every((l) => l.pWin > l.pFail)
       : mode === "conservative" ? legs.every((l) => l.pFail > l.pWin)
