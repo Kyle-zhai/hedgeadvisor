@@ -7,9 +7,19 @@ const bucket = (b: Partial<BucketStat>): BucketStat => ({
 });
 
 describe("calibrateLeg — the single moat-driven calibration path (hedge + amplifier)", () => {
-  test("no bucket ⇒ modeled values pass through untouched at MODELED tier", () => {
-    const r = calibrateLeg(null, 0.3, 0.7, 0.4, 0.5);
+  test("no bucket ⇒ modeled values pass through (within feasibility) at MODELED tier", () => {
+    const r = calibrateLeg(null, 0.3, 0.7, 0.4, 0.5); // Fréchet caps at 0.4/0.5=0.8; both already feasible
     expect(r).toEqual({ pWside: 0.3, pFside: 0.7, tier: "MODELED", samples: 0 });
+  });
+
+  // Regression (review of b5fd337): the Fréchet clamp must apply EVEN WITH NO BUCKET — most superposition
+  // legs have no bucket, and a raw over-optimistic elicited pFail (≈0.4) on a thin-book longshot
+  // (market marginal ≈0.03) must be clamped to feasibility, else it is admitted as a "great hedge".
+  test("no bucket but over-optimistic conditional ⇒ STILL Fréchet-clamped to the longshot's marginal", () => {
+    const ap = 0.14, qSide = 0.03; // a 3¢ longshot; anchor wins 14%
+    const r = calibrateLeg(null, 0.0, 0.40, qSide, ap); // LLM claims pays 40% on fail
+    expect(r.pFside).toBeLessThanOrEqual(qSide / (1 - ap) + 1e-9); // ≤ 0.035, NOT 0.40
+    expect(r.pFside).toBeLessThan(0.05);
   });
 
   test("HEDGE bucket (pays more on fail) pulls the fail-branch UP and promotes to CALIBRATED", () => {

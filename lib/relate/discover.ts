@@ -370,25 +370,31 @@ export function calibrateLeg(
   qSide: number,
   anchorWinProb: number,
 ): { pWside: number; pFside: number; tier: "CALIBRATED" | "MODELED"; samples: number } {
+  const ap = Math.min(0.999, Math.max(0.001, anchorWinProb));
   let pWside = pWsideModeled;
   let pFside = pFsideModeled;
-  if (!bucket) return { pWside, pFside, tier: "MODELED", samples: 0 };
-  const ap = Math.min(0.999, Math.max(0.001, anchorWinProb));
-  // Weight BOTH branches by the WEAKER branch's evidence (min samples). The hedge-vs-amplifier CONTRAST
-  // (pFside − pWside, which decides admission) is only as trustworthy as the thinner branch, so an
-  // ASYMMETRIC bucket (e.g. 5 fail / 18 win) cannot pull the win-branch harder than the fail-branch and
-  // manufacture a spurious directional flip that vetoes a confident MODELED leg. A genuinely calibrated
-  // bucket (≥20 BOTH branches) still earns enough weight to correctly disqualify a mis-signed leg.
-  const m = Math.min(bucket.samplesFail, bucket.samplesWin);
-  const w = m / (m + BUCKET_PRIOR_STRENGTH); // κ pseudo-samples of LLM prior, evidence on the weaker branch
-  pFside = w * bucket.pGivenFails + (1 - w) * pFsideModeled;
-  pWside = w * bucket.pGivenWins + (1 - w) * pWsideModeled;
-  // FRÉCHET FEASIBILITY: P(pay | anchor fails) ≤ P(side)/P(anchor fails); P(pay | anchor wins) ≤ P(side)/P(anchor wins).
+  let tier: "CALIBRATED" | "MODELED" = "MODELED";
+  let samples = 0;
+  if (bucket) {
+    // Weight BOTH branches by the WEAKER branch's evidence (min samples). The hedge-vs-amplifier CONTRAST
+    // (pFside − pWside, which decides admission) is only as trustworthy as the thinner branch, so an
+    // ASYMMETRIC bucket (e.g. 5 fail / 18 win) cannot pull the win-branch harder than the fail-branch and
+    // manufacture a spurious directional flip that vetoes a confident MODELED leg. A genuinely calibrated
+    // bucket (≥20 BOTH branches) still earns enough weight to correctly disqualify a mis-signed leg.
+    const m = Math.min(bucket.samplesFail, bucket.samplesWin);
+    const w = m / (m + BUCKET_PRIOR_STRENGTH); // κ pseudo-samples of LLM prior, evidence on the weaker branch
+    pFside = w * bucket.pGivenFails + (1 - w) * pFsideModeled;
+    pWside = w * bucket.pGivenWins + (1 - w) * pWsideModeled;
+    tier = m >= CALIB_MIN_SAMPLES ? "CALIBRATED" : "MODELED";
+    samples = bucket.samplesFail + bucket.samplesWin;
+  }
+  // FRÉCHET FEASIBILITY — ALWAYS, bucket or not: a leg cannot pay more conditional on a state than its OWN
+  // marginal allows. P(pay|fail) ≤ P(side)/P(fail); P(pay|win) ≤ P(side)/P(win). Without this a raw,
+  // over-optimistic elicited conditional (common for a thin-book longshot: modeled pFail≈0.4 but market
+  // marginal≈0.03) would be admitted as a "great hedge" and only later surface as a huge-vig loss.
   pFside = Math.min(0.999, Math.max(0.001, Math.min(pFside, qSide / Math.max(0.05, 1 - ap))));
   pWside = Math.min(0.999, Math.max(0.001, Math.min(pWside, qSide / Math.max(0.05, ap))));
-  const tier: "CALIBRATED" | "MODELED" =
-    Math.min(bucket.samplesFail, bucket.samplesWin) >= CALIB_MIN_SAMPLES ? "CALIBRATED" : "MODELED";
-  return { pWside, pFside, tier, samples: bucket.samplesFail + bucket.samplesWin };
+  return { pWside, pFside, tier, samples };
 }
 
 /**
