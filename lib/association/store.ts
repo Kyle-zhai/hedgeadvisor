@@ -283,6 +283,31 @@ export async function loadAllConditionalCounts(): Promise<Map<string, Conditiona
   return out;
 }
 
+/** One (relation_key, episode-cluster, anchor-branch) group with its candidate-pay tally. This is the raw
+ *  material for CLUSTER-DEDUPLICATED bucket calibration: loadAllConditionalCounts normalizes inside each
+ *  relation_key, so when one real-world episode appears under several relation_keys that map to the same
+ *  coarse bucket, summing the per-key cells counts it as several "independent" samples. Re-normalizing by
+ *  (bucket, cluster) downstream needs the cluster identity preserved here. */
+export interface BucketBranchRow { relationKey: string; cluster: string; anchorPays: boolean; pay: number; total: number }
+
+/** Per (relation_key, episode-cluster, anchor-branch) candidate-pay tallies. Empty without a DB. */
+export async function loadBucketBranchRows(): Promise<BucketBranchRow[]> {
+  const sql = await getSql();
+  if (!sql) return [];
+  await ensureSchema(sql);
+  const rows = await sql`
+    SELECT relation_key AS "relationKey",
+      COALESCE(cluster_key, sample_key) AS cluster,
+      anchor_pays AS "anchorPays",
+      count(*) FILTER (WHERE candidate_pays)::int AS pay,
+      count(*)::int AS total
+    FROM association_observation
+    WHERE relation_key IS NOT NULL
+    GROUP BY relation_key, COALESCE(cluster_key, sample_key), anchor_pays
+  ` as Array<{ relationKey: string; cluster: string; anchorPays: boolean; pay: number; total: number }>;
+  return rows.map((r) => ({ relationKey: r.relationKey, cluster: r.cluster, anchorPays: r.anchorPays, pay: Number(r.pay), total: Number(r.total) }));
+}
+
 /** Load only observations that had a matching candidate snapshot before resolution. */
 export async function loadAssociationBacktestRows(
   minLeadHours = 24,

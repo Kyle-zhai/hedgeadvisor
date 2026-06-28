@@ -12,7 +12,7 @@
  * Coarse buckets also learn from FAR fewer samples than per-template calibration (a handful of roles vs
  * thousands of templates), so the moat starts shaping the engine long before any single template matures.
  */
-import { loadAllConditionalCounts, calibrateConditionalPayoff } from "@/lib/association";
+import { loadBucketBranchRows, calibrateConditionalPayoff, type BucketBranchRow } from "@/lib/association";
 import type { ConditionalCounts } from "@/lib/association/types";
 
 export interface BucketStat {
@@ -48,21 +48,36 @@ export function bucketKeys(role: string, mechType: string, side: string): string
 interface AggCells { app: number; apn: number; anp: number; ann: number }
 type Cells = ConditionalCounts;
 
-/** Re-bucket every per-template count into the coarse structural buckets (role|side AND role|mech|side),
- *  summing the cluster-normalized cells. This is the generalization step: a bucket pools across templates. */
-function aggregateBuckets(all: Map<string, Cells>): Map<string, AggCells> {
-  const agg = new Map<string, AggCells>();
-  const add = (k: string, c: Cells) => {
-    const b = agg.get(k) ?? { app: 0, apn: 0, anp: 0, ann: 0 };
-    b.app += c.anchorPayCandidatePay; b.apn += c.anchorPayCandidateNoPay;
-    b.anp += c.anchorNoPayCandidatePay; b.ann += c.anchorNoPayCandidateNoPay;
-    agg.set(k, b);
-  };
-  for (const [key, counts] of all) {
-    const p = parseRelationKey(key);
+/** Re-bucket per (relation_key, cluster, anchor-branch) tallies into the coarse structural buckets
+ *  (role|side AND role|mech|side), normalizing by CLUSTER **across** relation_keys: every independent
+ *  episode contributes weight 1 per bucket-branch, allocated to pay / no-pay by its realized candidate-pay
+ *  fraction. This is the generalization step AND the fix for the over-count where one episode that mapped to
+ *  several relation_keys (e.g. a World Cup observed as both `tournament_winner→stage_advance` and
+ *  `national_team_title→final_appearance`) was summed as several "independent" samples — inflating a
+ *  bucket's effective N and letting it cross the CALIBRATED threshold on fewer real episodes than it claims. */
+function aggregateBucketsByCluster(rows: BucketBranchRow[]): Map<string, AggCells> {
+  // 1) pool an episode's observations across the relation_keys that land in the same (bucket, branch)
+  const groups = new Map<string, { bk: string; anchorPays: boolean; pay: number; total: number }>();
+  for (const r of rows) {
+    const p = parseRelationKey(r.relationKey);
     if (!p) continue;
-    add(`${p.role}|${p.side}`, counts);
-    add(`${p.role}|${p.mechType}|${p.side}`, counts);
+    for (const bk of bucketKeys(p.role, p.mechType, p.side)) {
+      const gk = `${bk}\u0000${r.cluster}\u0000${r.anchorPays ? 1 : 0}`;
+      const g = groups.get(gk);
+      if (g) { g.pay += r.pay; g.total += r.total; }
+      else groups.set(gk, { bk, anchorPays: r.anchorPays, pay: r.pay, total: r.total });
+    }
+  }
+  // 2) each (bucket, cluster, branch) episode = weight 1, split by its pooled candidate-pay fraction
+  const agg = new Map<string, AggCells>();
+  for (const g of groups.values()) {
+    const bk = g.bk;
+    const anchorPays = g.anchorPays;
+    const fracPay = g.total > 0 ? g.pay / g.total : 0;
+    const b = agg.get(bk) ?? { app: 0, apn: 0, anp: 0, ann: 0 };
+    if (anchorPays) { b.app += fracPay; b.apn += 1 - fracPay; }
+    else { b.anp += fracPay; b.ann += 1 - fracPay; }
+    agg.set(bk, b);
   }
   return agg;
 }
@@ -72,19 +87,19 @@ const cellsOf = (b: AggCells): Cells => ({
   anchorNoPayCandidatePay: b.anp, anchorNoPayCandidateNoPay: b.ann,
 });
 
-/** The generalizable bucket COUNTS (role×mechanism×side), pooled across all templates. The robust
- *  optimizer calibrates a candidate from its bucket (not a per-relation_key lookup), so a never-seen
- *  template still calibrates and buckets cross the sample threshold far sooner. Empty without a DB. */
+/** The generalizable bucket COUNTS (role×mechanism×side), pooled across all templates and
+ *  cluster-deduplicated. The robust optimizer calibrates a candidate from its bucket (not a per-relation_key
+ *  lookup), so a never-seen template still calibrates and buckets cross the sample threshold far sooner —
+ *  but only on genuinely INDEPENDENT episodes. Empty without a DB. */
 export async function loadBucketCounts(): Promise<Map<string, Cells>> {
-  const all = await loadAllConditionalCounts().catch(() => new Map());
-  const agg = aggregateBuckets(all as Map<string, Cells>);
+  const rows = await loadBucketBranchRows().catch(() => [] as BucketBranchRow[]);
   const out = new Map<string, Cells>();
-  for (const [k, b] of agg) out.set(k, cellsOf(b));
+  for (const [k, b] of aggregateBucketsByCluster(rows)) out.set(k, cellsOf(b));
   return out;
 }
 
-function buildProfile(all: Map<string, Cells>): TuningProfile {
-  const agg = aggregateBuckets(all);
+function buildProfile(rows: BucketBranchRow[]): TuningProfile {
+  const agg = aggregateBucketsByCluster(rows);
   const profile: TuningProfile = new Map();
   for (const [k, b] of agg) {
     const cal = calibrateConditionalPayoff(
@@ -107,8 +122,8 @@ let cache: { profile: TuningProfile; at: number } | null = null;
 /** The learned tuning profile (cached in-process; recomputed every ttl). Empty without a DB. */
 export async function loadTuningProfile(ttlMs = 300_000, nowMs = Date.now()): Promise<TuningProfile> {
   if (cache && nowMs - cache.at < ttlMs) return cache.profile;
-  const all = await loadAllConditionalCounts().catch(() => new Map());
-  const profile = buildProfile(all as never);
+  const rows = await loadBucketBranchRows().catch(() => [] as BucketBranchRow[]);
+  const profile = buildProfile(rows);
   cache = { profile, at: nowMs };
   return profile;
 }
@@ -122,12 +137,12 @@ export function lookupBucket(profile: TuningProfile, role: string, mechType: str
   return null;
 }
 
-/** Test seam: build a profile from explicit per-template counts without a DB. */
+/** Test seam: build a profile from explicit per-(relation_key, cluster, branch) episode rows (no DB). */
 export const __buildProfileForTest = buildProfile;
 
-/** Test seam: the bucket COUNTS aggregation the robust optimizer calibrates from (no DB). */
-export const __bucketCountsForTest = (all: Map<string, Cells>): Map<string, Cells> => {
+/** Test seam: the cluster-deduplicated bucket COUNTS the robust optimizer calibrates from (no DB). */
+export const __bucketCountsForTest = (rows: BucketBranchRow[]): Map<string, Cells> => {
   const out = new Map<string, Cells>();
-  for (const [k, b] of aggregateBuckets(all)) out.set(k, cellsOf(b));
+  for (const [k, b] of aggregateBucketsByCluster(rows)) out.set(k, cellsOf(b));
   return out;
 };
