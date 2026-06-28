@@ -73,6 +73,17 @@ interface EvLite {
   active?: boolean;
   volume?: number;
   volume24hr?: number;
+  markets?: Array<{ groupItemTitle?: string; question?: string; closed?: boolean }>;
+}
+
+/** Top-volume LIVE events (with their outcomes). Cached 60s — it changes slowly and lets per-keystroke
+ *  search surface an OUTCOME match ("France" inside "World Cup Winner") that /public-search, which only
+ *  matches event TITLES, would miss. */
+function cachedLiveListing(): Promise<EvLite[]> {
+  return cached("live-listing", 60_000, async () => {
+    const r = await gammaGet<EvLite[]>(`/events?closed=false&active=true&order=volume24hr&ascending=false&limit=200`);
+    return Array.isArray(r) ? r : [];
+  });
 }
 
 function tokens(s: string): Set<string> {
@@ -104,34 +115,55 @@ function vol(v: number): string {
   return `$${Math.round(v)}`;
 }
 
-/** Cross-domain real events for the hedge flow (multi-outcome / negRisk only). */
+/** Real live positions for the hedge flow: OUTCOME matches ("France" → "World Cup Winner") rank above
+ *  whole-EVENT matches, so typing a team/nation surfaces the exact leg you'd hedge — not just events whose
+ *  TITLE contains the word. Merges /public-search (query-targeted) with the cached top-volume live listing
+ *  (which carries each event's outcomes). Live + tradeable only; degrades to [] on any upstream hiccup. */
 export async function searchEvents(q: string, limit = 8): Promise<MarketSuggestion[]> {
   const query = q.trim();
   if (query.length < 2) return [];
-  let evs: EvLite[] = [];
-  try {
-    const r = await cached(`ps:${query.toLowerCase()}`, 15_000, () =>
-      gammaGet<{ events?: EvLite[] }>(`/public-search?q=${encodeURIComponent(query)}&limit_per_type=20`),
-    );
-    evs = r?.events ?? [];
-  } catch {
-    return [];
-  }
+  const qn = norm(query);
   const qt = tokens(query);
-  // /public-search already ranked by relevance (it handles partial words); we only keep
-  // open, multi-outcome (negRisk) events and re-rank by token overlap + a small volume nudge.
-  return evs
-    .filter((e) => Boolean(e.slug) && e.negRisk === true && !e.closed && (e.active ?? true))
-    .map((e) => ({ e, score: overlap(qt, tokens(e.title ?? "")) + Math.min(0.1, (e.volume24hr ?? e.volume ?? 0) / 1e8) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(({ e }) => ({
-      label: e.title ?? e.slug!,
-      value: e.title ?? "",
-      sub: `${vol(e.volume24hr ?? e.volume ?? 0)} volume · multi-outcome market`,
-      slug: e.slug!,
-      kind: "event" as const,
-    }));
+  const [search, listing] = await Promise.all([
+    cached(`ps:${query.toLowerCase()}`, 15_000, () =>
+      gammaGet<{ events?: EvLite[] }>(`/public-search?q=${encodeURIComponent(query)}&limit_per_type=20`),
+    ).catch(() => ({ events: [] as EvLite[] })),
+    cachedLiveListing().catch(() => [] as EvLite[]),
+  ]);
+
+  const bySlug = new Map<string, EvLite>();
+  for (const e of [...(search?.events ?? []), ...listing]) if (e.slug && !bySlug.has(e.slug)) bySlug.set(e.slug, e);
+
+  const matchesOutcome = (o: string) => {
+    const on = norm(o);
+    return on.includes(qn) || (on.length >= 3 && qn.includes(on)) || prefixCover(qt, tokens(o)) >= 0.999;
+  };
+
+  const out: Array<MarketSuggestion & { score: number }> = [];
+  const seen = new Set<string>();
+  for (const e of bySlug.values()) {
+    if (!e.slug || !e.title || e.closed || e.active === false) continue; // LIVE & tradeable only
+    const v = e.volume24hr ?? e.volume ?? 0;
+    const volBoost = Math.min(0.1, v / 1e8);
+    // OUTCOME-level matches — the ideal: selecting resolves straight to that leg.
+    for (const m of e.markets ?? []) {
+      if (m.closed) continue;
+      const o = (m.groupItemTitle || m.question || "").trim();
+      if (!o || !matchesOutcome(o)) continue;
+      const on = norm(o);
+      if (seen.has(`${e.slug}|${on}`)) continue;
+      seen.add(`${e.slug}|${on}`);
+      const exact = on === qn ? 0.6 : on.startsWith(qn) ? 0.4 : 0.2;
+      out.push({ label: o, value: o, sub: `${e.title} · ${vol(v)}`, slug: e.slug, kind: "outcome", score: exact + volBoost });
+    }
+    // WHOLE-EVENT match (multi-outcome only) — selecting it then lets you pick the outcome.
+    const tScore = overlap(qt, tokens(e.title));
+    if (e.negRisk === true && tScore > 0 && !seen.has(`${e.slug}|evt`)) {
+      seen.add(`${e.slug}|evt`);
+      out.push({ label: e.title, value: e.title, sub: `${vol(v)} volume · multi-outcome market`, slug: e.slug, kind: "event", score: tScore * 0.5 + volBoost });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, limit).map(({ score: _score, ...s }) => s);
 }
 
 // Real fixtures change rarely within a session; cache 60s + dedupe concurrent loads so

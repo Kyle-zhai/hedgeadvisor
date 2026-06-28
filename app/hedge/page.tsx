@@ -127,6 +127,8 @@ function RelationRow({ r }: { r: DiscoveredRelation }) {
   );
 }
 
+type Suggestion = { label: string; value: string; sub?: string; slug: string; kind: string };
+
 export default function HedgePage() {
   const [query, setQuery] = useState("France to win the World Cup");
   // Conservatism s∈[0,1]: 0 = pursue payoff (posterior mean, looser evidence); 1 = control max loss
@@ -138,6 +140,12 @@ export default function HedgePage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  // ── Bet autocomplete: live, resolvable positions (outcome/event) from /api/search ──
+  const [suggest, setSuggest] = useState<Suggestion[]>([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [sugIdx, setSugIdx] = useState(-1);
+  const sugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sugCtrl = useRef<AbortController | null>(null);
 
   const run = useCallback(async (q: string, s: number, slug?: string) => {
     if (!q.trim()) return;
@@ -174,6 +182,29 @@ export default function HedgePage() {
       if (requestRef.current === controller) setLoading(false);
     }
   }, [entryPrice, stakeUsd]);
+
+  // Debounced live typeahead. Best-effort: never blocks typing or submission.
+  const fetchSuggest = (q: string) => {
+    if (sugTimer.current) clearTimeout(sugTimer.current);
+    if (q.trim().length < 2) { setSuggest([]); setShowSuggest(false); return; }
+    sugTimer.current = setTimeout(async () => {
+      sugCtrl.current?.abort();
+      const ctrl = new AbortController();
+      sugCtrl.current = ctrl;
+      try {
+        const res = await fetch(`/api/search?scope=events&q=${encodeURIComponent(q.trim())}`, { signal: ctrl.signal });
+        const json = await res.json();
+        if (ctrl.signal.aborted) return;
+        const list: Suggestion[] = json.suggestions ?? [];
+        setSuggest(list); setShowSuggest(list.length > 0); setSugIdx(-1);
+      } catch { /* typeahead is best-effort */ }
+    }, 160);
+  };
+  // Selecting a suggestion pins its event (slug) so it resolves to THIS live market — no "no live market".
+  const pickSuggest = (s: Suggestion) => {
+    setQuery(s.value); setShowSuggest(false); setSuggest([]); setSugIdx(-1);
+    run(s.value, conservatism, s.slug);
+  };
 
   useEffect(() => {
     // Seed the search from ?q= (e.g. the Markets "Hedge" row link or a saved History record).
@@ -248,7 +279,32 @@ export default function HedgePage() {
         <form className="formrow" onSubmit={(e) => { e.preventDefault(); run(query, conservatism); }} style={{ alignItems: "flex-start", gap: 12 }}>
           <label className="combo-label" style={{ flex: 3, minWidth: 280 }}>Bet
             <div className="inputwrap"><span className="pre"><MagnifyingGlass size={15} /></span>
-              <input className="has-pre" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. France to win the World Cup" />
+              <input className="has-pre" value={query} autoComplete="off" role="combobox" aria-expanded={showSuggest} aria-autocomplete="list"
+                onChange={(e) => { setQuery(e.target.value); fetchSuggest(e.target.value); }}
+                onFocus={() => { if (suggest.length) setShowSuggest(true); }}
+                onBlur={() => window.setTimeout(() => setShowSuggest(false), 150)}
+                onKeyDown={(e) => {
+                  if (!showSuggest || suggest.length === 0) return;
+                  if (e.key === "ArrowDown") { e.preventDefault(); setSugIdx((i) => Math.min(i + 1, suggest.length - 1)); }
+                  else if (e.key === "ArrowUp") { e.preventDefault(); setSugIdx((i) => Math.max(i - 1, -1)); }
+                  else if (e.key === "Enter" && sugIdx >= 0) { e.preventDefault(); pickSuggest(suggest[sugIdx]); }
+                  else if (e.key === "Escape") { setShowSuggest(false); }
+                }}
+                placeholder="e.g. France to win the World Cup" />
+              {showSuggest && suggest.length > 0 && (
+                <ul className="combo-pop" role="listbox" style={{ listStyle: "none", margin: 0 }}>
+                  {suggest.map((s, i) => (
+                    <li key={`${s.slug}-${s.value}-${i}`} role="option" aria-selected={i === sugIdx}>
+                      <button type="button" className={`suggest-item${i === sugIdx ? " active" : ""}`}
+                        onMouseDown={(e) => { e.preventDefault(); pickSuggest(s); }}
+                        onMouseEnter={() => setSugIdx(i)}>
+                        <span className="s-label">{s.label}</span>
+                        {s.sub && <span className="s-sub">{s.sub}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <span className="combo-hint">A real outcome on Polymarket or Kalshi.</span>
           </label>
