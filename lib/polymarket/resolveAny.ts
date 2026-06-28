@@ -74,6 +74,7 @@ export type AnyResolveResult = ResolveResult & { eventSlug?: string };
 // can't find them ("Europe" / "France to reach the final" / "Mbappé golden boot"). We probe these
 // by slug as a last resort, matching the query against their outcomes. Extend per season.
 const STRUCTURAL_FALLBACK_SLUGS = [
+  "world-cup-winner", // the NATION winner — its outcomes are nations ("France"), not in the event title,
   "which-continent-will-win-the-world-cup",
   "world-cup-nation-to-reach-final",
   "world-cup-golden-boot-winner",
@@ -83,15 +84,22 @@ const STRUCTURAL_FALLBACK_SLUGS = [
 export async function resolveAnyPosition(query: string): Promise<AnyResolveResult> {
   const ranked = rankEvents(query, await gatherCandidates(query));
 
-  for (const c of ranked.slice(0, 3)) {
+  // Scan the top candidates, but PREFER a decisive outcome RESOLVE over an event-level AMBIGUOUS
+  // disambiguation. A higher title-overlap event ("Which continent will WIN THE WORLD CUP") can outrank
+  // the nation-level "World Cup Winner" yet only offer a pick-an-outcome dead-end, while the lower-ranked
+  // event actually CONTAINS the queried outcome ("France"). Returning on the first ambiguous (as before)
+  // stranded the user on the continent picker; instead keep the first ambiguous as a fallback and keep
+  // looking for a clean resolve.
+  let fallback: AnyResolveResult | null = null;
+  for (const c of ranked.slice(0, 5)) {
     const res = await resolvePosition(query, c.e.slug!);
     if (res.kind === "resolved") return { ...res, eventSlug: c.e.slug };
-    if (res.kind === "ambiguous") return { ...res, eventSlug: c.e.slug };
+    if (res.kind === "ambiguous" && !fallback) fallback = { ...res, eventSlug: c.e.slug };
   }
 
   // Title-ranking found no clean outcome → try the structural events whose entity is an OUTCOME
-  // (continent / reach-final / golden-boot). Only a decisive "resolved" counts here; we don't want
-  // a vague ambiguous match from an off-topic query to hijack the result.
+  // (nation winner / continent / reach-final / golden-boot). Only a decisive "resolved" counts here; we
+  // don't want a vague ambiguous match from an off-topic query to hijack the result.
   const results = await Promise.all(
     STRUCTURAL_FALLBACK_SLUGS.map((slug) => resolvePosition(query, slug).then((r) => ({ slug, r })).catch(() => null)),
   );
@@ -99,6 +107,8 @@ export async function resolveAnyPosition(query: string): Promise<AnyResolveResul
     if (hit && hit.r.kind === "resolved") return { ...hit.r, eventSlug: hit.slug };
   }
 
+  // No clean resolve anywhere → offer the best event-level disambiguation we did find.
+  if (fallback) return fallback;
   if (ranked.length === 0) return { kind: "not_found", suggestions: [] };
   return { kind: "not_found", suggestions: ranked.slice(0, 5).map((c) => c.e.title ?? c.e.slug!) };
 }
