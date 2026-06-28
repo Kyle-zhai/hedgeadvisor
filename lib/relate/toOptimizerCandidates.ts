@@ -123,6 +123,9 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
       ? [preferredSide, preferredSide === "yes" ? "no" : "yes"]
       : ["yes", "no"];
     const mechType = mechanism?.split(".")[0] ?? "rule";
+    // Payoff direction (signature segment 4) keys the bucket so this candidate only reads a sign-matched
+    // cohort: a negative (hedge) candidate never inherits a positive (amplifier) bucket's blended payoff.
+    const direction = mechanism?.split(".")[4] ?? "ambiguous";
     let foundCalibrated = false;
     for (const side of sides) {
       // Calibrate from the most-specific structural BUCKET with enough evidence (role|mech|side, else
@@ -131,7 +134,7 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
       let calibration: ReturnType<typeof calibrateConditionalPayoff> | undefined;
       let bucketKey: string | undefined;
       if (reusableCohort) {
-        for (const bk of bucketKeys(role, mechType, side)) {
+        for (const bk of bucketKeys(role, mechType, direction, side)) {
           const counts = bucketCounts.get(bk);
           if (!counts) continue;
           const cal = calibrateConditionalPayoff(counts, CREDIBLE_LEVEL, MIN_SAMPLES);

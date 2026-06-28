@@ -28,21 +28,28 @@ export interface BucketStat {
 export type TuningProfile = Map<string, BucketStat>;
 
 /** Parse the coarse structure out of a stable relation_key:
- *  anchorClass->candidateClass:predicate->ROLE[:m=mechSignature]->SIDE@vN */
-export function parseRelationKey(key: string): { role: string; mechType: string; side: string } | null {
+ *  anchorClass->candidateClass:predicate->ROLE[:m=mechSignature]->SIDE@vN
+ *  The canonical signature is mechType.scope.timeOrder.portability.DIRECTION.edges (ontology.ts), so the
+ *  payoff direction (positive=amplifier / negative=hedge / ambiguous) is segment index 4. */
+export function parseRelationKey(key: string): { role: string; mechType: string; direction: string; side: string } | null {
   const parts = key.split("->");
   if (parts.length < 4) return null;
   const roleSeg = parts[2];
   const role = roleSeg.split(":m=")[0];
-  const mechType = roleSeg.includes(":m=") ? roleSeg.split(":m=")[1].split(".")[0] || "rule" : "rule";
+  const sig = roleSeg.includes(":m=") ? roleSeg.split(":m=")[1].split(".") : [];
+  const mechType = sig[0] || "rule";
+  const direction = sig[4] || "ambiguous";
   const side = parts[parts.length - 1].split("@")[0];
   if (!role || !side) return null;
-  return { role, mechType, side };
+  return { role, mechType, direction, side };
 }
 
-export function bucketKeys(role: string, mechType: string, side: string): string[] {
-  // most specific first: role+mechanism+side, then role+side (the always-available coarse fallback)
-  return [`${role}|${mechType}|${side}`, `${role}|${side}`];
+export function bucketKeys(role: string, mechType: string, direction: string, side: string): string[] {
+  // most specific first: role+mechanism+direction+side, then role+direction+side (the coarse fallback).
+  // DIRECTION is ALWAYS in the key so a hedge (negative) and an amplifier (positive) of the same
+  // role/mechanism/side can never pool — pooling opposite signs nets their specificity toward noise and
+  // would let an amplifier-contaminated bucket pass the optimizer's specificity gate (F2).
+  return [`${role}|${mechType}|${direction}|${side}`, `${role}|${direction}|${side}`];
 }
 
 interface AggCells { app: number; apn: number; anp: number; ann: number }
@@ -61,7 +68,7 @@ function aggregateBucketsByCluster(rows: BucketBranchRow[]): Map<string, AggCell
   for (const r of rows) {
     const p = parseRelationKey(r.relationKey);
     if (!p) continue;
-    for (const bk of bucketKeys(p.role, p.mechType, p.side)) {
+    for (const bk of bucketKeys(p.role, p.mechType, p.direction, p.side)) {
       const gk = `${bk}\u0000${r.cluster}\u0000${r.anchorPays ? 1 : 0}`;
       const g = groups.get(gk);
       if (g) { g.pay += r.pay; g.total += r.total; }
@@ -128,9 +135,10 @@ export async function loadTuningProfile(ttlMs = 300_000, nowMs = Date.now()): Pr
   return profile;
 }
 
-/** Look up the most-specific learned bucket (role+mechanism+side, else role+side) with enough evidence. */
-export function lookupBucket(profile: TuningProfile, role: string, mechType: string, side: string, minSamplesPerBranch: number): BucketStat | null {
-  for (const k of bucketKeys(role, mechType, side)) {
+/** Look up the most-specific learned bucket (role+mechanism+direction+side, else role+direction+side)
+ *  with enough evidence. Direction keeps hedge (negative) and amplifier (positive) cohorts separate. */
+export function lookupBucket(profile: TuningProfile, role: string, mechType: string, direction: string, side: string, minSamplesPerBranch: number): BucketStat | null {
+  for (const k of bucketKeys(role, mechType, direction, side)) {
     const b = profile.get(k);
     if (b && Math.min(b.samplesFail, b.samplesWin) >= minSamplesPerBranch) return b;
   }

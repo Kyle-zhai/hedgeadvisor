@@ -520,11 +520,13 @@ async function buildCrossEventStrategies(
     const side: "yes" | "no" = buyYes ? "yes" : "no";
     const candidateFamily = r.mechanismGraph?.candidateEventClass ?? eventFamily(r.market.marketTitle, r.market.category ?? "");
     const role = relationRole(`${anchor.title} ${anchor.marketTitle}`, { entity: r.market.title, family: candidateFamily, context: `${r.market.marketTitle} ${r.market.title}`, mechanismGraph: r.mechanismGraph });
-    const mechType = mechanismSignature(r.mechanismGraph, r.hypothesis?.direction)?.split(".")[0] ?? "rule";
+    const hedgeSig = mechanismSignature(r.mechanismGraph, r.hypothesis?.direction);
+    const mechType = hedgeSig?.split(".")[0] ?? "rule";
+    const direction = hedgeSig?.split(".")[4] ?? "ambiguous"; // sign-matched bucket cohort (F2)
     // Shrink BOTH branches toward what this STRUCTURE actually settled (the moat's learned rule), then
     // Fréchet-clamp. The hedge gate below decides admission — a leg mapped to an amplifier-shaped bucket
     // sees its fail payoff shrink below its win payoff and is correctly rejected as a hedge.
-    const cal = calibrateLeg(lookupBucket(tuning, role, mechType, side, BUCKET_MIN_SAMPLES), pWsideModeled, pFsideModeled, qSide, ap);
+    const cal = calibrateLeg(lookupBucket(tuning, role, mechType, direction, side, BUCKET_MIN_SAMPLES), pWsideModeled, pFsideModeled, qSide, ap);
     const { pWside, pFside, tier, samples } = cal;
     const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails
     if (edge <= 0 || pFside <= pWside) continue; // must beat its price on fail, and pay more on fail than win
@@ -566,9 +568,11 @@ async function buildCrossEventStrategies(
       // structure — the aggressive AND conservative ladders are finally moat-driven, not stuck at MODELED.
       const candidateFamily = r.mechanismGraph?.candidateEventClass ?? eventFamily(r.market.marketTitle, r.market.category ?? "");
       const role = relationRole(`${anchor.title} ${anchor.marketTitle}`, { entity: r.market.title, family: candidateFamily, context: `${r.market.marketTitle} ${r.market.title}`, mechanismGraph: r.mechanismGraph });
-      const mechType = mechanismSignature(r.mechanismGraph, r.hypothesis?.direction)?.split(".")[0] ?? "rule";
-      const yesCal = calibrateLeg(lookupBucket(tuning, role, mechType, "yes", BUCKET_MIN_SAMPLES), pW, pF, qYes, ap);
-      const noCal = calibrateLeg(lookupBucket(tuning, role, mechType, "no", BUCKET_MIN_SAMPLES), 1 - pW, 1 - pF, 1 - qYes, ap);
+      const superSig = mechanismSignature(r.mechanismGraph, r.hypothesis?.direction);
+      const mechType = superSig?.split(".")[0] ?? "rule";
+      const payoffDir = superSig?.split(".")[4] ?? "ambiguous"; // sign-matched cohort; not the λ knob `direction`
+      const yesCal = calibrateLeg(lookupBucket(tuning, role, mechType, payoffDir, "yes", BUCKET_MIN_SAMPLES), pW, pF, qYes, ap);
+      const noCal = calibrateLeg(lookupBucket(tuning, role, mechType, payoffDir, "no", BUCKET_MIN_SAMPLES), 1 - pW, 1 - pF, 1 - qYes, ap);
       const sides = [
         { side: "YES" as const, q: qYes, win: yesCal.pWside, fail: yesCal.pFside, tier: yesCal.tier },
         { side: "NO" as const, q: 1 - qYes, win: noCal.pWside, fail: noCal.pFside, tier: noCal.tier },
