@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { runHistoricalBackfillJob, type HistoricalBackfillJob } from "@/lib/relate/historicalBackfill";
+import { runHistoricalBackfillJob, auditManifestClusters, type HistoricalBackfillJob } from "@/lib/relate/historicalBackfill";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,14 +57,21 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "invalid historical backfill configuration" }, { status: 500 });
   }
   if (!jobs.length) return NextResponse.json({ ok: true, jobs: 0, note: "HEDGE_HISTORICAL_BACKFILL_JOBS_JSON is empty" });
+  // Cluster discipline (fail-closed): a market resolves once, so any market the manifest files under more
+  // than one clusterKey is splitting correlated samples into fake-independent episodes — drop those jobs
+  // and report them so the author collapses them to one episode. (Within a clusterKey, F1 already dedups.)
+  const audit = auditManifestClusters(jobs);
   const results = [];
-  for (const job of jobs) results.push(await runHistoricalBackfillJob(job));
+  for (const job of audit.ok) results.push(await runHistoricalBackfillJob(job));
   return NextResponse.json({
-    ok: results.every((result) => result.status !== "error"),
+    ok: results.every((result) => result.status !== "error") && audit.rejected.length === 0,
     jobs: results.length,
     written: results.filter((result) => result.status === "written").length,
     skipped: results.filter((result) => result.status === "skipped").length,
     errors: results.filter((result) => result.status === "error").length,
+    clusterRejected: audit.rejected.length,
+    clusterRejections: audit.rejected,
+    bucketClusterSpread: audit.bucketClusterSpread,
     results,
   });
 }

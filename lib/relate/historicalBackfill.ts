@@ -55,6 +55,59 @@ export interface HistoricalBackfillResult {
   reason?: string;
 }
 
+export interface ManifestAuditResult {
+  ok: HistoricalBackfillJob[];
+  rejected: Array<{ id: string; reason: string }>;
+  /** distinct clusterKeys per coarse bucket (role|mechType|side) — visibility into episode spread. */
+  bucketClusterSpread: Record<string, number>;
+}
+
+const addToSet = (map: Map<string, Set<string>>, key: string, value: string) => {
+  const s = map.get(key);
+  if (s) s.add(value);
+  else map.set(key, new Set([value]));
+};
+
+/**
+ * Static, pre-ingestion cluster discipline for the MANUAL manifest path (the auto path already enforces
+ * one-cluster-per-event). A market resolves exactly ONCE, so every job that references it observes the SAME
+ * real-world episode and MUST share a clusterKey; splitting one market across clusterKeys is the
+ * construction-artifact (correlated samples counted as independent — the failure mode that produced the
+ * deleted "first CALIBRATED rule"). Fail-closed: any job touching a market the manifest maps to >1
+ * clusterKey is rejected so the author collapses it to one episode. Within a single clusterKey, F1's
+ * aggregateBucketsByCluster already deduplicates correlated pairs to weight 1 per bucket, so the only gap
+ * this closes is the mislabel-as-different-clusters one. Pure + deterministic (unit-tested).
+ */
+export function auditManifestClusters(jobs: HistoricalBackfillJob[]): ManifestAuditResult {
+  const marketKey = (m: HistoricalMarketRef) =>
+    `${m.venue}:${m.marketId ?? `${m.eventKey}|${(m.label ?? "").toLowerCase().trim()}`}`;
+  // every market → the set of clusterKeys the manifest files it under
+  const marketClusters = new Map<string, Set<string>>();
+  for (const j of jobs) {
+    addToSet(marketClusters, marketKey(j.anchor), j.clusterKey);
+    addToSet(marketClusters, marketKey(j.candidate), j.clusterKey);
+  }
+  const conflicted = new Set<string>();
+  for (const [mk, clusters] of marketClusters) if (clusters.size > 1) conflicted.add(mk);
+
+  const ok: HistoricalBackfillJob[] = [];
+  const rejected: Array<{ id: string; reason: string }> = [];
+  const bucketClusters = new Map<string, Set<string>>();
+  for (const j of jobs) {
+    const bad = [...new Set([marketKey(j.anchor), marketKey(j.candidate)].filter((mk) => conflicted.has(mk)))];
+    if (bad.length) {
+      rejected.push({ id: j.id, reason: `market mapped to multiple clusterKeys (correlated samples as independent): ${bad.join(", ")}` });
+      continue;
+    }
+    ok.push(j);
+    const mech = j.relation.mechanismSignature?.split(".")[0] ?? "rule";
+    addToSet(bucketClusters, `${j.relation.role}|${mech}|${j.relation.side}`, j.clusterKey);
+  }
+  const bucketClusterSpread: Record<string, number> = {};
+  for (const [b, set] of bucketClusters) bucketClusterSpread[b] = set.size;
+  return { ok, rejected, bucketClusterSpread };
+}
+
 /** Latest real history point at or before a cutoff. Never falls forward. */
 export function historicalPointAtOrBefore(history: Array<{ t: number; p: number }>, cutoffMs: number): { t: number; p: number } | null {
   let best: { t: number; p: number } | null = null;
