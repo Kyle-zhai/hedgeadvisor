@@ -22,6 +22,9 @@ export interface BucketStat {
   pGivenWins: number;
   /** pGivenFails − pGivenWins: how much MORE this bucket pays on a fail than a win (the hedge signal). */
   specificity: number;
+  /** fail.lower − win.upper: the CONSERVATIVE credible-interval (cross-bound) hedge signal. >0 means the
+   *  bucket is settlement-PROVEN to pay more on a fail (a real HEDGE); ≤0 means unproven or an AMPLIFIER. */
+  hedgeSpecificityLower: number;
   samplesFail: number;
   samplesWin: number;
 }
@@ -117,6 +120,7 @@ function buildProfile(rows: BucketBranchRow[]): TuningProfile {
       pGivenFails: Number(cal.payGivenAnchorFails.mean.toFixed(4)),
       pGivenWins: Number(cal.payGivenAnchorPays.mean.toFixed(4)),
       specificity: Number(cal.posteriorSpecificity.toFixed(4)),
+      hedgeSpecificityLower: Number(cal.hedgeSpecificityLower.toFixed(4)),
       samplesFail: Math.round(cal.payGivenAnchorFails.samples),
       samplesWin: Math.round(cal.payGivenAnchorPays.samples),
     });

@@ -137,12 +137,23 @@ export async function GET(req: Request) {
   // The LEARNED RULES the engine extracts from settlement data (role × mechType × direction × side buckets),
   // pooled across all templates and cluster-deduplicated — what tunes the engine for unseen questions.
   const profile = await loadTuningProfile(0).catch(() => new Map());
-  const buckets = [...profile.values()] as Array<{ samplesFail: number; samplesWin: number }>;
+  const buckets = [...profile.values()] as Array<{ samplesFail: number; samplesWin: number; specificity: number; hedgeSpecificityLower: number }>;
+  const isCalibrated = (b: { samplesFail: number; samplesWin: number }) => Math.min(b.samplesFail, b.samplesWin) >= 20;
+  // A CALIBRATED bucket is a HEDGE only when its conservative cross-bound proves it pays more on a fail
+  // (hedgeSpecificityLower > 0); a settlement-proven co-mover (specificity < 0) is an AMPLIFIER the optimizer
+  // never admits as a hedge. Split so a reader never mistakes amplifier maturity for hedge readiness.
+  const calibratedHedgeBuckets = buckets.filter((b) => isCalibrated(b) && b.hedgeSpecificityLower > 0).length;
+  const calibratedAmplifierBuckets = buckets.filter((b) => isCalibrated(b) && b.specificity < 0).length;
   const calibrationReadiness = {
     independentClusters: n,
+    // `phase` is GLOBAL settlement-collection progress (all independent episode clusters), NOT hedge-bucket
+    // calibration: a high phase does NOT imply any usable hedge exists — see calibratedHedgeBuckets.
     phase: n >= 500 ? "stable_optimization" : n >= 300 ? "strong_calibration" : n >= 100 ? "initial_recalibration" : "collecting",
+    phaseScope: "global_collection",
     nextMilestone: n < 100 ? 100 : n < 300 ? 300 : n < 500 ? 500 : n < 1000 ? 1000 : null,
     remaining: n < 100 ? 100 - n : n < 300 ? 300 - n : n < 500 ? 500 - n : n < 1000 ? 1000 - n : 0,
+    calibratedHedgeBuckets,
+    calibratedAmplifierBuckets,
     // bucketsAt20PerBranch is the unit the CALIBRATED gate ACTUALLY uses: pooled across relation_keys within
     // a coarse bucket, cluster-deduplicated (≥20 independent episodes in BOTH branches). The relationKeysAt*
     // counts below are per-relation_key independent clusters — a stricter, DIFFERENT readout that does not
@@ -154,7 +165,15 @@ export async function GET(req: Request) {
     relationKeysAt500: readinessRows.filter((row) => row.independent_clusters >= 500).length,
   };
   const learnedRules = [...profile.entries()]
-    .map(([bucket, s]) => ({ bucket, pGivenFails: s.pGivenFails, pGivenWins: s.pGivenWins, specificity: s.specificity, samplesFail: s.samplesFail, samplesWin: s.samplesWin }))
+    .map(([bucket, s]) => ({
+      bucket, pGivenFails: s.pGivenFails, pGivenWins: s.pGivenWins,
+      specificity: s.specificity, hedgeSpecificityLower: s.hedgeSpecificityLower,
+      samplesFail: s.samplesFail, samplesWin: s.samplesWin,
+      // calibrated = the optimizer would actually act on it (≥20 independent episodes per branch); kind labels
+      // hedge vs amplifier vs unproven so a sub-gate or amplifier row is never read as an actionable hedge.
+      calibrated: Math.min(s.samplesFail, s.samplesWin) >= 20,
+      kind: s.hedgeSpecificityLower > 0 ? "hedge" : s.specificity < 0 ? "amplifier" : "unproven",
+    }))
     .sort((a, b) => Math.min(b.samplesFail, b.samplesWin) - Math.min(a.samplesFail, a.samplesWin))
     .slice(0, 30);
 

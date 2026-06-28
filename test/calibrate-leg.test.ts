@@ -3,7 +3,7 @@ import { calibrateLeg } from "@/lib/relate/discover";
 import type { BucketStat } from "@/lib/relate/tuningProfile";
 
 const bucket = (b: Partial<BucketStat>): BucketStat => ({
-  pGivenFails: 0.5, pGivenWins: 0.5, specificity: 0, samplesFail: 40, samplesWin: 40, ...b,
+  pGivenFails: 0.5, pGivenWins: 0.5, specificity: 0, hedgeSpecificityLower: 0, samplesFail: 40, samplesWin: 40, ...b,
 });
 
 describe("calibrateLeg — the single moat-driven calibration path (hedge + amplifier)", () => {
