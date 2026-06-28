@@ -27,8 +27,6 @@ export {
   upsertAssociationObservations,
   upsertAssociationCandidateSnapshots,
   loadCandidateSnapshotsForPair,
-  loadConditionalCounts,
-  loadAllConditionalCounts,
   loadBucketBranchRows,
   loadAssociationBacktestRows,
   loadPendingFrozenPairs,

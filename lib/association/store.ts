@@ -1,5 +1,5 @@
 import { ensureSchema, getSql } from "@/lib/data/db";
-import type { ConditionalCounts, RelationHypothesis } from "./types";
+import type { RelationHypothesis } from "./types";
 import type { AssociationBacktestRow } from "./backtest";
 
 export interface RelationRecordInput {
@@ -215,79 +215,11 @@ export async function loadPendingFrozenPairs(limit = 1000): Promise<PendingFroze
   }));
 }
 
-export async function loadConditionalCounts(relationKey: string): Promise<ConditionalCounts | null> {
-  const sql = await getSql();
-  if (!sql) return null;
-  await ensureSchema(sql);
-  // Re-normalize at READ time over the complete stored cluster. This stays correct when a cron sees
-  // a settlement incrementally: old rows do not retain stale 1/N weights after new rows arrive.
-  const rows = await sql`
-    WITH base AS (
-      SELECT *,
-        COALESCE(cluster_key, sample_key) AS effective_cluster,
-        count(*) OVER (
-          PARTITION BY relation_key, COALESCE(cluster_key, sample_key), anchor_pays
-        )::float8 AS branch_size
-      FROM association_observation
-      WHERE relation_key = ${relationKey}
-    ), normalized AS (
-      SELECT *, CASE WHEN branch_size > 0 THEN 1.0 / branch_size ELSE 0 END AS normalized_weight
-      FROM base
-    )
-    SELECT
-      COALESCE(sum(normalized_weight) FILTER (WHERE anchor_pays AND candidate_pays), 0)::float8 AS app,
-      COALESCE(sum(normalized_weight) FILTER (WHERE anchor_pays AND NOT candidate_pays), 0)::float8 AS apn,
-      COALESCE(sum(normalized_weight) FILTER (WHERE NOT anchor_pays AND candidate_pays), 0)::float8 AS anp,
-      COALESCE(sum(normalized_weight) FILTER (WHERE NOT anchor_pays AND NOT candidate_pays), 0)::float8 AS ann
-    FROM normalized
-  ` as Array<{ app: number; apn: number; anp: number; ann: number }>;
-  const row = rows[0];
-  if (!row) return null;
-  return {
-    anchorPayCandidatePay: Number(row.app),
-    anchorPayCandidateNoPay: Number(row.apn),
-    anchorNoPayCandidatePay: Number(row.anp),
-    anchorNoPayCandidateNoPay: Number(row.ann),
-  };
-}
-
-/** Load EVERY relation template's cluster-normalized conditional counts in one pass. Feeds the rule-learner
- *  (lib/relate/tuningProfile.ts): it re-buckets these across templates by role/mechanism to learn GENERAL
- *  regularities, rather than looking up one template's answer. Empty map without a DB. */
-export async function loadAllConditionalCounts(): Promise<Map<string, ConditionalCounts>> {
-  const sql = await getSql();
-  if (!sql) return new Map();
-  await ensureSchema(sql);
-  const rows = await sql`
-    WITH base AS (
-      SELECT *,
-        count(*) OVER (PARTITION BY relation_key, COALESCE(cluster_key, sample_key), anchor_pays)::float8 AS branch_size
-      FROM association_observation
-    ), normalized AS (
-      SELECT *, CASE WHEN branch_size > 0 THEN 1.0 / branch_size ELSE 0 END AS normalized_weight FROM base
-    )
-    SELECT relation_key,
-      COALESCE(sum(normalized_weight) FILTER (WHERE anchor_pays AND candidate_pays), 0)::float8 AS app,
-      COALESCE(sum(normalized_weight) FILTER (WHERE anchor_pays AND NOT candidate_pays), 0)::float8 AS apn,
-      COALESCE(sum(normalized_weight) FILTER (WHERE NOT anchor_pays AND candidate_pays), 0)::float8 AS anp,
-      COALESCE(sum(normalized_weight) FILTER (WHERE NOT anchor_pays AND NOT candidate_pays), 0)::float8 AS ann
-    FROM normalized GROUP BY relation_key
-  ` as Array<{ relation_key: string; app: number; apn: number; anp: number; ann: number }>;
-  const out = new Map<string, ConditionalCounts>();
-  for (const r of rows) {
-    out.set(r.relation_key, {
-      anchorPayCandidatePay: Number(r.app), anchorPayCandidateNoPay: Number(r.apn),
-      anchorNoPayCandidatePay: Number(r.anp), anchorNoPayCandidateNoPay: Number(r.ann),
-    });
-  }
-  return out;
-}
-
 /** One (relation_key, episode-cluster, anchor-branch) group with its candidate-pay tally. This is the raw
- *  material for CLUSTER-DEDUPLICATED bucket calibration: loadAllConditionalCounts normalizes inside each
- *  relation_key, so when one real-world episode appears under several relation_keys that map to the same
- *  coarse bucket, summing the per-key cells counts it as several "independent" samples. Re-normalizing by
- *  (bucket, cluster) downstream needs the cluster identity preserved here. */
+ *  material for CLUSTER-DEDUPLICATED bucket calibration: a 1/branch_size normalization INSIDE a single
+ *  relation_key cannot dedup an episode that appears under SEVERAL relation_keys mapping to the same coarse
+ *  bucket, so the cluster identity is preserved here and re-normalized by (bucket, cluster) downstream
+ *  (lib/relate/tuningProfile.ts aggregateBucketsByCluster). */
 export interface BucketBranchRow { relationKey: string; cluster: string; anchorPays: boolean; pay: number; total: number }
 
 /** Per (relation_key, episode-cluster, anchor-branch) candidate-pay tallies. Empty without a DB. */

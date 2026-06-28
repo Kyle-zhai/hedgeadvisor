@@ -134,20 +134,25 @@ export async function GET(req: Request) {
     FROM association_observation WHERE resolved_at IS NOT NULL
   ` as Array<{ cluster: string }>;
   const n = new Set(clusterRows.map((row) => row.cluster)).size;
+  // The LEARNED RULES the engine extracts from settlement data (role × mechType × direction × side buckets),
+  // pooled across all templates and cluster-deduplicated — what tunes the engine for unseen questions.
+  const profile = await loadTuningProfile(0).catch(() => new Map());
+  const buckets = [...profile.values()] as Array<{ samplesFail: number; samplesWin: number }>;
   const calibrationReadiness = {
     independentClusters: n,
     phase: n >= 500 ? "stable_optimization" : n >= 300 ? "strong_calibration" : n >= 100 ? "initial_recalibration" : "collecting",
     nextMilestone: n < 100 ? 100 : n < 300 ? 300 : n < 500 ? 500 : n < 1000 ? 1000 : null,
     remaining: n < 100 ? 100 - n : n < 300 ? 300 - n : n < 500 ? 500 - n : n < 1000 ? 1000 - n : 0,
+    // bucketsAt20PerBranch is the unit the CALIBRATED gate ACTUALLY uses: pooled across relation_keys within
+    // a coarse bucket, cluster-deduplicated (≥20 independent episodes in BOTH branches). The relationKeysAt*
+    // counts below are per-relation_key independent clusters — a stricter, DIFFERENT readout that does not
+    // correspond to the gate (kept for drill-down; do not read them as "buckets ready").
+    bucketsAt20PerBranch: buckets.filter((b) => Math.min(b.samplesFail, b.samplesWin) >= 20).length,
     relationKeysAt20: readinessRows.filter((row) => row.independent_clusters >= 20).length,
     relationKeysAt100: readinessRows.filter((row) => row.independent_clusters >= 100).length,
     relationKeysAt300: readinessRows.filter((row) => row.independent_clusters >= 300).length,
     relationKeysAt500: readinessRows.filter((row) => row.independent_clusters >= 500).length,
   };
-
-  // The LEARNED RULES the engine extracts from settlement data (role × mechanism × side buckets), pooled
-  // across all templates — what tunes the engine for unseen questions, not a per-question lookup table.
-  const profile = await loadTuningProfile(0).catch(() => new Map());
   const learnedRules = [...profile.entries()]
     .map(([bucket, s]) => ({ bucket, pGivenFails: s.pGivenFails, pGivenWins: s.pGivenWins, specificity: s.specificity, samplesFail: s.samplesFail, samplesWin: s.samplesWin }))
     .sort((a, b) => Math.min(b.samplesFail, b.samplesWin) - Math.min(a.samplesFail, a.samplesWin))

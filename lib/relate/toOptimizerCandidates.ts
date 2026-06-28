@@ -7,8 +7,9 @@
  * positive bet on a DIFFERENT event that tends to pay when the anchor fails, so ideally both win and
  * at worst one wins. One evidence-bearing soft tier feeds the optimizer:
  *
- *   CALIBRATED — settled-outcome history (loadConditionalCounts on a stable relation_key) gives a
- *                beta-binomial credible interval where the leg pays MORE often when the anchor fails.
+ *   CALIBRATED — settled-outcome history (loadBucketCounts: the cluster-deduped, sign-keyed coarse
+ *                role|mechType|direction|side bucket) gives a beta-binomial credible interval where the
+ *                leg pays MORE often when the anchor fails.
  *   HYPOTHESIS — Qwen mechanism graph, no calibration yet: retained for explanation/audit, but NEVER
  *                assigned a payoff probability or admitted to sizing.
  *
