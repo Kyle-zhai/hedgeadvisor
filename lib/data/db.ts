@@ -149,6 +149,15 @@ ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS anchor_event
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS anchor_venue text;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS candidate_event_key text;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS candidate_venue text;
+-- Frozen LLM-elicited conditional prior for the bought side (P(side pays | anchor fails/wins)) + the
+-- model and its self-reported confidence. Captured at FREEZE time so it predates settlement (leakage-safe);
+-- joining it to the realized association_observation later yields a calibration of the ELICITOR itself
+-- (how well its MODELED prior predicts outcomes), which accrues per-pair every freeze. Nullable: pre-existing
+-- rows and non-elicited (structural/auto-backfill) pairs have none.
+ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS p_given_fails double precision;
+ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS p_given_wins double precision;
+ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS elicitor_model text;
+ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS prior_confidence double precision;
 
 -- Persistent LLM cache survives stateless GitHub Action/server restarts. Inputs are SHA-256 keys;
 -- prompts and API credentials are never stored. The run table measures latency/fallback/cache health.

@@ -21,7 +21,7 @@ import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
 import { buildOptimizerCandidates, priceSide } from "./toOptimizerCandidates";
-import { persistCandidateSnapshots } from "./candidateSnapshot";
+import { persistCandidateSnapshots, type ElicitedPrior } from "./candidateSnapshot";
 import { recallCandidatesWithQwen, type RecallDiagnostics } from "./llmRecall";
 import { optimizeRobustHedge, type RobustOptimizerResult } from "@/lib/association";
 import type { MechanismGraph } from "@/lib/association";
@@ -425,7 +425,7 @@ async function buildCrossEventStrategies(
   baseWinnings: number,
   entryPrice: number,
   universe: NormalizedMarket[],
-): Promise<{ strategies: HedgeStrategy[]; directional: { aggressive: Superposition; conservative: Superposition } }> {
+): Promise<{ strategies: HedgeStrategy[]; directional: { aggressive: Superposition; conservative: Superposition }; elicitedPriors: Map<string, ElicitedPrior> }> {
   const universeById = new Map(universe.map((m) => [m.id, m]));
   const hedgeLikely = (r: DiscoveredRelation) => {
     const h = r.hypothesis;
@@ -474,7 +474,7 @@ async function buildCrossEventStrategies(
     const superAnchor = { winProb: Math.min(0.999, Math.max(0.001, anchor.probYes)), stakeUsd, entryPrice };
     const superBudget = Math.min(0.5 * baseWinnings, stakeUsd);
     const structural = deriveStructuralCompanions({ title: anchor.title, probYes: superAnchor.winProb }, universe);
-    return { strategies: [], directional: await buildDirectionalSuperposition(superAnchor, superBudget, universeById, structural, structural) };
+    return { strategies: [], directional: await buildDirectionalSuperposition(superAnchor, superBudget, universeById, structural, structural), elicitedPriors: new Map() };
   }
   const anchorTitle = `${anchor.title} (${anchor.marketTitle})`;
   const ap = Math.min(0.999, Math.max(0.001, anchor.probYes));
@@ -496,7 +496,7 @@ async function buildCrossEventStrategies(
     // regardless of any level mismatch with the market price. The real price is used only for pricing.
     const qB = ap * pW + (1 - ap) * pF;
     const fp = frechetProjectedPhi(ap, qB, pW);
-    return { r, pW, pF, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "" };
+    return { r, pW, pF, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "", model: e.model };
   });
   const out: HedgeStrategy[] = [];
   for (const x of elicited) {
@@ -610,6 +610,12 @@ async function buildCrossEventStrategies(
       .sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd || b.confidence - a.confidence)
       .slice(0, 10), // keep extra legs as raw material for combo construction
     directional,
+    // per-candidate elicitor prior, frozen by persistCandidateSnapshots so it can later be calibrated
+    elicitedPriors: new Map<string, ElicitedPrior>(
+      elicited
+        .filter((x): x is NonNullable<typeof x> => !!x)
+        .map((x) => [x.r.market.id, { pGivenWins: x.pW, pGivenFails: x.pF, model: x.model, confidence: x.conf }]),
+    ),
   };
 }
 
@@ -802,7 +808,9 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     failures: classified.filter(({ cls }) => Boolean(cls.llmFailureReason)).length,
     models: modelCounts,
   };
-  const candidateSnapshotsWritten = await persistCandidateSnapshots(anchor, classified).catch(() => 0);
+  // NOTE: the candidate-set freeze (persistCandidateSnapshots) now runs BELOW, after the strategy build, so
+  // it can include the elicitor's conditional prior (which is only computed inside buildCrossEventStrategies,
+  // i.e. on the withStrategies/user path). The cron freeze path leaves the prior null, exactly as before.
 
   // Stages 3–5: the descriptive relation map (φ from STRUCTURE or estimate only — never price-corr).
   const relations: DiscoveredRelation[] = classified
@@ -870,6 +878,12 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const strategies = strategyResult?.strategies;
   const directional = strategyResult?.directional;
   const combos = strategies && strategies.length ? buildCombos(strategies, stakeUsd, baseWinnings) : undefined;
+
+  // Freeze what discovery knew — INCLUDING the elicitor's conditional prior when it was computed (the
+  // withStrategies/user path; the cron freeze leaves it null). Captured pre-settlement, so the MODELED prior
+  // can later be calibrated against realized outcomes (leakage-safe). observed_at is minute-bucketed, so
+  // running the freeze here rather than earlier does not change idempotency.
+  const candidateSnapshotsWritten = await persistCandidateSnapshots(anchor, classified, new Date(), strategyResult?.elicitedPriors).catch(() => 0);
 
   return {
     status: "ok",

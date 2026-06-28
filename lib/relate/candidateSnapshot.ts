@@ -10,14 +10,20 @@ import { mechanismSignature, relationKey, relationRole } from "./relationKey";
 
 const nativeMarketId = (id: string) => id.replace(/^(polymarket|kalshi):/, "");
 
+/** The LLM-elicited conditional prior for a candidate's YES side, captured at freeze time. */
+export interface ElicitedPrior { pGivenWins: number; pGivenFails: number; model?: string; confidence?: number }
+
 /**
  * Persist what discovery knew at this moment. This is deliberately separate from settlement
  * ingestion: a future backtest may use a pair only if this evidence predates its resolution.
+ * `priors` (keyed by candidate market id) freezes the elicitor's conditional prior so it can later be
+ * calibrated against realized outcomes — leakage-safe because it predates settlement.
  */
 export async function persistCandidateSnapshots(
   anchor: NormalizedMarket,
   classified: ClassifiedCandidate[],
   at = new Date(),
+  priors?: Map<string, ElicitedPrior>,
 ): Promise<number> {
   if (!dbEnabled()) return 0;
   // Minute buckets make repeated UI refreshes idempotent without erasing the price time series.
@@ -36,6 +42,8 @@ export async function persistCandidateSnapshots(
     });
     if (role === "unrelated" || role === "rival") continue;
     const signature = mechanismSignature(graph, cls.hypothesis?.direction);
+    // The elicited prior is for the candidate's YES side; the NO side is its complement (1 − p).
+    const prior = priors?.get(candidate.id);
     for (const side of ["yes", "no"] as const) {
       const key = relationKey(graph.anchorEventClass, graph.candidateEventClass, candidate.predicate, role, side, signature);
       await upsertAssociationRelation({
@@ -65,6 +73,11 @@ export async function persistCandidateSnapshots(
         anchorVenue: anchor.venue,
         candidateEventKey: candidate.eventKey,
         candidateVenue: candidate.venue,
+        // frozen elicitor prior for THIS side (NO = complement of the elicited YES conditional)
+        pGivenFails: prior ? (side === "yes" ? prior.pGivenFails : 1 - prior.pGivenFails) : undefined,
+        pGivenWins: prior ? (side === "yes" ? prior.pGivenWins : 1 - prior.pGivenWins) : undefined,
+        elicitorModel: prior?.model,
+        priorConfidence: prior?.confidence,
       });
     }
   }

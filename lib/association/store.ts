@@ -40,6 +40,12 @@ export interface CandidateSnapshotInput {
   anchorVenue?: string;
   candidateEventKey?: string;
   candidateVenue?: string;
+  /** Frozen LLM-elicited conditional prior for THIS bought side + the model and its confidence. Captured at
+   *  freeze time (leakage-safe); enables later calibration of the elicitor against realized outcomes. */
+  pGivenFails?: number;
+  pGivenWins?: number;
+  elicitorModel?: string;
+  priorConfidence?: number;
 }
 
 /** A frozen pair awaiting settlement: enough to re-fetch both markets and resolve the outcome. */
@@ -122,7 +128,8 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
         (relation_key, observed_at, anchor_market_id, candidate_market_id, candidate_side,
          anchor_prob_yes, candidate_price, classification_method, relation_direction,
          mechanism_signature, hypothesis,
-         anchor_event_key, anchor_venue, candidate_event_key, candidate_venue)
+         anchor_event_key, anchor_venue, candidate_event_key, candidate_venue,
+         p_given_fails, p_given_wins, elicitor_model, prior_confidence)
       VALUES
         (${input.relationKey}, ${input.observedAt}, ${input.anchorMarketId}, ${input.candidateMarketId},
          ${input.candidateSide}, ${input.anchorProbYes}, ${input.candidatePrice},
@@ -130,7 +137,9 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
          ${input.mechanismSignature ?? null},
          CAST(${input.hypothesis ? JSON.stringify(input.hypothesis) : null} AS jsonb),
          ${input.anchorEventKey ?? null}, ${input.anchorVenue ?? null},
-         ${input.candidateEventKey ?? null}, ${input.candidateVenue ?? null})
+         ${input.candidateEventKey ?? null}, ${input.candidateVenue ?? null},
+         ${input.pGivenFails ?? null}, ${input.pGivenWins ?? null},
+         ${input.elicitorModel ?? null}, ${input.priorConfidence ?? null})
       ON CONFLICT (relation_key, observed_at, anchor_market_id, candidate_market_id, candidate_side)
       DO UPDATE SET
         anchor_prob_yes = EXCLUDED.anchor_prob_yes,
@@ -142,7 +151,11 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
         anchor_event_key = COALESCE(EXCLUDED.anchor_event_key, association_candidate_snapshot.anchor_event_key),
         anchor_venue = COALESCE(EXCLUDED.anchor_venue, association_candidate_snapshot.anchor_venue),
         candidate_event_key = COALESCE(EXCLUDED.candidate_event_key, association_candidate_snapshot.candidate_event_key),
-        candidate_venue = COALESCE(EXCLUDED.candidate_venue, association_candidate_snapshot.candidate_venue)
+        candidate_venue = COALESCE(EXCLUDED.candidate_venue, association_candidate_snapshot.candidate_venue),
+        p_given_fails = COALESCE(EXCLUDED.p_given_fails, association_candidate_snapshot.p_given_fails),
+        p_given_wins = COALESCE(EXCLUDED.p_given_wins, association_candidate_snapshot.p_given_wins),
+        elicitor_model = COALESCE(EXCLUDED.elicitor_model, association_candidate_snapshot.elicitor_model),
+        prior_confidence = COALESCE(EXCLUDED.prior_confidence, association_candidate_snapshot.prior_confidence)
       RETURNING relation_key
     `;
     if (rows.length) written++;
