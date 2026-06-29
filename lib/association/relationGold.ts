@@ -403,7 +403,7 @@ export const RELATION_GOLD: GoldRelation[] = [
     anchor: { title: "Manchester City win the 2026–27 Premier League title", eventClass: "tournament_winner" },
     candidate: { title: "Manchester City are relegated from the Premier League in 2026–27", eventClass: "league_outcome" },
     label: { relation: "MUTEX", direction: "NEGATIVE", mechanismType: "LOGICAL", scope: "SAME_ENTITY",
-      pGivenAnchorWins: 0.0, pGivenAnchorFails: 0.02, strengthBand: "strong",
+      pGivenAnchorWins: 0.0, pGivenAnchorFails: 0.05, strengthBand: "strong",
       counterexamples: ["a mid-season points deduction theoretically separating on-pitch finish from final standing (cannot make a champion finish bottom three)"], confidence: 0.99 },
     basis: "logical", labeledBy: "opus-4.8",
     rationale: "A team cannot both finish 1st and finish in the relegation zone in the same season; finishing positions are a single total order.",

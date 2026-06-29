@@ -493,20 +493,16 @@ async function buildCrossEventStrategies(
   const elicited = await mapPool(cands, 8, async (r) => {
     const e = await elicitConditionalWithQwen(anchorTitle, `${r.market.title} (${r.market.marketTitle})`).catch(() => null);
     if (!e || e.status !== "ok" || e.pGivenAnchorWins == null) return null;
-    const pWraw = e.pGivenAnchorWins;
-    const pFraw = e.pGivenAnchorFails ?? r.market.probYes;
-    // MODELED-only gold correction of the RAW elicitation (no-op until the gold snapshot is populated). The
-    // corrected values feed φ + the modeled legs; the RAW prior is frozen below so future elicitor
-    // meta-calibration measures the UN-corrected model. Keyed by mechanismType (signature segment 0).
-    const corrMech = (mechanismSignature(r.mechanismGraph, r.hypothesis?.direction)?.split(".")[0] ?? "rule").toUpperCase();
-    const corrected = applyCorrection({ pGivenAnchorWins: pWraw, pGivenAnchorFails: pFraw }, corrMech, GOLD_CORRECTION);
-    const pW = corrected.pGivenAnchorWins;
-    const pF = corrected.pGivenAnchorFails;
+    const pW = e.pGivenAnchorWins;
+    const pF = e.pGivenAnchorFails ?? r.market.probYes;
     // φ from the model's OWN two conditionals (via its implied marginal), so equal conditionals ⇒ φ=0
     // regardless of any level mismatch with the market price. The real price is used only for pricing.
     const qB = ap * pW + (1 - ap) * pF;
     const fp = frechetProjectedPhi(ap, qB, pW);
-    return { r, pW, pF, pWraw, pFraw, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "", model: e.model };
+    // pW/pF are the RAW elicitation: frozen as the persist-prior (so meta-cal measures the un-corrected
+    // model) and fed to calibrateLeg. The gold correction is applied LATER, MODELED-leg-only, so it can
+    // never alter a settlement-proven CALIBRATED leg.
+    return { r, pW, pF, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "", model: e.model };
   });
   const out: HedgeStrategy[] = [];
   for (const x of elicited) {
@@ -537,7 +533,16 @@ async function buildCrossEventStrategies(
     // Fréchet-clamp. The hedge gate below decides admission — a leg mapped to an amplifier-shaped bucket
     // sees its fail payoff shrink below its win payoff and is correctly rejected as a hedge.
     const cal = calibrateLeg(lookupBucket(tuning, role, mechType, direction, side, BUCKET_MIN_SAMPLES), pWsideModeled, pFsideModeled, qSide, ap);
-    const { pWside, pFside, tier, samples } = cal;
+    const { tier, samples } = cal;
+    let { pWside, pFside } = cal;
+    // MODELED-ONLY gold correction: re-derive an UN-calibrated leg's conditional payoff from the gold-corrected
+    // candidate conditionals (then re-Fréchet-clamp). A settlement-proven CALIBRATED leg is NEVER touched.
+    // Gated on a correction existing for this mechanism ⇒ a pure no-op until the gold snapshot is populated.
+    if (tier === "MODELED" && GOLD_CORRECTION.has(mechType.toUpperCase())) {
+      const c = applyCorrection({ pGivenAnchorWins: pW, pGivenAnchorFails: pF }, mechType.toUpperCase(), GOLD_CORRECTION);
+      pWside = buyYes ? c.pGivenAnchorWins : 1 - c.pGivenAnchorWins;
+      pFside = Math.min(buyYes ? c.pGivenAnchorFails : 1 - c.pGivenAnchorFails, qSide / Math.max(0.05, 1 - ap));
+    }
     const edge = pFside / qSide - 1; // expected hedge return per $1 spent, when your bet fails
     if (edge <= 0 || pFside <= pWside) continue; // must beat its price on fail, and pay more on fail than win
     // Spend at most enough to cover the stake (stake*qSide) AND at most half the bet's own upside, so the
@@ -625,7 +630,7 @@ async function buildCrossEventStrategies(
     elicitedPriors: new Map<string, ElicitedPrior>(
       elicited
         .filter((x): x is NonNullable<typeof x> => !!x)
-        .map((x) => [x.r.market.id, { pGivenWins: x.pWraw, pGivenFails: x.pFraw, model: x.model, confidence: x.conf }]),
+        .map((x) => [x.r.market.id, { pGivenWins: x.pW, pGivenFails: x.pF, model: x.model, confidence: x.conf }]),
     ),
   };
 }
