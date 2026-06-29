@@ -678,9 +678,22 @@ function hedgeDimension(s: { title: string; marketTitle: string; category?: stri
  * DIFFERENT DIMENSION of the event (scoring vs discipline vs timing vs narrative vs nomination …), so it
  * diversifies across the ways your bet can fail rather than restating one market's outcomes. At most ONE leg
  * per dimension: mutually-exclusive outcomes of a single market (several nominees, several O/U thresholds)
- * collapse to one and never stack. Legs are assembled greedily by expected cut; coverage uses a conditional-
- * independence model (stated in the UI); legs are sized to pay the stake if they hit, cost capped at half the upside.
+ * collapse to one and never stack. Legs are assembled greedily by expected cut; coverage is the assumption-free
+ * Fréchet lower bound on the union (never an independence/copula ρ); legs are sized to pay the stake if they hit,
+ * cost capped at half the upside.
  */
+/**
+ * Honest, assumption-free "at least one leg pays | anchor fails" coverage for a set of per-market group
+ * probabilities. The naive cross-market union 1−Π(1−p_g) silently assumes INDEPENDENCE (an implicit ρ=0),
+ * which double-counts coverage whenever the legs' fail-states overlap. We report the Fréchet–Hoeffding
+ * LOWER bound on the union instead — P(∪) ≥ max_g p_g — which holds for ANY correlation and is derived only
+ * from the marginals (NEVER a copula ρ). It can only ever LOWER an inflated independence number.
+ */
+export function frechetUnionCoverage(groupProbs: number[]): number {
+  if (groupProbs.length === 0) return 0;
+  return Math.max(0, Math.min(1, Math.max(...groupProbs)));
+}
+
 function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: number): HedgeCombo[] {
   if (legs.length === 0) return [];
   // Keep at most ONE leg per DIMENSION (the best by single-leg cut). Two legs on the same facet (two scoring
@@ -720,7 +733,14 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       const g = groups.get(s.marketTitle) ?? { sum: 0, max: 0, prop: false };
       groups.set(s.marketTitle, { sum: Math.min(1, g.sum + s.pGivenFails), max: Math.max(g.max, s.pGivenFails), prop: g.prop || isProp(s.title) });
     }
-    const coverage = 1 - [...groups.values()].reduce((p, g) => p * (1 - (g.prop ? g.max : g.sum)), 1);
+    // Per-market "at least one leg pays | fail" probability (intra-market handled above: exclusive→Σ,
+    // prop→max). Across markets we must NOT assume independence: the naive union 1−Π(1−p_g) silently
+    // imports an independence ρ that double-counts coverage when fail-states overlap. Report instead the
+    // assumption-free Fréchet–Hoeffding LOWER bound on the union — P(∪) ≥ max_g p_g, true for ANY joint
+    // correlation, derived only from the marginals (NEVER a copula ρ). This is the honest worst-case
+    // "at least one pays" coverage; it can only ever LOWER an inflated independence number, never raise it.
+    const groupPs = [...groups.values()].map((g) => (g.prop ? g.max : g.sum));
+    const coverage = frechetUnionCoverage(groupPs);
     const totalCost = picks.reduce((c, x) => c + x.cost, 0);
     // expected cut = Σ (allocation × the leg's per-dollar edge when your bet fails), capped at the stake.
     const cut = Math.min(picks.reduce((c, { s, cost }) => c + cost * (s.pGivenFails / Math.max(0.02, s.legPrice) - 1), 0), stakeUsd);

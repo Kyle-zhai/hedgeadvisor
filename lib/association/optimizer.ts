@@ -154,10 +154,17 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
     if (allocations.length >= maxLegs) break;
     if (remainingBudget <= 1e-9 || remainingModeledLoss <= 1e-9) break;
     // CALIBRATED and MODELED legs are both "soft" (can pay zero in a fail state, no joint model), so they
-    // share the soft-leg cap; ANALYTIC structural legs do not.
+    // share the soft-leg cap; ANALYTIC structural legs do not. The cap stays at 1 by design: the loss
+    // accounting below subtracts each leg's modeledLossReduction from remainingModeledLoss ADDITIVELY, which
+    // is correct only if two soft legs' fail-payouts are disjoint. Two correlated soft legs that pay in the
+    // SAME fail sub-states would then double-count their combined reduction. The honest cross-market joint we
+    // CAN assert without a copula is the Fréchet bound — but the worst-case (assumption-free) union lower
+    // bound is max_i(reduction_i), i.e. a second correlated soft leg can add ZERO guaranteed reduction. So an
+    // additive multi-soft-leg accounting cannot be made Fréchet-safe without risking a sizing overstatement;
+    // we keep the single best soft leg until a real settlement-calibrated joint model exists (never ρ).
     const isSoft = r.candidate.provenance === "CALIBRATED" || r.candidate.provenance === "MODELED";
     if (isSoft && calibratedSoftLegs >= maxSoftLegs) {
-      rejected.push({ candidateId: r.candidate.id, reason: "joint soft-leg model unavailable; only the single best soft leg is admitted" });
+      rejected.push({ candidateId: r.candidate.id, reason: "joint soft-leg model unavailable; only the single best soft leg is admitted (additive reduction is not Fréchet-safe for ≥2 correlated soft legs)" });
       continue;
     }
     if (r.candidate.associationGroup && usedGroups.has(r.candidate.associationGroup)) {
