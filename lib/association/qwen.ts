@@ -8,6 +8,7 @@ import {
   type ModelAttempt,
 } from "./modelFallback";
 import { llmCacheKey, loadLlmCache, recordLlmRun, storeLlmCache } from "./llmCache";
+import { withFewShot } from "./relationFewShot";
 
 const NodeSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
@@ -159,7 +160,7 @@ export interface QwenRelationOptions {
   cache?: boolean;
 }
 
-const SYSTEM = `You classify relationships between prediction-market resolution rules and build a small causal/event mechanism graph.
+export const SYSTEM = `You classify relationships between prediction-market resolution rules and build a small causal/event mechanism graph.
 Return JSON only. Never invent a numeric correlation, conditional probability, or trade size.
 EQUIVALENT, MUTEX, and IMPLICATION require logical necessity under the written rules.
 CAUSAL and THEMATIC are hypotheses and always require historical calibration.
@@ -208,7 +209,12 @@ export async function analyzeRelationWithQwen(
   };
   const useCache = options.cache ?? !options.fetchImpl;
   const trackMetrics = !options.fetchImpl;
-  const cacheKey = llmCacheKey("classification", "relation-v2", { anchor, candidate, models });
+  // Flag-gated few-shot anchors (HEDGE_RELATION_FEWSHOT=1); default OFF → SYSTEM unchanged.
+  const fewShotOn = process.env.HEDGE_RELATION_FEWSHOT === "1";
+  const systemPrompt = withFewShot(SYSTEM, fewShotOn);
+  // Include the few-shot flag in the cache key so few-shot-on and few-shot-off responses never share
+  // a cache entry (the prompt differs, so the cached classification must not collide).
+  const cacheKey = llmCacheKey("classification", "relation-v2", { anchor, candidate, models, fewShot: fewShotOn });
   if (useCache) {
     const cached = await loadLlmCache<unknown>(cacheKey);
     if (cached) {
@@ -232,7 +238,7 @@ export async function analyzeRelationWithQwen(
       enable_thinking: relationThinkingEnabled(attemptModel),
       max_tokens: 3000,
       messages: [
-        { role: "system", content: SYSTEM },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
           content: `Classify these contracts and return JSON.\nANCHOR:\n${JSON.stringify(anchor)}\nCANDIDATE:\n${JSON.stringify(candidate)}`,
