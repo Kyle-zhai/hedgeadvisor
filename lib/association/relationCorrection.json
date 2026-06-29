@@ -1,34 +1,5 @@
 {
-  "source": "gold",
-  "note": "MODELED-tier elicitor correction from the 1052-row Opus gold eval, qwen3-max chain (model observed: qwen3-max-2025-09-23). Per-mechanism mean(gold-model) on conditional payoffs + residual std. Applied MODELED-leg-only, reliability-shrunk by n/(n+8); sd drives the conservative failLower (#5). NOT settlement calibration; never promotes a tier.",
-  "byMechanismType": {
-    "IMPLICATION": {
-      "biasFail": 0.0588,
-      "biasWin": -0.0075,
-      "n": 121,
-      "sdFail": 0.3622,
-      "sdWin": 0.0592
-    },
-    "LOGICAL": {
-      "biasFail": -0.0431,
-      "biasWin": 0.0007,
-      "n": 284,
-      "sdFail": 0.2211,
-      "sdWin": 0.0432
-    },
-    "CAUSAL": {
-      "biasFail": -0.039,
-      "biasWin": -0.0589,
-      "n": 421,
-      "sdFail": 0.0979,
-      "sdWin": 0.1244
-    },
-    "OTHER": {
-      "biasFail": -0.0188,
-      "biasWin": -0.0035,
-      "n": 226,
-      "sdFail": 0.1541,
-      "sdWin": 0.1496
-    }
-  }
+  "source": "none",
+  "note": "Intentionally EMPTY — the committed snapshot applies NO correction at runtime (loadCorrectionMap returns an empty map). HONESTY GUARDRAIL: a correction built from one model's gold eval must not silently nudge the live elicitor's conditionals. Training snapshots are MEASUREMENTS only — do not commit them populated. Latest measurements: DeepSeek (1052) sign 82.0%, reliability 86%; qwen3-max (1052) sign 92.0%, reliability 100% — qwen3-max is accurate enough that the correction barely helps (LOO pFail 0.140->0.135), so it stays off. See test/relation-correction-wiring.test.ts.",
+  "byMechanismType": {}
 }
