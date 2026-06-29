@@ -605,6 +605,7 @@ async function buildCrossEventStrategies(
         venue: r.market.venue,
         dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
         mechanism: reason.slice(0, 160),
+        mechType, // carried so a MODELED leg can get its gold-residual conservative interval downstream
       });
     }
     return legs;
@@ -785,9 +786,23 @@ function toOptimizerModeledLegs(sup: Superposition): OptimizerCandidate[] {
         price: Math.min(0.999, Math.max(0.001, l.q)),
         associationGroup: `soft-market:${l.id}`,
       };
-      return l.tier === "ANALYTIC"
-        ? { ...base, provenance: "ANALYTIC", structuralPayoff: { payGivenFail: l.pFail, payGivenWin: l.pWin } }
-        : { ...base, provenance: "MODELED", modeledPayoff: { payGivenFail: l.pFail, payGivenWin: l.pWin } };
+      if (l.tier === "ANALYTIC") {
+        return { ...base, provenance: "ANALYTIC", structuralPayoff: { payGivenFail: l.pFail, payGivenWin: l.pWin } };
+      }
+      // MODELED: attach a CONSERVATIVE lower bound on payGivenFail from the gold residual std of this leg's
+      // mechanism (failLower = clamp01(pFail − k·sdFail), k≈1). It only ever lowers the optimizer's pFail —
+      // it never promotes the leg or sets a tier. No correction / no sdFail ⇒ omitted (flat 0.6 fallback).
+      const k = 1;
+      const corr = l.mechType ? GOLD_CORRECTION.get(l.mechType.toUpperCase()) : undefined;
+      const sdFail = corr?.sdFail;
+      const modeledPayoff: { payGivenFail: number; payGivenWin: number; failLower?: number } = {
+        payGivenFail: l.pFail,
+        payGivenWin: l.pWin,
+      };
+      if (typeof sdFail === "number" && sdFail > 0) {
+        modeledPayoff.failLower = Math.min(1, Math.max(0, l.pFail - k * sdFail));
+      }
+      return { ...base, provenance: "MODELED", modeledPayoff };
     });
 }
 

@@ -100,7 +100,20 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
       }
       pFail = clamp01(candidate.modeledPayoff.payGivenFail);
       pWin = clamp01(candidate.modeledPayoff.payGivenWin);
-      uncertainty = 0.6; // wide: it is an estimate, so it ranks below a calibrated leg of comparable payoff
+      // CONTINUOUS conservatism for MODELED legs (mirrors the CALIBRATED branch): when a gold-residual lower
+      // bound is supplied, shade pFail DOWN toward it by the conservatism knob and set uncertainty from the
+      // interval width — a wider gold-residual std ⇒ a more conservative (lower) pFail and a bigger ranking
+      // penalty. This can ONLY make a MODELED leg less attractive (lower pFail); it never promotes it past
+      // the c≥0.8 reject gate above and never sets a tier. Absent a bound, keep the flat 0.6 fallback.
+      const failLower = candidate.modeledPayoff.failLower;
+      if (typeof failLower === "number") {
+        const lower = clamp01(failLower);
+        const interval = Math.max(0, pFail - lower); // bound is a LOWER bound: never raise pFail
+        pFail = pFail - c * interval;
+        uncertainty = interval * 2;
+      } else {
+        uncertainty = 0.6; // wide: it is an estimate, so it ranks below a calibrated leg of comparable payoff
+      }
       const anchorFailP = Math.max(0.02, 1 - primaryPrice);
       pFail = Math.min(pFail, Math.min(1, price / anchorFailP)); // Fréchet feasibility (same as calibrated)
       pWin = Math.max(pWin, Math.max(0, (price - anchorFailP) / Math.max(0.02, primaryPrice)));

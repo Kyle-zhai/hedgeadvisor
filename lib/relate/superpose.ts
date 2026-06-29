@@ -44,6 +44,9 @@ export interface SuperposeLeg {
   /** Orthogonal facet (one leg per dimension in a combo). */
   dimension: string;
   mechanism?: string;
+  /** Mechanism TYPE (the bucket key, e.g. "CROSS_ENTITY"), carried so a MODELED leg can be given a
+   *  gold-residual conservative interval downstream. Not the human-readable `mechanism` text. */
+  mechType?: string;
   /** Confidence tier. ANALYTIC legs carry EXACT conditionals (a structural certainty like A ⊆ B) and
    *  bypass the noise margin; default MODELED (LLM-elicited). */
   tier?: Tier;
@@ -66,6 +69,8 @@ export interface PlacedLeg {
   pFail: number;
   dimension: string;
   mechanism?: string;
+  /** Mechanism TYPE (bucket key), carried from the source leg for the MODELED gold-residual interval. */
+  mechType?: string;
   costUsd: number;
   shares: number;
   /** a/q − 1: per-dollar return when the anchor WINS. */
@@ -211,7 +216,7 @@ export function buildSuperposition(
       const c = Number(cost.get(e.c.id)!.toFixed(2));
       return {
         id: e.c.id, marketTitle: e.c.marketTitle, title: e.c.title, side: e.c.side,
-        q: e.q, pWin: e.a, pFail: e.f, dimension: e.c.dimension, mechanism: e.c.mechanism,
+        q: e.q, pWin: e.a, pFail: e.f, dimension: e.c.dimension, mechanism: e.c.mechanism, mechType: e.c.mechType,
         costUsd: c, shares: Number((c / e.q).toFixed(2)), edgeWin: e.edgeWin, edgeFail: e.edgeFail, tier: e.tier,
         marginal: e.c.marginal, venue: e.c.venue,
       };

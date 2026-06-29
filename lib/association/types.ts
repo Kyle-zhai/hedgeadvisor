@@ -105,8 +105,13 @@ export interface OptimizerCandidate {
   /** The engine's CURRENT-ability conditional payoff for a leg with no sufficient settlement bucket yet:
    *  the LLM-elicited (and Fréchet-feasible) P(pays | anchor fails/wins), optionally shrunk toward whatever
    *  the moat has learned for its structure. UNPROVEN — admitted only below the strict end of the
-   *  conservatism knob, and the moat promoting its structure to CALIBRATED is what raises its confidence. */
-  modeledPayoff?: { payGivenFail: number; payGivenWin: number };
+   *  conservatism knob, and the moat promoting its structure to CALIBRATED is what raises its confidence.
+   *
+   *  `failLower` (optional) is a CONSERVATIVE lower bound on payGivenFail, derived from the gold residual
+   *  std of this leg's mechanism (failLower = clamp01(payGivenFail − k·sdFail)). It NEVER promotes the leg
+   *  — it only lets the optimizer apply continuous conservatism (shading payGivenFail DOWN, toward this
+   *  bound) instead of a flat uncertainty constant. The leg stays MODELED. */
+  modeledPayoff?: { payGivenFail: number; payGivenWin: number; failLower?: number };
 }
 
 export interface RobustOptimizerInput {

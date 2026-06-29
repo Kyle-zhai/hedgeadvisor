@@ -170,6 +170,48 @@ describe("robust hedge optimizer", () => {
     expect(strict.status).toBe("NO_ACTION");
   });
 
+  test("MODELED failLower shades pFail DOWN continuously with conservatism (never up), and stays MODELED", () => {
+    // A gold-residual lower bound (failLower < payGivenFail) should make the leg MORE conservative as the
+    // knob rises: the effective fail payoff slides from payGivenFail toward failLower. It must never raise
+    // pFail above payGivenFail, and the leg must remain MODELED-tiered. A heavy-favorite anchor (high
+    // primaryPrice) keeps the Fréchet ceiling (price / P(fail)) above payGivenFail, so we observe the
+    // continuous-conservatism shading directly rather than the feasibility clamp.
+    const heavy = { stakeUsd: 20, primaryPrice: 0.9, keepFraction: 0.5, conservatism: 0.9 };
+    const withBound: OptimizerCandidate = {
+      id: "mdl", label: "Modeled hedge", venue: "polymarket", side: "yes", price: 0.3,
+      provenance: "MODELED", modeledPayoff: { payGivenFail: 0.6, payGivenWin: 0.1, failLower: 0.4 },
+    };
+    const lenient = optimizeRobustHedge({ ...heavy, conservatism: 0.1, candidates: [withBound] });
+    const firmer = optimizeRobustHedge({ ...heavy, conservatism: 0.5, candidates: [withBound] });
+    expect(lenient.allocations[0].provenance).toBe("MODELED");
+    expect(firmer.allocations[0].provenance).toBe("MODELED");
+    // continuous: pFail = payGivenFail - c*(payGivenFail - failLower) = 0.6 - c*0.2
+    expect(lenient.allocations[0].effectivePayGivenFail).toBeCloseTo(0.58, 3); // 0.6 - 0.1*0.2
+    expect(firmer.allocations[0].effectivePayGivenFail).toBeCloseTo(0.50, 3);  // 0.6 - 0.5*0.2
+    // strictly more conservative (lower) as c rises, never above the raw payGivenFail
+    expect(firmer.allocations[0].effectivePayGivenFail).toBeLessThan(lenient.allocations[0].effectivePayGivenFail);
+    expect(lenient.allocations[0].effectivePayGivenFail).toBeLessThanOrEqual(0.6);
+
+    // A leg WITHOUT a bound keeps the flat 0.6-uncertainty fallback: its fail payoff is NOT shaded down.
+    const noBound: OptimizerCandidate = {
+      id: "mdl2", label: "Modeled hedge", venue: "polymarket", side: "yes", price: 0.3,
+      provenance: "MODELED", modeledPayoff: { payGivenFail: 0.6, payGivenWin: 0.1 },
+    };
+    const noBoundRes = optimizeRobustHedge({ ...heavy, conservatism: 0.5, candidates: [noBound] });
+    expect(noBoundRes.allocations[0].effectivePayGivenFail).toBeCloseTo(0.6, 3);
+  });
+
+  test("MODELED failLower never lets a leg pass the c>=0.8 reject gate", () => {
+    // Even a tight, favorable interval cannot promote a MODELED leg past the strict gate — it stays withheld.
+    const withBound: OptimizerCandidate = {
+      id: "mdl", label: "Modeled hedge", venue: "polymarket", side: "yes", price: 0.3,
+      provenance: "MODELED", modeledPayoff: { payGivenFail: 0.6, payGivenWin: 0.1, failLower: 0.59 },
+    };
+    const strict = optimizeRobustHedge({ ...base, conservatism: 0.8, candidates: [withBound] });
+    expect(strict.status).toBe("NO_ACTION");
+    expect(strict.rejected.some((x) => x.candidateId === "mdl")).toBe(true);
+  });
+
   test("never allocates both YES and NO alternatives from the same association market", () => {
     const calibration = calibrateConditionalPayoff({
       anchorPayCandidatePay: 10, anchorPayCandidateNoPay: 190,
