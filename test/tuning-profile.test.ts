@@ -106,4 +106,48 @@ describe("tuning profile — learn general rules, cluster-deduplicated, sign-sep
     const profile = __buildProfileForTest(rows(key("cross_domain", "thematic.x.y", "yes"), { fp: 1, fn: 1, wp: 1, wn: 1 }, "z"));
     expect(lookupBucket(profile, "cross_domain", "thematic", "ambiguous", "yes", 20)).toBeNull(); // 2 samples < 20
   });
+
+  // #1 sign-pure fallback rungs: when EVERY leaf rung (role|mech|dir|side, role|dir|side) is too thin, the
+  // coarser SIGN-PURE rungs (mech|dir|side, dir|side) — which pool ACROSS roles but keep DIRECTION — supply
+  // the shrink prior. The returned stat is flagged fallbackRung so it can NEVER promote to CALIBRATED.
+  it("FALLBACK: a thin-leaf leg inherits a coarser SIGN-PURE rung (role dropped, direction kept)", () => {
+    // two DIFFERENT roles, same mech+direction+side, each leaf too thin (6 fail / 6 win < 12) but the
+    // mech|dir|side rung pools to 12 each across roles.
+    const thin = { fp: 6, fn: 6, wp: 2, wn: 10 };
+    const profile = __buildProfileForTest([
+      ...rows(key("entity_event", sig("causal", "negative"), "yes"), thin, "r1"),
+      ...rows(key("cross_domain", sig("causal", "negative"), "yes"), thin, "r2"),
+    ]);
+    // a brand-new role with the SAME sign-matched mechanism: leaf rungs miss, coarse mech|dir rung applies.
+    const hit = lookupBucket(profile, "totally_new_role", "causal", "negative", "yes", 12);
+    expect(hit).toBeTruthy();
+    expect(hit!.fallbackRung).toBe(true); // SHRINK-only — never promotable to CALIBRATED
+    expect(hit!.samplesFail).toBeGreaterThanOrEqual(12); // pooled across roles
+  });
+
+  it("FALLBACK keeps DIRECTION pure: an amplifier rung is never returned for a hedge lookup", () => {
+    // mech=causal, side=yes — but only the POSITIVE (amplifier) coarse rung is populated. A NEGATIVE (hedge)
+    // lookup must NOT borrow it (direction stays in every rung), so it finds nothing.
+    const profile = __buildProfileForTest([
+      ...rows(key("entity_event", sig("causal", "positive"), "yes"), amplifier, "p1"),
+      ...rows(key("cross_domain", sig("causal", "positive"), "yes"), amplifier, "p2"),
+    ]);
+    expect(lookupBucket(profile, "new_role", "causal", "negative", "yes", 12)).toBeNull(); // no opposite-sign borrow
+    const amp = lookupBucket(profile, "new_role", "causal", "positive", "yes", 12);
+    expect(amp).toBeTruthy();
+    expect(amp!.fallbackRung).toBe(true);
+    expect(amp!.specificity).toBeLessThan(0); // sign-pure amplifier
+  });
+
+  it("FALLBACK is SUBORDINATE to a populated leaf rung (leaf wins, not flagged fallback)", () => {
+    // a well-evidenced leaf rung (role|mech|dir|side) and a coarse rung both qualify ⇒ the leaf is preferred
+    // and is NOT a fallback (it carries the leg's own samples, so it may promote).
+    const profile = __buildProfileForTest([
+      ...rows(key("entity_event", sig("causal", "negative"), "yes"), hedge, "leaf"),
+      ...rows(key("cross_domain", sig("causal", "negative"), "yes"), hedge, "other"),
+    ]);
+    const hit = lookupBucket(profile, "entity_event", "causal", "negative", "yes", 4);
+    expect(hit).toBeTruthy();
+    expect(hit!.fallbackRung).toBeFalsy(); // leaf rung, promotion-eligible
+  });
 });

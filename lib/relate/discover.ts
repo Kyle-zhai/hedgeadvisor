@@ -399,8 +399,11 @@ export function calibrateLeg(
     const w = m / (m + BUCKET_PRIOR_STRENGTH); // κ pseudo-samples of LLM prior, evidence on the weaker branch
     pFside = w * bucket.pGivenFails + (1 - w) * pFsideModeled;
     pWside = w * bucket.pGivenWins + (1 - w) * pWsideModeled;
-    tier = m >= CALIB_MIN_SAMPLES ? "CALIBRATED" : "MODELED";
-    samples = bucket.samplesFail + bucket.samplesWin;
+    // HONESTY GUARDRAIL: a COARSE FALLBACK rung (role dropped to pool sign-matched evidence) may SHRINK the
+    // MODELED prior, but its pooled samples MUST NEVER promote to CALIBRATED — that gate reads a leg's OWN
+    // leaf-rung settlement evidence only. So a fallback bucket stays MODELED with samples=0 regardless of m.
+    tier = !bucket.fallbackRung && m >= CALIB_MIN_SAMPLES ? "CALIBRATED" : "MODELED";
+    samples = bucket.fallbackRung ? 0 : bucket.samplesFail + bucket.samplesWin;
   }
   // FRÉCHET FEASIBILITY — ALWAYS, bucket or not: a leg cannot pay more conditional on a state than its OWN
   // marginal allows. P(pay|fail) ≤ P(side)/P(fail); P(pay|win) ≤ P(side)/P(win). Without this a raw,

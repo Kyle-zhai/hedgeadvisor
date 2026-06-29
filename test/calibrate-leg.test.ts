@@ -65,4 +65,15 @@ describe("calibrateLeg — the single moat-driven calibration path (hedge + ampl
     expect(r.tier).toBe("CALIBRATED");
     expect(r.pFside).toBeLessThan(r.pWside); // strong amplifier evidence rightly overrides the LLM's hedge claim
   });
+
+  // HONESTY GUARDRAIL (#1 sign-pure fallback rungs): a COARSE fallback bucket may SHRINK the prior, but its
+  // pooled samples must NEVER promote a leg to CALIBRATED — even with ≥20 on BOTH branches. CALIBRATED is
+  // settlement-proven LEAF evidence only; a parent rung pooling unrelated roles cannot manufacture it.
+  test("a FALLBACK rung (≥20 BOTH) shrinks the prior but STAYS MODELED with samples=0 (no false promotion)", () => {
+    const r = calibrateLeg(bucket({ pGivenFails: 0.9, pGivenWins: 0.1, specificity: 0.8, samplesFail: 40, samplesWin: 40, fallbackRung: true }), 0.5, 0.5, 0.6, 0.5);
+    expect(r.tier).toBe("MODELED"); // a coarse fallback can NEVER be CALIBRATED
+    expect(r.samples).toBe(0); // its pooled samples are not a leg's own settlement evidence
+    expect(r.pFside).toBeGreaterThan(0.5); // but it STILL shrinks the prior toward the sign-matched rule
+    expect(r.pFside).toBeGreaterThan(r.pWside);
+  });
 });

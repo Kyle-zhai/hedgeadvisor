@@ -27,6 +27,11 @@ export interface BucketStat {
   hedgeSpecificityLower: number;
   samplesFail: number;
   samplesWin: number;
+  /** True when this stat was resolved from a COARSER sign-pure FALLBACK rung (mechType|dir|side or
+   *  dir|side) because the leaf rung lacked BUCKET_MIN_SAMPLES. A fallback rung may shrink the MODELED
+   *  prior, but its pooled samples MUST NEVER promote a leg to CALIBRATED — that gate reads the leaf
+   *  rung's own independent samples only. Omitted/false ⇒ a leaf rung (promotion-eligible). */
+  fallbackRung?: boolean;
 }
 export type TuningProfile = Map<string, BucketStat>;
 
@@ -47,12 +52,29 @@ export function parseRelationKey(key: string): { role: string; mechType: string;
   return { role, mechType, direction, side };
 }
 
+/** The PROMOTION-ELIGIBLE (LEAF) rungs: role+mechanism+direction+side, then role+direction+side. These
+ *  carry a leg's OWN independent settlement samples, so ONLY these may promote a leg to CALIBRATED. The
+ *  CALIBRATED gate (toOptimizerCandidates.ts, calibrateLeg) reads exclusively from these.
+ *  DIRECTION is ALWAYS in the key so a hedge (negative) and an amplifier (positive) of the same
+ *  role/mechanism/side can never pool — pooling opposite signs nets their specificity toward noise and
+ *  would let an amplifier-contaminated bucket pass the optimizer's specificity gate (F2). */
 export function bucketKeys(role: string, mechType: string, direction: string, side: string): string[] {
-  // most specific first: role+mechanism+direction+side, then role+direction+side (the coarse fallback).
-  // DIRECTION is ALWAYS in the key so a hedge (negative) and an amplifier (positive) of the same
-  // role/mechanism/side can never pool — pooling opposite signs nets their specificity toward noise and
-  // would let an amplifier-contaminated bucket pass the optimizer's specificity gate (F2).
   return [`${role}|${mechType}|${direction}|${side}`, `${role}|${direction}|${side}`];
+}
+
+/** Coarser SIGN-PURE FALLBACK rungs that DROP role to gain pooled evidence: mechType+direction+side, then
+ *  direction+side. DIRECTION stays in EVERY rung (never dropped to gain samples), so an amplifier can never
+ *  contaminate a hedge cohort. These are SHRINK-TARGET-ONLY: they may pull a thin MODELED prior toward what
+ *  outcomes of this sign actually do, but their pooled samples MUST NEVER promote a leg to CALIBRATED. */
+export function shrinkFallbackKeys(mechType: string, direction: string, side: string): string[] {
+  return [`${mechType}|${direction}|${side}`, `${direction}|${side}`];
+}
+
+/** ALL rungs that get POPULATED from settlement rows (leaf + coarse fallback). The build path pools every
+ *  rung so a coarse fallback bucket EXISTS for the shrink path; the CALIBRATED gate still consults leaf rungs
+ *  only (bucketKeys), so populating the coarse rungs here can never enable a false promotion. */
+function allBucketKeys(role: string, mechType: string, direction: string, side: string): string[] {
+  return [...bucketKeys(role, mechType, direction, side), ...shrinkFallbackKeys(mechType, direction, side)];
 }
 
 interface AggCells { app: number; apn: number; anp: number; ann: number }
@@ -71,7 +93,7 @@ function aggregateBucketsByCluster(rows: BucketBranchRow[]): Map<string, AggCell
   for (const r of rows) {
     const p = parseRelationKey(r.relationKey);
     if (!p) continue;
-    for (const bk of bucketKeys(p.role, p.mechType, p.direction, p.side)) {
+    for (const bk of allBucketKeys(p.role, p.mechType, p.direction, p.side)) {
       const gk = `${bk}\u0000${r.cluster}\u0000${r.anchorPays ? 1 : 0}`;
       const g = groups.get(gk);
       if (g) { g.pay += r.pay; g.total += r.total; }
@@ -139,12 +161,24 @@ export async function loadTuningProfile(ttlMs = 300_000, nowMs = Date.now()): Pr
   return profile;
 }
 
-/** Look up the most-specific learned bucket (role+mechanism+direction+side, else role+direction+side)
- *  with enough evidence. Direction keeps hedge (negative) and amplifier (positive) cohorts separate. */
+/** Look up the SHRINK target for a leg: the most-specific learned bucket with enough evidence. First the
+ *  PROMOTION-ELIGIBLE leaf rungs (role+mechanism+direction+side, else role+direction+side); if NONE of those
+ *  carry BUCKET_MIN_SAMPLES on both branches, fall through to the coarser SIGN-PURE FALLBACK rungs
+ *  (mechType+direction+side, else direction+side) so a thin leaf still gets a sign-matched prior nudge.
+ *
+ *  HONESTY GUARDRAIL: a fallback rung is returned with `fallbackRung: true` so the caller (calibrateLeg)
+ *  NEVER counts its pooled samples toward CALIBRATED promotion. Direction stays in EVERY rung, so a hedge
+ *  cohort can never absorb an amplifier's payoff. Direction keeps hedge (negative) and amplifier (positive)
+ *  cohorts separate at every level. */
 export function lookupBucket(profile: TuningProfile, role: string, mechType: string, direction: string, side: string, minSamplesPerBranch: number): BucketStat | null {
   for (const k of bucketKeys(role, mechType, direction, side)) {
     const b = profile.get(k);
-    if (b && Math.min(b.samplesFail, b.samplesWin) >= minSamplesPerBranch) return b;
+    if (b && Math.min(b.samplesFail, b.samplesWin) >= minSamplesPerBranch) return b; // leaf: promotion-eligible
+  }
+  // Leaf rungs too thin → coarser SIGN-PURE fallback, SHRINK-ONLY (can never promote to CALIBRATED).
+  for (const k of shrinkFallbackKeys(mechType, direction, side)) {
+    const b = profile.get(k);
+    if (b && Math.min(b.samplesFail, b.samplesWin) >= minSamplesPerBranch) return { ...b, fallbackRung: true };
   }
   return null;
 }
