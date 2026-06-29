@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { RELATION_GOLD, type GoldRelation } from "@/lib/association/relationGold";
+import { signOf } from "@/lib/association/relationEval";
 
 const DIRECTIONS = new Set(["POSITIVE", "NEGATIVE", "AMBIGUOUS"]);
 describe("relation gold dataset integrity", () => {
@@ -19,6 +20,13 @@ describe("relation gold dataset integrity", () => {
   it("includes negative controls (UNRELATED/AMBIGUOUS)", () => {
     const negs = RELATION_GOLD.filter((g) => g.label.relation === "UNRELATED" || g.label.direction === "AMBIGUOUS");
     expect(negs.length).toBeGreaterThanOrEqual(3);
+  });
+  it("every row's stated direction matches the sign its conditionals imply (eval-consistent)", () => {
+    // The eval scores Qwen with signOf(pWins,pFails); a gold row whose stated direction disagrees with its
+    // own conditionals would mis-grade the model. This guarantees every label (existing + new) is coherent.
+    for (const g of RELATION_GOLD) {
+      expect(signOf(g.label.pGivenAnchorWins, g.label.pGivenAnchorFails), `${g.id}: dir ${g.label.direction} but conditionals imply otherwise`).toBe(g.label.direction);
+    }
   });
   it("covers the taxonomy and has enough rows", () => {
     expect(RELATION_GOLD.length).toBeGreaterThanOrEqual(40);
