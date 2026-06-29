@@ -1,12 +1,12 @@
 {
   "source": "gold",
-  "generatedAt": "2026-06-29T04:11:07.693Z",
-  "note": "MODELED-tier elicitor correction from the 100-row Opus gold eval (relationGold.ts). Per-mechanism mean(gold - Qwen) on the conditional payoffs, applied MODELED-leg-only (never CALIBRATED). NOT settlement calibration; never promotes a tier. Leave-one-out validation: conditional MAE 0.123 -> 0.105 (14.3% out-of-sample improvement). Regenerate by re-running the gold eval when relationGold.ts changes.",
-  "evalBaseline": { "rows": 100, "signAccuracy": 0.93, "mechanismAccuracy": 0.45, "condMAE": 0.11, "looMAEImprovementPct": 14.3 },
+  "generatedAt": "2026-06-29T04:40:00.000Z",
+  "note": "MODELED-tier elicitor correction from the 160-row Opus gold eval (relationGold.ts). Per-mechanism mean(gold - Qwen) on the conditional payoffs, applied MODELED-leg-only (never CALIBRATED), shrink 0.5. NOT settlement calibration; never promotes a tier. Leave-one-out validation: conditional MAE 0.128 -> 0.111 (13.0% out-of-sample improvement). Regenerate by re-running the gold eval when relationGold.ts changes.",
+  "evalBaseline": { "rows": 160, "signAccuracy": 0.931, "mechanismAccuracy": 0.463, "condMAE": 0.128, "looMAEImprovementPct": 13.0 },
   "byMechanismType": {
-    "IMPLICATION": { "biasFail": 0.1186, "biasWin": 0.0157, "n": 7 },
-    "LOGICAL": { "biasFail": 0.08, "biasWin": 0.0136, "n": 25 },
-    "CAUSAL": { "biasFail": 0.0866, "biasWin": 0.1328, "n": 53 },
-    "OTHER": { "biasFail": 0.1367, "biasWin": 0.124, "n": 15 }
+    "IMPLICATION": { "biasFail": 0.2473, "biasWin": 0.0109, "n": 11 },
+    "LOGICAL": { "biasFail": 0.0803, "biasWin": 0.0095, "n": 37 },
+    "CAUSAL": { "biasFail": 0.065, "biasWin": 0.125, "n": 88 },
+    "OTHER": { "biasFail": 0.1134, "biasWin": 0.11, "n": 24 }
   }
 }
