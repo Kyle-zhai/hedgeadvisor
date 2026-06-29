@@ -22,12 +22,15 @@ import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
 import { buildOptimizerCandidates, priceSide } from "./toOptimizerCandidates";
 import { persistCandidateSnapshots, type ElicitedPrior } from "./candidateSnapshot";
+import { applyCorrection, loadCorrectionMap } from "@/lib/association/relationCorrection";
 import { recallCandidatesWithQwen, type RecallDiagnostics } from "./llmRecall";
 import { optimizeRobustHedge, type RobustOptimizerResult, type OptimizerCandidate } from "@/lib/association";
 import type { MechanismGraph } from "@/lib/association";
 import type { CandidatePair, NormalizedMarket } from "./types";
 
 const WC_CATEGORY = "world-cup";
+// Gold-derived MODELED-tier elicitor correction (no-op until the gold eval populates the snapshot).
+const GOLD_CORRECTION = loadCorrectionMap();
 const csv = (value: string | undefined, fallback: string[]) => {
   const parsed = value?.split(",").map((s) => s.trim()).filter(Boolean);
   return parsed?.length ? parsed : fallback;
@@ -490,13 +493,20 @@ async function buildCrossEventStrategies(
   const elicited = await mapPool(cands, 8, async (r) => {
     const e = await elicitConditionalWithQwen(anchorTitle, `${r.market.title} (${r.market.marketTitle})`).catch(() => null);
     if (!e || e.status !== "ok" || e.pGivenAnchorWins == null) return null;
-    const pW = e.pGivenAnchorWins;
-    const pF = e.pGivenAnchorFails ?? r.market.probYes;
+    const pWraw = e.pGivenAnchorWins;
+    const pFraw = e.pGivenAnchorFails ?? r.market.probYes;
+    // MODELED-only gold correction of the RAW elicitation (no-op until the gold snapshot is populated). The
+    // corrected values feed φ + the modeled legs; the RAW prior is frozen below so future elicitor
+    // meta-calibration measures the UN-corrected model. Keyed by mechanismType (signature segment 0).
+    const corrMech = (mechanismSignature(r.mechanismGraph, r.hypothesis?.direction)?.split(".")[0] ?? "rule").toUpperCase();
+    const corrected = applyCorrection({ pGivenAnchorWins: pWraw, pGivenAnchorFails: pFraw }, corrMech, GOLD_CORRECTION);
+    const pW = corrected.pGivenAnchorWins;
+    const pF = corrected.pGivenAnchorFails;
     // φ from the model's OWN two conditionals (via its implied marginal), so equal conditionals ⇒ φ=0
     // regardless of any level mismatch with the market price. The real price is used only for pricing.
     const qB = ap * pW + (1 - ap) * pF;
     const fp = frechetProjectedPhi(ap, qB, pW);
-    return { r, pW, pF, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "", model: e.model };
+    return { r, pW, pF, pWraw, pFraw, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "", model: e.model };
   });
   const out: HedgeStrategy[] = [];
   for (const x of elicited) {
@@ -615,7 +625,7 @@ async function buildCrossEventStrategies(
     elicitedPriors: new Map<string, ElicitedPrior>(
       elicited
         .filter((x): x is NonNullable<typeof x> => !!x)
-        .map((x) => [x.r.market.id, { pGivenWins: x.pW, pGivenFails: x.pF, model: x.model, confidence: x.conf }]),
+        .map((x) => [x.r.market.id, { pGivenWins: x.pWraw, pGivenFails: x.pFraw, model: x.model, confidence: x.conf }]),
     ),
   };
 }

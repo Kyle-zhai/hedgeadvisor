@@ -1,0 +1,6 @@
+{
+  "source": "gold",
+  "generatedAt": null,
+  "note": "MODELED-tier elicitor correction derived from the Opus gold set (relationGold.ts) via the live eval. NOT settlement calibration; never promotes a tier. Empty until the live eval populates byMechanismType.",
+  "byMechanismType": {}
+}

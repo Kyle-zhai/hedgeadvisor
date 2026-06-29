@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { getSql, dbEnabled, ensureSchema } from "@/lib/data/db";
 import { loadTuningProfile } from "@/lib/relate/tuningProfile";
+import relationCorrectionSnapshot from "@/lib/association/relationCorrection.json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -177,5 +178,9 @@ export async function GET(req: Request) {
     .sort((a, b) => Math.min(b.samplesFail, b.samplesWin) - Math.min(a.samplesFail, a.samplesWin))
     .slice(0, 30);
 
-  return NextResponse.json({ overview, backtestEligible, pendingFrozenPairs: pendingFrozen, calibrationReadiness, learnedRules, llm: { cache: llmCache, runs24h: llmRuns24h, modelTelemetry }, topFrozenRelations });
+  // Gold-derived elicitor correction — a MODELED-tier prior adjustment, explicitly NOT settlement
+  // calibration and never promotes a tier (empty byMechanismType until the live gold eval populates it).
+  const relationCorrection = { ...relationCorrectionSnapshot, tier: "MODELED", isSettlementCalibration: false };
+
+  return NextResponse.json({ overview, backtestEligible, pendingFrozenPairs: pendingFrozen, calibrationReadiness, learnedRules, relationCorrection, llm: { cache: llmCache, runs24h: llmRuns24h, modelTelemetry }, topFrozenRelations });
 }
