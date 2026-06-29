@@ -21,4 +21,19 @@ describe("relation correction wiring", () => {
     const elicited = { pGivenAnchorWins: 0.3, pGivenAnchorFails: 0.7 };
     expect(applyCorrection(elicited, "NOT_A_REAL_MECH", map)).toEqual(elicited);
   });
+  it("applies a reliability-shrunk bias: the move equals shrink * n/(n+8) * bias", () => {
+    const map = loadCorrectionMap();
+    const c = map.get("CAUSAL")!;
+    const reliability = c.n / (c.n + 8);
+    const out = applyCorrection({ pGivenAnchorWins: 0.3, pGivenAnchorFails: 0.3 }, "CAUSAL", map, 0.5);
+    expect(out.pGivenAnchorFails).toBeCloseTo(0.3 + 0.5 * reliability * c.biasFail, 6);
+    expect(out.pGivenAnchorWins).toBeCloseTo(0.3 + 0.5 * reliability * c.biasWin, 6);
+  });
+  it("loads sdFail/sdWin when present, and tolerates their absence in older snapshots", () => {
+    const map = loadCorrectionMap();
+    for (const c of map.values()) {
+      if (c.sdFail !== undefined) expect(c.sdFail).toBeGreaterThanOrEqual(0);
+      if (c.sdWin !== undefined) expect(c.sdWin).toBeGreaterThanOrEqual(0);
+    }
+  });
 });
