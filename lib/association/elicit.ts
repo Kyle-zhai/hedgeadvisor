@@ -114,5 +114,15 @@ export async function elicitConditionalWithQwen(
   }
   const decoded = decode(completion.content);
   if (!decoded.parsed) return { status: "error", model: completion.model, failReason: decoded.error, attempts: completion.attempts };
-  return { status: "ok", model: completion.model, ...decoded.parsed.data, attempts: completion.attempts };
+  const data = decoded.parsed.data;
+  // HONESTY GUARD: when the elicitor's OWN reason declares independence ("independent, no concrete mechanism",
+  // the exact phrase the SYSTEM prompt asks for on unrelated pairs) yet it still returned divergent conditionals,
+  // trust the qualitative call over the noisy numbers and EQUALIZE them. Independence means no conditional loss
+  // reduction, so this stops the optimizer building a spurious cross-domain hedge from a pair the model itself
+  // says is unrelated. Observed live on qwen3-max: a Fed-decision anchor "hedged" by a World Cup market it
+  // labeled "independent" (pWin 0.44 / pFail 0.85). Only fires on the explicit independence admission.
+  const independent = /\bno concrete mechanism\b/i.test(data.reason) || /^\s*independent\b/i.test(data.reason);
+  const mid = (data.pGivenAnchorWins + data.pGivenAnchorFails) / 2;
+  const guarded = independent ? { ...data, pGivenAnchorWins: mid, pGivenAnchorFails: mid } : data;
+  return { status: "ok", model: completion.model, ...guarded, attempts: completion.attempts };
 }

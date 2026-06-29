@@ -507,6 +507,12 @@ async function buildCrossEventStrategies(
     // never alter a settlement-proven CALIBRATED leg.
     return { r, pW, pF, phi: fp.phi, conf: e.confidence ?? 0.5, reason: e.reason ?? "", model: e.model };
   });
+  // The elicitor's OWN independence admission: a pair it calls unrelated is NOT a hedge. Drop such legs from
+  // BOTH the strategy list AND the superposition ladders (toSuperposeLegs has no φ gate), so bucket calibration
+  // can't manufacture a spurious edge from divergent-but-independent conditionals. Observed live: qwen3-max
+  // "hedging" a Fed-decision anchor with a World Cup / F1 market it labeled "independent, no concrete mechanism".
+  const isIndependentReason = (reason: string) =>
+    /\bindependent\b|no (?:concrete|clear|direct|obvious|specific|real|plausible|meaningful) (?:mechanism|link|connection|relationship)|\bunrelated\b/i.test(reason);
   const out: HedgeStrategy[] = [];
   for (const x of elicited) {
     if (!x) continue;
@@ -514,6 +520,7 @@ async function buildCrossEventStrategies(
     const phiMin = r.recall === "diversity" ? DIVERSITY_PHI_MIN : PHI_MIN;
     const confMin = r.recall === "diversity" ? DIVERSITY_CONF_MIN : CONF_MIN;
     if (Math.abs(phi) < phiMin || conf < confMin) continue;
+    if (isIndependentReason(reason)) continue;
     const buyYes = phi < 0; // anti-correlated → the candidate's YES pays when your bet fails
     const qSide = Math.min(0.98, Math.max(0.02, buyYes ? r.market.probYes : 1 - r.market.probYes));
     const pWsideModeled = buyYes ? pW : 1 - pW; // P(bought side pays | anchor wins), before calibration
@@ -579,6 +586,7 @@ async function buildCrossEventStrategies(
     for (const x of elicited) {
       if (!x || x.conf < CONF_MIN) continue;
       const { r, pW, pF, reason } = x;
+      if (isIndependentReason(reason)) continue; // never ladder a leg the elicitor called independent
       const qYes = Math.min(0.98, Math.max(0.02, r.market.probYes));
       // Map to the structural bucket (same role × mechanism as the hedge path) and CALIBRATE BOTH sides:
       // the win-branch shrinks toward the bucket's amplifier signal, the fail-branch toward its hedge
