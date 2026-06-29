@@ -693,8 +693,9 @@ function hedgeDimension(s: { title: string; marketTitle: string; category?: stri
  * from the marginals (NEVER a copula ρ). It can only ever LOWER an inflated independence number.
  */
 export function frechetUnionCoverage(groupProbs: number[]): number {
-  if (groupProbs.length === 0) return 0;
-  return Math.max(0, Math.min(1, Math.max(...groupProbs)));
+  const finite = groupProbs.filter((p) => Number.isFinite(p));
+  if (finite.length === 0) return 0;
+  return Math.max(0, Math.min(1, Math.max(...finite)));
 }
 
 function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: number): HedgeCombo[] {

@@ -115,7 +115,10 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
         const lower = clamp01(failLower);
         const interval = Math.max(0, pFail - lower); // bound is a LOWER bound: never raise pFail
         pFail = pFail - c * interval;
-        uncertainty = interval * 2;
+        // Floor at the flat estimate-grade penalty so a TIGHT gold-residual std can never make a MODELED leg
+        // RANK higher than under the flat fallback — the interval may only shade pFail down + widen the
+        // penalty, never narrow it. Keeps the "can ONLY make a MODELED leg less attractive" invariant true.
+        uncertainty = Math.max(0.6, interval * 2);
       } else {
         uncertainty = 0.6; // wide: it is an estimate, so it ranks below a calibrated leg of comparable payoff
       }
