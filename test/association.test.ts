@@ -212,6 +212,50 @@ describe("robust hedge optimizer", () => {
     expect(strict.rejected.some((x) => x.candidateId === "mdl")).toBe(true);
   });
 
+  test("de-vigged marginal tightens the Fréchet clamp below the gross price (parameter-free)", () => {
+    // A near-perfect bucket calibration (payGivenFail ≈ 1) on a candidate whose gross executable price
+    // (0.5, carrying spread + fee + vig) does NOT bind the clamp at this anchor (P(fail)=0.4 ⇒
+    // price/P(fail)=1.25, capped to 1), so the price-only pFail stays at the (high) calibrated mean. The
+    // DE-VIGGED marginal (0.3) is the leg's true probability mass and binds the clamp (0.3/0.4=0.75),
+    // correctly capping P(pay|fail). Both legs still allocate; carrying the marginal LOWERS pFail.
+    const heavy = { stakeUsd: 20, primaryPrice: 0.6, keepFraction: 0.5, conservatism: 0.5 };
+    const calibration = calibrateConditionalPayoff({
+      anchorPayCandidatePay: 1, anchorPayCandidateNoPay: 199,
+      anchorNoPayCandidatePay: 199, anchorNoPayCandidateNoPay: 1,
+    });
+    const withMarginal: OptimizerCandidate = {
+      id: "devigged", label: "De-vigged leg", venue: "polymarket", side: "no", price: 0.5,
+      marginal: 0.3, maxSpendUsd: 5, provenance: "CALIBRATED", calibration,
+    };
+    const priceOnly: OptimizerCandidate = { ...withMarginal, id: "price-only", marginal: undefined };
+    const withRes = optimizeRobustHedge({ ...heavy, candidates: [withMarginal] });
+    const withoutRes = optimizeRobustHedge({ ...heavy, candidates: [priceOnly] });
+    // marginal-bound pFail clamps to marginal/P(fail) = 0.3/0.4 = 0.75
+    expect(withRes.allocations[0].effectivePayGivenFail).toBeCloseTo(0.75, 3);
+    // price-only clamp (price/P(fail)=1.25, capped to 1) does NOT bind ⇒ pFail stays at the cal mean (> 0.75)
+    expect(withoutRes.allocations[0].effectivePayGivenFail).toBeGreaterThan(0.9);
+    // tightening is monotone: the de-vigged clamp is never looser than the gross-price clamp
+    expect(withRes.allocations[0].effectivePayGivenFail).toBeLessThan(withoutRes.allocations[0].effectivePayGivenFail);
+  });
+
+  test("a marginal above the executable price is ignored (clamp falls back to price, never loosens)", () => {
+    // Guard: a stale/overstated marginal (> price) must NOT be used as the clamp numerator — that would
+    // loosen the Fréchet bound. The optimizer falls back to price, so pFail matches the price-only result.
+    const heavy = { stakeUsd: 20, primaryPrice: 0.6, keepFraction: 0.5, conservatism: 0.5 };
+    const calibration = calibrateConditionalPayoff({
+      anchorPayCandidatePay: 1, anchorPayCandidateNoPay: 199,
+      anchorNoPayCandidatePay: 199, anchorNoPayCandidateNoPay: 1,
+    });
+    const overstated: OptimizerCandidate = {
+      id: "overstated", label: "Overstated marginal", venue: "polymarket", side: "no", price: 0.5,
+      marginal: 0.95, maxSpendUsd: 5, provenance: "CALIBRATED", calibration,
+    };
+    const priceOnly: OptimizerCandidate = { ...overstated, id: "price-only-2", marginal: undefined };
+    const overRes = optimizeRobustHedge({ ...heavy, candidates: [overstated] });
+    const priceRes = optimizeRobustHedge({ ...heavy, candidates: [priceOnly] });
+    expect(overRes.allocations[0].effectivePayGivenFail).toBeCloseTo(priceRes.allocations[0].effectivePayGivenFail, 6);
+  });
+
   test("never allocates both YES and NO alternatives from the same association market", () => {
     const calibration = calibrateConditionalPayoff({
       anchorPayCandidatePay: 10, anchorPayCandidateNoPay: 190,

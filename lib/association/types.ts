@@ -88,6 +88,11 @@ export interface OptimizerCandidate {
   side: "yes" | "no";
   /** Executable all-in price per $1 payout, including fees. */
   price: number;
+  /** De-vigged unconditional marginal of the bought side (P(pays), vig stripped), bounded by the pre-fee
+   *  ask so it is always ≤ price. The Fréchet clamp uses this (when present) instead of the gross all-in
+   *  price, tightening P(pay|fail) ≤ marginal/P(fail) without any fitted/per-domain calibration. Omitted
+   *  when unavailable (the clamp then falls back to `price`). Same de-vig the superposition path uses. */
+  marginal?: number;
   /** Hard liquidity/capacity limit. Omit for no additional candidate-specific cap. */
   maxSpendUsd?: number;
   provenance: AssociationProvenance;

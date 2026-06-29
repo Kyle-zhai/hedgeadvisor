@@ -31,7 +31,7 @@ const CREDIBLE_LEVEL = 0.95;
 const MIN_SAMPLES = 20;
 
 /** All-in executable price + capacity for BUYING one side of a market, off its real book. */
-export async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetUsd: number): Promise<{ price: number; capacityUsd: number; preFee: number } | null> {
+export async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetUsd: number): Promise<{ price: number; capacityUsd: number; preFee: number; marginal: number } | null> {
   const token = side === "no" ? m.noTokenId : m.yesTokenId;
   let book: Book | null = null;
   if (m.venue === "polymarket") {
@@ -55,7 +55,17 @@ export async function priceSide(m: NormalizedMarket, side: "yes" | "no", budgetU
     : 0;
   // preFee = the executable fill price BEFORE the taker fee. True fair ≤ this ask < allIn (= ask + fee), so
   // it is an honest upper bound on a leg's marginal that guarantees the paid fee surfaces as negative EV.
-  return { price: allIn, capacityUsd: Number(capacityUsd.toFixed(2)), preFee: p };
+  //
+  // marginal = the DE-VIGGED unconditional P(this side pays). m.probYes is already de-vigged by
+  // normalize.ts (devigDetailed: Shin → power → proportional) for mutually-exclusive PM books (a mid for
+  // Kalshi / ordinary binaries). We bound it by preFee — true fair ≤ ask — so the carried marginal is
+  // always ≤ price and never overstates the side's mass. This is the SAME honest marginal the superposition
+  // path uses (discover.ts buildDirectionalSuperposition: min(snapshot fair, executable pre-fee ask)),
+  // removing the asymmetry where superposition de-vigs but the optimizer's Fréchet clamp used gross price.
+  // Parameter-free: no per-domain / horizon / platform fit, no fabricated calibration.
+  const sideFair = side === "no" ? 1 - m.probYes : m.probYes;
+  const marginal = Math.min(p, Math.max(0, Math.min(1, sideFair)));
+  return { price: allIn, capacityUsd: Number(capacityUsd.toFixed(2)), preFee: p, marginal };
 }
 
 /** The side you'd BUY to hedge: a leg that pays when the anchor FAILS. A POSITIVELY-correlated leg
@@ -152,6 +162,7 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
         venue: m.venue,
         side,
         price: priced.price,
+        marginal: priced.marginal,
         maxSpendUsd: priced.capacityUsd,
         provenance: "CALIBRATED",
         calibration,

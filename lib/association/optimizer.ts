@@ -79,11 +79,16 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
       // FRÉCHET FEASIBILITY: a leg cannot pay MORE often conditional on the anchor failing than its own
       // marginal allows — P(pay|fail) ≤ P(pay)/P(fail). A coarse settlement bucket (learned from genuine
       // 2-way exclusives) would otherwise claim a tiny-marginal candidate (a longshot "rival" of a
-      // multi-way field) is a near-certain hedge. The executable price bounds the de-vigged marginal, so
-      // clamp the conditional payoff to the candidate's own probability mass. Mirrors the combo path's clamp.
+      // multi-way field) is a near-certain hedge. We clamp the conditional payoff to the candidate's own
+      // probability mass, using the DE-VIGGED marginal when present (parameter-free, carried by
+      // toOptimizerCandidates from the same de-vig the superposition path uses) and falling back to the
+      // gross executable price otherwise. The de-vigged marginal is a TIGHTER upper bound than price (which
+      // carries spread + fee + vig), so this only ever lowers an inflated pFail — never raises it. Mirrors
+      // the combo path's clamp; the guard keeps it ≤ price so it can never loosen the bound.
+      const marginalBound = typeof candidate.marginal === "number" && candidate.marginal <= price ? candidate.marginal : price;
       const anchorFailP = Math.max(0.02, 1 - primaryPrice);
-      pFail = Math.min(pFail, Math.min(1, price / anchorFailP));
-      pWin = Math.max(pWin, Math.max(0, (price - anchorFailP) / Math.max(0.02, primaryPrice)));
+      pFail = Math.min(pFail, Math.min(1, marginalBound / anchorFailP));
+      pWin = Math.max(pWin, Math.max(0, (marginalBound - anchorFailP) / Math.max(0.02, primaryPrice)));
       // At the strict end, a soft leg must remain hedge-specific across the full credible interval.
       if (c >= 0.8 && cal.hedgeSpecificityLower <= 0) {
         rejected.push({ candidateId: candidate.id, reason: "credible intervals do not prove the leg pays more often when the anchor fails" });
@@ -114,9 +119,10 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
       } else {
         uncertainty = 0.6; // wide: it is an estimate, so it ranks below a calibrated leg of comparable payoff
       }
+      const marginalBound = typeof candidate.marginal === "number" && candidate.marginal <= price ? candidate.marginal : price;
       const anchorFailP = Math.max(0.02, 1 - primaryPrice);
-      pFail = Math.min(pFail, Math.min(1, price / anchorFailP)); // Fréchet feasibility (same as calibrated)
-      pWin = Math.max(pWin, Math.max(0, (price - anchorFailP) / Math.max(0.02, primaryPrice)));
+      pFail = Math.min(pFail, Math.min(1, marginalBound / anchorFailP)); // Fréchet feasibility (de-vigged marginal when present, else price; same as calibrated)
+      pWin = Math.max(pWin, Math.max(0, (marginalBound - anchorFailP) / Math.max(0.02, primaryPrice)));
     } else {
       rejected.push({ candidateId: candidate.id, reason: "LLM/semantic hypothesis has no calibrated payoff evidence" });
       continue;
