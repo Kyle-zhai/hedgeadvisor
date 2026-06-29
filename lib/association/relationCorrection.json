@@ -1,34 +1,34 @@
 {
   "source": "gold",
-  "note": "MODELED-tier elicitor correction from the 160-row Opus gold eval (flag-off arm). Per-mechanism mean(gold-Qwen) on conditional payoffs + residual std (sdFail/sdWin). Applied MODELED-leg-only, reliability-shrunk by n/(n+8); sd drives the conservative failLower (#5). NOT settlement calibration; never promotes a tier.",
+  "note": "MODELED-tier elicitor correction from the 524-row Opus gold eval, DeepSeek elicitor (deepseek-v4-pro classify / deepseek-v4-flash elicit). Per-mechanism mean(gold-DeepSeek) on conditional payoffs + residual std (sdFail/sdWin). Applied MODELED-leg-only, reliability-shrunk by n/(n+8); sd drives the conservative failLower (#5). NOT settlement calibration; never promotes a tier.",
   "byMechanismType": {
-    "IMPLICATION": {
-      "biasFail": 0.254,
-      "biasWin": 0.018,
-      "n": 15,
-      "sdFail": 0.2036,
-      "sdWin": 0.024
-    },
     "LOGICAL": {
-      "biasFail": 0.019,
-      "biasWin": 0.0081,
-      "n": 31,
-      "sdFail": 0.2381,
-      "sdWin": 0.0138
+      "biasFail": 0.0453,
+      "biasWin": 0.0046,
+      "n": 113,
+      "sdFail": 0.1674,
+      "sdWin": 0.0127
     },
     "CAUSAL": {
-      "biasFail": 0.0655,
-      "biasWin": 0.1286,
-      "n": 86,
-      "sdFail": 0.1136,
-      "sdWin": 0.1526
+      "biasFail": 0.0675,
+      "biasWin": 0.0002,
+      "n": 244,
+      "sdFail": 0.107,
+      "sdWin": 0.1304
     },
     "OTHER": {
-      "biasFail": 0.1114,
-      "biasWin": 0.1129,
-      "n": 28,
-      "sdFail": 0.1633,
-      "sdWin": 0.1728
+      "biasFail": 0.051,
+      "biasWin": 0.0467,
+      "n": 49,
+      "sdFail": 0.161,
+      "sdWin": 0.1604
+    },
+    "IMPLICATION": {
+      "biasFail": -0.0213,
+      "biasWin": 0.0003,
+      "n": 34,
+      "sdFail": 0.2095,
+      "sdWin": 0.0017
     }
   }
 }
