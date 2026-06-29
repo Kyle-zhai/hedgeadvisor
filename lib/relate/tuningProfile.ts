@@ -87,12 +87,18 @@ type Cells = ConditionalCounts;
  *  several relation_keys (e.g. a World Cup observed as both `tournament_winner→stage_advance` and
  *  `national_team_title→final_appearance`) was summed as several "independent" samples — inflating a
  *  bucket's effective N and letting it cross the CALIBRATED threshold on fewer real episodes than it claims. */
-function aggregateBucketsByCluster(rows: BucketBranchRow[]): Map<string, AggCells> {
-  // 1) pool an episode's observations across the relation_keys that land in the same (bucket, branch)
+function aggregateBucketsByCluster(rows: BucketBranchRow[]): { agg: Map<string, AggCells>; leafKeys: Set<string> } {
+  // 1) pool an episode's observations across the relation_keys that land in the same (bucket, branch).
+  //    leafKeys records every key reached via a LEAF rung (bucketKeys). A coarse key produced ONLY by
+  //    shrinkFallbackKeys is a FALLBACK rung — it may shrink a MODELED prior but must NEVER be reported or
+  //    treated as CALIBRATED. (Leaf and fallback keys can never collide: leaf keys carry a role prefix,
+  //    fallback keys never do.)
   const groups = new Map<string, { bk: string; anchorPays: boolean; pay: number; total: number }>();
+  const leafKeys = new Set<string>();
   for (const r of rows) {
     const p = parseRelationKey(r.relationKey);
     if (!p) continue;
+    for (const bk of bucketKeys(p.role, p.mechType, p.direction, p.side)) leafKeys.add(bk);
     for (const bk of allBucketKeys(p.role, p.mechType, p.direction, p.side)) {
       const gk = `${bk}\u0000${r.cluster}\u0000${r.anchorPays ? 1 : 0}`;
       const g = groups.get(gk);
@@ -111,7 +117,7 @@ function aggregateBucketsByCluster(rows: BucketBranchRow[]): Map<string, AggCell
     else { b.anp += fracPay; b.ann += 1 - fracPay; }
     agg.set(bk, b);
   }
-  return agg;
+  return { agg, leafKeys };
 }
 
 const cellsOf = (b: AggCells): Cells => ({
@@ -126,12 +132,12 @@ const cellsOf = (b: AggCells): Cells => ({
 export async function loadBucketCounts(): Promise<Map<string, Cells>> {
   const rows = await loadBucketBranchRows().catch(() => [] as BucketBranchRow[]);
   const out = new Map<string, Cells>();
-  for (const [k, b] of aggregateBucketsByCluster(rows)) out.set(k, cellsOf(b));
+  for (const [k, b] of aggregateBucketsByCluster(rows).agg) out.set(k, cellsOf(b));
   return out;
 }
 
 function buildProfile(rows: BucketBranchRow[]): TuningProfile {
-  const agg = aggregateBucketsByCluster(rows);
+  const { agg, leafKeys } = aggregateBucketsByCluster(rows);
   const profile: TuningProfile = new Map();
   for (const [k, b] of agg) {
     const cal = calibrateConditionalPayoff(
@@ -145,6 +151,10 @@ function buildProfile(rows: BucketBranchRow[]): TuningProfile {
       hedgeSpecificityLower: Number(cal.hedgeSpecificityLower.toFixed(4)),
       samplesFail: Math.round(cal.payGivenAnchorFails.samples),
       samplesWin: Math.round(cal.payGivenAnchorPays.samples),
+      // A coarse SIGN-PURE rung (key not produced by any LEAF bucketKeys) is SHRINK-ONLY: its pooled samples
+      // may pull a thin MODELED prior but MUST NEVER count toward CALIBRATED. Stamp it so any consumer that
+      // iterates the whole profile (e.g. the diag readiness route) never reports it as a CALIBRATED bucket.
+      ...(leafKeys.has(k) ? {} : { fallbackRung: true }),
     });
   }
   return profile;
@@ -189,6 +199,6 @@ export const __buildProfileForTest = buildProfile;
 /** Test seam: the cluster-deduplicated bucket COUNTS the robust optimizer calibrates from (no DB). */
 export const __bucketCountsForTest = (rows: BucketBranchRow[]): Map<string, Cells> => {
   const out = new Map<string, Cells>();
-  for (const [k, b] of aggregateBucketsByCluster(rows)) out.set(k, cellsOf(b));
+  for (const [k, b] of aggregateBucketsByCluster(rows).agg) out.set(k, cellsOf(b));
   return out;
 };

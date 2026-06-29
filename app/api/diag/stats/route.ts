@@ -138,7 +138,10 @@ export async function GET(req: Request) {
   // The LEARNED RULES the engine extracts from settlement data (role × mechType × direction × side buckets),
   // pooled across all templates and cluster-deduplicated — what tunes the engine for unseen questions.
   const profile = await loadTuningProfile(0).catch(() => new Map());
-  const buckets = [...profile.values()] as Array<{ samplesFail: number; samplesWin: number; specificity: number; hedgeSpecificityLower: number }>;
+  // EXCLUDE coarse SIGN-PURE fallback rungs (fallbackRung): they pool samples ACROSS roles for a MODELED
+  // shrink nudge only — their pooled N must NEVER be reported or counted as CALIBRATED (honesty backbone:
+  // CALIBRATED = a leaf rung's OWN settlement-proven samples). Only LEAF rungs are promotion-eligible.
+  const buckets = [...profile.values()].filter((b) => !(b as { fallbackRung?: boolean }).fallbackRung) as Array<{ samplesFail: number; samplesWin: number; specificity: number; hedgeSpecificityLower: number }>;
   const isCalibrated = (b: { samplesFail: number; samplesWin: number }) => Math.min(b.samplesFail, b.samplesWin) >= 20;
   // A CALIBRATED bucket is a HEDGE only when its conservative cross-bound proves it pays more on a fail
   // (hedgeSpecificityLower > 0); a settlement-proven co-mover (specificity < 0) is an AMPLIFIER the optimizer
@@ -172,7 +175,10 @@ export async function GET(req: Request) {
       samplesFail: s.samplesFail, samplesWin: s.samplesWin,
       // calibrated = the optimizer would actually act on it (≥20 independent episodes per branch); kind labels
       // hedge vs amplifier vs unproven so a sub-gate or amplifier row is never read as an actionable hedge.
-      calibrated: Math.min(s.samplesFail, s.samplesWin) >= 20,
+      // A coarse fallback rung is NEVER calibrated (pooled-across-roles MODELED shrink prior only); flag it so
+      // a reader can't mistake its pooled N for settlement-proven evidence.
+      fallbackRung: Boolean(s.fallbackRung),
+      calibrated: !s.fallbackRung && Math.min(s.samplesFail, s.samplesWin) >= 20,
       kind: s.hedgeSpecificityLower > 0 ? "hedge" : s.specificity < 0 ? "amplifier" : "unproven",
     }))
     .sort((a, b) => Math.min(b.samplesFail, b.samplesWin) - Math.min(a.samplesFail, a.samplesWin))

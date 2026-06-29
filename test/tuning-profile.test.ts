@@ -139,6 +139,26 @@ describe("tuning profile — learn general rules, cluster-deduplicated, sign-sep
     expect(amp!.specificity).toBeLessThan(0); // sign-pure amplifier
   });
 
+  it("HONESTY: the BUILT profile stamps coarse fallback rungs fallbackRung (so diag never reports them CALIBRATED)", () => {
+    // Two different roles → leaf rungs (role|...) are leaf; the coarse SIGN-PURE rungs (mech|dir|side,
+    // dir|side) pool ACROSS roles and are SHRINK-ONLY. The diag readiness route iterates the whole profile,
+    // so each coarse rung must be flagged fallbackRung even when its pooled N ≥ the CALIBRATED threshold —
+    // otherwise a pooled-across-roles rung would be miscounted as a settlement-proven CALIBRATED bucket.
+    const big = { fp: 15, fn: 3, wp: 3, wn: 15 };
+    const profile = __buildProfileForTest([
+      ...rows(key("entity_event", sig("causal", "negative"), "yes"), big, "r1"),
+      ...rows(key("cross_domain", sig("causal", "negative"), "yes"), big, "r2"),
+    ]);
+    // leaf rungs (role prefix) are promotion-eligible: NOT flagged
+    expect(profile.get("entity_event|causal|negative|yes")!.fallbackRung).toBeFalsy();
+    expect(profile.get("entity_event|negative|yes")!.fallbackRung).toBeFalsy();
+    // coarse SIGN-PURE rungs (no role) are SHRINK-ONLY: flagged even though pooled N ≥ 20 per branch
+    const mech = profile.get("causal|negative|yes")!;
+    expect(mech.fallbackRung).toBe(true);
+    expect(Math.min(mech.samplesFail, mech.samplesWin)).toBeGreaterThanOrEqual(20);
+    expect(profile.get("negative|yes")!.fallbackRung).toBe(true);
+  });
+
   it("FALLBACK is SUBORDINATE to a populated leaf rung (leaf wins, not flagged fallback)", () => {
     // a well-evidenced leaf rung (role|mech|dir|side) and a coarse rung both qualify ⇒ the leaf is preferred
     // and is NOT a fallback (it carries the leg's own samples, so it may promote).
