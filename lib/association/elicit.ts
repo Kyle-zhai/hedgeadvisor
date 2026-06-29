@@ -11,6 +11,7 @@
  */
 import { z } from "zod";
 import { chatCompletionWithFallback, extractJsonContent, relationModelChain, relationThinkingEnabled, type ModelAttempt } from "./modelFallback";
+import { withFewShot } from "./relationFewShot";
 
 const ElicitSchema = z.object({
   pGivenAnchorWins: z.number().min(0).max(1),
@@ -92,7 +93,8 @@ export async function elicitConditionalWithQwen(
       enable_thinking: relationThinkingEnabled(attemptModel),
       max_tokens: 800,
       messages: [
-        { role: "system", content: SYSTEM },
+        // Flag-gated few-shot anchors (HEDGE_RELATION_FEWSHOT=1); default OFF → SYSTEM unchanged.
+        { role: "system", content: withFewShot(SYSTEM) },
         { role: "user", content: `ANCHOR outcome: ${anchorTitle}\nCANDIDATE outcome: ${candidateTitle}\nReturn JSON only.` },
       ],
       response_format: { type: "json_object" },

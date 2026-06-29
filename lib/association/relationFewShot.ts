@@ -19,3 +19,12 @@ export function renderFewShot(picks: GoldRelation[]): string {
     `counterexample: ${g.label.counterexamples[0] ?? "none"}`,
   ).join("\n");
 }
+
+/** Flag-gated few-shot anchoring. DEFAULT OFF (HEDGE_RELATION_FEWSHOT must equal "1"); when off,
+ *  returns the base prompt unchanged so elicitation behavior is identical. MODELED-only: the gold
+ *  set is used purely as reasoned reference exemplars, never as settlement/CALIBRATED evidence. */
+export function withFewShot(basePrompt: string, enabled = process.env.HEDGE_RELATION_FEWSHOT === "1", excludeId?: string): string {
+  if (!enabled) return basePrompt;
+  const examples = renderFewShot(selectFewShot(RELATION_GOLD, 6, excludeId));
+  return `${basePrompt}\n\nWorked examples (anchor -> candidate => relation/direction/mechanism + conditionals):\n${examples}`;
+}
