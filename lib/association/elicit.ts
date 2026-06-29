@@ -55,6 +55,15 @@ OTHERWISE, DEFAULT TO INDEPENDENCE: set pGivenAnchorWins = pGivenAnchorFails = t
 
 Return JSON only with keys pGivenAnchorWins, pGivenAnchorFails, confidence (0-1; LOW when the link is speculative or you defaulted to independence), reason (one short sentence; say "independent, no concrete mechanism" when they are unrelated). Example JSON: {"pGivenAnchorWins":0.30,"pGivenAnchorFails":0.08,"confidence":0.5,"reason":"same-nation contributor, so it rises with the anchor"}`;
 
+/** Flag-gated (HEDGE_RELATION_PROMPT_V2=1) reinforcement of the two empirically-weak cases in the eval:
+ *  nested LOGICAL ENTAILMENT (was under-elicited → wrong sign) and TRUE INDEPENDENCE for unrelated pairs
+ *  (was over-linked → spurious sign). Appended to SYSTEM; default OFF so it can be A/B-measured first. */
+const SYSTEM_V2 = `
+
+TWO CRITICAL CASES — apply BEFORE the independence default:
+1) LOGICAL ENTAILMENT (the strongest POSITIVE — do NOT shade it toward the base rate). If the anchor outcome by DEFINITION guarantees the candidate, set pGivenAnchorWins = 0.99. This covers: nested numeric thresholds for the SAME subject (a team that wins 14+ games necessarily won 12+; a price above $150 is above $120; 5,000+ yards is 4,500+); later tournament/playoff stages implying every earlier one (reaching the final implies the semifinal and quarterfinal); and a broader event containing a narrower one. Then pGivenAnchorFails is the candidate's rate among the cases where the anchor did NOT happen — clearly above 0 and below pGivenAnchorWins. If instead the anchor guarantees the candidate CANNOT happen, set pGivenAnchorWins = 0.01.
+2) TRUE INDEPENDENCE (be strict — most candidate pairs are independent). Before you move the two conditionals apart, NAME the concrete mechanism (a–e) in one phrase. If you cannot, the outcomes are INDEPENDENT: set pGivenAnchorWins = pGivenAnchorFails (the candidate's base rate) with LOW confidence. Outcomes in DIFFERENT unrelated domains — a sports result vs a crypto price vs a box-office number vs an unrelated country's election — are independent even when both are uncertain or both are "in the news"; never infer a link from shared timing, general risk-on/off sentiment, or vague thematic overlap.`;
+
 /** Elicit P(candidate | anchor wins) and P(candidate | anchor fails) from the LLM. Disabled safely
  *  (status "disabled") when no key is configured, exactly like analyzeRelationWithQwen. */
 export async function elicitConditionalWithQwen(
@@ -64,8 +73,8 @@ export async function elicitConditionalWithQwen(
 ): Promise<ConditionalElicitResult> {
   const apiKey = relationApiKey(options.apiKey);
   const models = relationModelChain(options.model, options.models, "elicit");
-  const model = models[0] ?? "deepseek-v4-pro";
-  if (!apiKey) return { status: "disabled", model, failReason: "DEEPSEEK_API_KEY/RELATION_API_KEY is not configured" };
+  const model = models[0] ?? "MiniMax-M2.5";
+  if (!apiKey) return { status: "disabled", model, failReason: "DASHSCOPE_API_KEY/QWEN_API_KEY is not configured" };
   const baseUrl = relationBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = relationTimeoutMs(options.timeoutMs);
@@ -89,10 +98,11 @@ export async function elicitConditionalWithQwen(
       model: attemptModel,
       temperature: 0,
       ...(relationThinkingEnabled(attemptModel) ? { enable_thinking: true } : {}),
-      max_tokens: 800,
+      max_tokens: 2000, // headroom: a reasoning model spends an internal pass before content; 800 risked empty
       messages: [
         // Flag-gated few-shot anchors (HEDGE_RELATION_FEWSHOT=1); default OFF → SYSTEM unchanged.
-        { role: "system", content: withFewShot(SYSTEM) },
+        // Flag-gated V2 prompt (HEDGE_RELATION_PROMPT_V2=1) reinforces entailment + independence; default OFF.
+        { role: "system", content: withFewShot(process.env.HEDGE_RELATION_PROMPT_V2 === "1" ? SYSTEM + SYSTEM_V2 : SYSTEM) },
         { role: "user", content: `ANCHOR outcome: ${anchorTitle}\nCANDIDATE outcome: ${candidateTitle}\nReturn JSON only.` },
       ],
       response_format: { type: "json_object" },
