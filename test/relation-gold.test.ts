@@ -20,4 +20,11 @@ describe("relation gold dataset integrity", () => {
     const negs = RELATION_GOLD.filter((g) => g.label.relation === "UNRELATED" || g.label.direction === "AMBIGUOUS");
     expect(negs.length).toBeGreaterThanOrEqual(3);
   });
+  it("covers the taxonomy and has enough rows", () => {
+    expect(RELATION_GOLD.length).toBeGreaterThanOrEqual(40);
+    const types = new Set(RELATION_GOLD.map((g) => g.relationType));
+    for (const t of ["logical-implication","logical-mutex","same-entity-causal","cross-entity","macro-chain","geopolitics-commodity","politics-sector","negative-control"]) {
+      expect(types.has(t), `missing relationType ${t}`).toBe(true);
+    }
+  });
 });
