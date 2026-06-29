@@ -23,7 +23,7 @@ import { classifyPair } from "./classify";
 import { buildOptimizerCandidates, priceSide } from "./toOptimizerCandidates";
 import { persistCandidateSnapshots, type ElicitedPrior } from "./candidateSnapshot";
 import { recallCandidatesWithQwen, type RecallDiagnostics } from "./llmRecall";
-import { optimizeRobustHedge, type RobustOptimizerResult } from "@/lib/association";
+import { optimizeRobustHedge, type RobustOptimizerResult, type OptimizerCandidate } from "@/lib/association";
 import type { MechanismGraph } from "@/lib/association";
 import type { CandidatePair, NormalizedMarket } from "./types";
 
@@ -587,6 +587,7 @@ async function buildCrossEventStrategies(
         // UN-floored de-vigged pay-prob of the bought side = the honest unconditional marginal (q above is
         // floored at 0.02 for sizing; the marginal must not be, else a sub-2% longshot looks "free").
         marginal: Math.min(0.9999, Math.max(0.0001, pick.side === "YES" ? r.market.probYes : 1 - r.market.probYes)),
+        venue: r.market.venue,
         dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
         mechanism: reason.slice(0, 160),
       });
@@ -750,6 +751,31 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
   return combos.sort((a, b) => b.expectedReductionUsd - a.expectedReductionUsd).slice(0, 4);
 }
 
+/** Adapt the engine's CURRENT-ability conservative superposition legs into optimizer candidates, so the
+ *  robust optimizer can recommend the best the engine believes NOW — not only settlement-CALIBRATED legs.
+ *  The legs are already executably priced (re-priced to the book) and Fréchet-clamped. CALIBRATED legs are
+ *  skipped (the bucket path feeds those); ANALYTIC structural legs keep their EXACT conditional payoff. */
+function toOptimizerModeledLegs(sup: Superposition): OptimizerCandidate[] {
+  return sup.legs
+    .filter((l) => l.tier !== "CALIBRATED" && l.pFail > l.pWin) // hedge-leaning, non-calibrated
+    .map((l): OptimizerCandidate => {
+      const side: "yes" | "no" = l.side === "NO" ? "no" : "yes";
+      const venue = l.venue ?? "polymarket";
+      const baseTitle = l.title.replace(/^NOT /, ""); // the leg title may already encode the NO side
+      const base = {
+        id: `mdl:${l.id}:${side}`,
+        label: `${side === "no" ? "NOT " : ""}${baseTitle} · ${venue}`,
+        venue,
+        side,
+        price: Math.min(0.999, Math.max(0.001, l.q)),
+        associationGroup: `soft-market:${l.id}`,
+      };
+      return l.tier === "ANALYTIC"
+        ? { ...base, provenance: "ANALYTIC", structuralPayoff: { payGivenFail: l.pFail, payGivenWin: l.pWin } }
+        : { ...base, provenance: "MODELED", modeledPayoff: { payGivenFail: l.pFail, payGivenWin: l.pWin } };
+    });
+}
+
 export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverResult> {
   const resolved = req.eventSlug
     ? await resolvePosition(req.query, req.eventSlug)
@@ -844,31 +870,16 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     })
     .sort((a, b) => Math.abs(b.relation.correlation) - Math.abs(a.relation.correlation));
 
-  // ── The ACTIONABLE hedge: cost/capacity/uncertainty-constrained robust optimizer ──
-  // Candidates are priced off the REAL book; only verified cover-all NO legs are ANALYTIC, the rest
-  // are HYPOTHESIS (rejected without settlement calibration). No φ-from-price drives this.
   const stakeUsd = Math.max(1, req.stakeUsd ?? 20);
   const entryPrice = Math.min(0.999, Math.max(0.001, req.entryPrice ?? anchor.probYes));
   const keepFraction = Math.min(1, Math.max(0, req.keepFraction ?? 0.5));
   const pricingBudgetUsd = Math.max(1, (1 - keepFraction) * stakeUsd * (1 - entryPrice) / entryPrice);
-  const optimizerCandidates = await buildOptimizerCandidates(anchor, classified, pricingBudgetUsd).catch(() => []);
-  // Always return an optimizer result, including when no candidate survives the evidence/pricing
-  // adapter. The UI must show an explicit NO_ACTION decision instead of silently omitting the
-  // product's primary recommendation card.
-  const robustHedge: RobustOptimizerResult = optimizeRobustHedge({
-    stakeUsd,
-    primaryPrice: entryPrice,
-    keepFraction,
-    conservatism: Math.min(1, Math.max(0, req.conservatism ?? 0.5)),
-    maxLegs: Math.max(1, Math.floor(req.maxLegs ?? 3)),
-    candidates: optimizerCandidates,
-  });
-
-  // Validated cross-event hedge strategies (user-facing only; the cron leaves withStrategies off).
-  // Upside basis is the user's OWN entry (your winnings = stake·(1−entry)/entry), so the combo/strategy
-  // cards share the same basis as the optimizer card above (which already prices off entryPrice). Falls
-  // back to the current de-vigged price when no entry was supplied (entryPrice defaults to anchor.probYes).
+  // Upside basis is the user's OWN entry (your winnings = stake·(1−entry)/entry).
   const baseWinnings = stakeUsd * (1 - entryPrice) / entryPrice;
+
+  // The engine's CURRENT-ability cross-event strategies (elicited, executably priced, tier-labeled) are
+  // built FIRST so the optimizer below can recommend the best the engine believes NOW — not only
+  // settlement-CALIBRATED legs. (cron leaves withStrategies off ⇒ calibrated-only, exactly as before.)
   const strategyResult = req.withStrategies
     ? await buildCrossEventStrategies(
         { title: anchor.title, marketTitle: anchor.marketTitle, eventKey: anchor.eventKey, url: anchor.url, probYes: anchor.probYes, category: anchor.category, eventFamily: anchor.eventFamily },
@@ -878,6 +889,23 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const strategies = strategyResult?.strategies;
   const directional = strategyResult?.directional;
   const combos = strategies && strategies.length ? buildCombos(strategies, stakeUsd, baseWinnings) : undefined;
+
+  // ── The ACTIONABLE hedge: a robust optimizer over BOTH the settlement-CALIBRATED bucket legs AND the
+  // engine's MODELED/ANALYTIC current-ability legs (the conservative superposition, already book-priced &
+  // Fréchet-clamped). The conservatism knob sets how much trust: strict end = proven only; otherwise the
+  // engine's best current belief, clearly tier-labeled. So the engine ALWAYS recommends to the limit of
+  // what it knows — the moat raises a leg's tier (MODELED→CALIBRATED) over time, it does not gate whether
+  // a recommendation appears. The dedup by associationGroup keeps the higher-tier execution of a market. ──
+  const calibratedCands = await buildOptimizerCandidates(anchor, classified, pricingBudgetUsd).catch(() => []);
+  const modeledCands = directional ? toOptimizerModeledLegs(directional.conservative) : [];
+  const robustHedge: RobustOptimizerResult = optimizeRobustHedge({
+    stakeUsd,
+    primaryPrice: entryPrice,
+    keepFraction,
+    conservatism: Math.min(1, Math.max(0, req.conservatism ?? 0.5)),
+    maxLegs: Math.max(1, Math.floor(req.maxLegs ?? 3)),
+    candidates: [...calibratedCands, ...modeledCands],
+  });
 
   // Freeze what discovery knew — INCLUDING the elicitor's conditional prior when it was computed (the
   // withStrategies/user path; the cron freeze leaves it null). Captured pre-settlement, so the MODELED prior

@@ -49,6 +49,8 @@ export interface SuperposeLeg {
   tier?: Tier;
   /** Source market id (for re-pricing q at the real executable book cost before building). */
   marketId?: string;
+  /** Source venue (so a recommendation derived from this leg labels the right book). */
+  venue?: "polymarket" | "kalshi";
   /** De-vigged MARKET pay-probability of the bought side (the honest unconditional rate). Set when q is
    *  re-priced to the executable book: marginal ≤ q (q carries the vig), so the leg can only LOWER EV. */
   marginal?: number;
@@ -73,6 +75,8 @@ export interface PlacedLeg {
   tier: Tier;
   /** De-vigged market marginal of the bought side (≤ q); drives the honest unconditional EV. */
   marginal?: number;
+  /** Source venue (carried through for downstream recommendation labels). */
+  venue?: "polymarket" | "kalshi";
 }
 
 export interface Superposition {
@@ -209,7 +213,7 @@ export function buildSuperposition(
         id: e.c.id, marketTitle: e.c.marketTitle, title: e.c.title, side: e.c.side,
         q: e.q, pWin: e.a, pFail: e.f, dimension: e.c.dimension, mechanism: e.c.mechanism,
         costUsd: c, shares: Number((c / e.q).toFixed(2)), edgeWin: e.edgeWin, edgeFail: e.edgeFail, tier: e.tier,
-        marginal: e.c.marginal,
+        marginal: e.c.marginal, venue: e.c.venue,
       };
     });
 

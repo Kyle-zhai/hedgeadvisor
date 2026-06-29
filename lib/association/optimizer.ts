@@ -89,6 +89,21 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
         rejected.push({ candidateId: candidate.id, reason: "credible intervals do not prove the leg pays more often when the anchor fails" });
         continue;
       }
+    } else if (candidate.provenance === "MODELED" && candidate.modeledPayoff) {
+      // The engine's CURRENT-ability estimate (LLM-elicited conditional, Fréchet-feasible, optionally
+      // shrunk toward the moat). UNPROVEN, so it is admitted as the recommendation only BELOW the strict
+      // end of the conservatism knob — the moat raising this structure to CALIBRATED is what promotes it
+      // past this gate and narrows its uncertainty. Honesty unchanged: clearly MODELED-tiered, EV ≤ market.
+      if (c >= 0.8) {
+        rejected.push({ candidateId: candidate.id, reason: "modeled (unproven) leg withheld at conservative posture — admit only once settlement-calibrated" });
+        continue;
+      }
+      pFail = clamp01(candidate.modeledPayoff.payGivenFail);
+      pWin = clamp01(candidate.modeledPayoff.payGivenWin);
+      uncertainty = 0.6; // wide: it is an estimate, so it ranks below a calibrated leg of comparable payoff
+      const anchorFailP = Math.max(0.02, 1 - primaryPrice);
+      pFail = Math.min(pFail, Math.min(1, price / anchorFailP)); // Fréchet feasibility (same as calibrated)
+      pWin = Math.max(pWin, Math.max(0, (price - anchorFailP) / Math.max(0.02, primaryPrice)));
     } else {
       rejected.push({ candidateId: candidate.id, reason: "LLM/semantic hypothesis has no calibrated payoff evidence" });
       continue;
@@ -119,9 +134,11 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
   for (const r of ranked) {
     if (allocations.length >= maxLegs) break;
     if (remainingBudget <= 1e-9 || remainingModeledLoss <= 1e-9) break;
-    const isSoft = r.candidate.provenance === "CALIBRATED";
+    // CALIBRATED and MODELED legs are both "soft" (can pay zero in a fail state, no joint model), so they
+    // share the soft-leg cap; ANALYTIC structural legs do not.
+    const isSoft = r.candidate.provenance === "CALIBRATED" || r.candidate.provenance === "MODELED";
     if (isSoft && calibratedSoftLegs >= maxSoftLegs) {
-      rejected.push({ candidateId: r.candidate.id, reason: "joint soft-leg model unavailable; only the best calibrated soft leg is admitted" });
+      rejected.push({ candidateId: r.candidate.id, reason: "joint soft-leg model unavailable; only the single best soft leg is admitted" });
       continue;
     }
     if (r.candidate.associationGroup && usedGroups.has(r.candidate.associationGroup)) {

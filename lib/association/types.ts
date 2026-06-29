@@ -79,7 +79,7 @@ export interface ConditionalCalibration {
   sufficientEvidence: boolean;
 }
 
-export type AssociationProvenance = "ANALYTIC" | "CALIBRATED" | "HYPOTHESIS";
+export type AssociationProvenance = "ANALYTIC" | "CALIBRATED" | "MODELED" | "HYPOTHESIS";
 
 export interface OptimizerCandidate {
   id: string;
@@ -102,6 +102,11 @@ export interface OptimizerCandidate {
    *  calibration. The premium still increases strict worst-case loss (it can pay 0 in a fail state),
    *  but the MODELED conditional payoff is certain. */
   structuralPayoff?: { payGivenFail: number; payGivenWin: number };
+  /** The engine's CURRENT-ability conditional payoff for a leg with no sufficient settlement bucket yet:
+   *  the LLM-elicited (and Fréchet-feasible) P(pays | anchor fails/wins), optionally shrunk toward whatever
+   *  the moat has learned for its structure. UNPROVEN — admitted only below the strict end of the
+   *  conservatism knob, and the moat promoting its structure to CALIBRATED is what raises its confidence. */
+  modeledPayoff?: { payGivenFail: number; payGivenWin: number };
 }
 
 export interface RobustOptimizerInput {

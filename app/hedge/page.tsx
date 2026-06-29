@@ -44,7 +44,7 @@ interface RobustAllocation {
   shares: number;
   effectivePayGivenFail: number;
   modeledLossReductionUsd: number;
-  provenance: "ANALYTIC" | "CALIBRATED" | "HYPOTHESIS";
+  provenance: "ANALYTIC" | "CALIBRATED" | "MODELED" | "HYPOTHESIS";
 }
 interface RobustHedge {
   status: "RECOMMEND" | "NO_ACTION";
@@ -220,8 +220,10 @@ export default function HedgePage() {
   // Aggressive↔conservative direction knob for the stacked superposition strategy (both come from the server).
   const [direction, setDirection] = useState<"conservative" | "aggressive">("conservative");
   const sup = direction === "aggressive" ? data?.directional?.aggressive : data?.directional?.conservative;
-  // Calibrated/structural legs only appear in the optimizer result (the trustworthy OPTIMAL card).
-  const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED"), [data]);
+  // The optimizer's admitted legs ARE the recommendation: structural/calibrated (high confidence) AND the
+  // engine's MODELED current-ability legs (lower confidence, clearly tiered). The moat raises a leg's tier
+  // over time; it does not gate whether the engine recommends.
+  const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED" || a.provenance === "MODELED"), [data]);
   const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
   const rh = data?.robustHedge;
   const hasHedge = optimalLegs.length > 0; // calibrated, trustworthy legs drive the OPTIMAL verdict
@@ -311,7 +313,7 @@ export default function HedgePage() {
           <label className="combo-label" style={{ flex: 1.8, minWidth: 220 }}>
             Evidence conservatism {conservatism <= 0.33 ? "· aggressive" : conservatism >= 0.8 ? "· conservative" : "· balanced"}
             <div className="range-control"><input type="range" min={0} max={1} step={0.05} value={conservatism} onChange={(e) => { const s = Number(e.target.value); setConservatism(s); run(query, s); }} /></div>
-            <span className="combo-hint">{conservatism <= 0.33 ? "posterior mean · admits strong-calibrated soft legs" : conservatism >= 0.98 ? "strict posture · structural cover only" : conservatism >= 0.8 ? "credible lower bound · soft legs require separated intervals" : "95% interval · evidence-gated soft legs"} · (does not change the hedge budget)</span>
+            <span className="combo-hint">{conservatism <= 0.33 ? "trusts the engine's modeled estimate · recommends to the limit of current ability" : conservatism >= 0.98 ? "strictest · structurally-certain cover only" : conservatism >= 0.8 ? "proven legs only · modeled estimates withheld" : "balanced · admits modeled legs, prefers calibrated/structural"} · (does not change the hedge budget)</span>
           </label>
           <label className="combo-label" style={{ flex: 0.8, minWidth: 110 }}>Stake USD
             <input value={stakeUsd} onChange={(e) => setStakeUsd(e.target.value)} inputMode="decimal" aria-label="Position cost in USD" />
@@ -368,7 +370,7 @@ export default function HedgePage() {
               recommendation area never silently disappears. */}
           <div className="card" style={{ borderColor: hasHedge ? "var(--go)" : "var(--border-strong)" }}>
             <div className="cardtitle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              Optimal hedge <span className="hint">settlement-calibrated cross-event legs only · trustworthy</span>
+              Optimal hedge <span className="hint">the engine&apos;s best given current evidence · the tier badge shows how proven each leg is</span>
               {hasHedge
                 ? <span className="badge GO" style={{ marginLeft: "auto" }}>RECOMMENDED</span>
                 : <span className="badge" style={{ marginLeft: "auto", background: "var(--surface-2,#f4f4f3)", color: "var(--muted)" }}>NO ACTION</span>}
@@ -387,7 +389,7 @@ export default function HedgePage() {
                   <tbody>{optimalLegs.map((a) => (
                     <tr key={a.candidateId}>
                       <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /></td>
-                      <td><span className={`badge ${a.provenance === "ANALYTIC" ? "GO" : "PARTIAL"}`}>{a.provenance}</span></td>
+                      <td><span className={`badge ${a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED" ? "GO" : "PARTIAL"}`} title={a.provenance === "ANALYTIC" ? "structurally certain" : a.provenance === "CALIBRATED" ? "settlement-proven" : "the model's current estimate — not yet settlement-proven; confidence rises as the moat learns"}>{a.provenance}</span></td>
                       <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
                       <td style={{ textAlign: "right" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
                       <td style={{ textAlign: "right" }} className="pnl-pos">${a.modeledLossReductionUsd.toFixed(2)}</td>
@@ -397,9 +399,9 @@ export default function HedgePage() {
               </div>
             ) : (
               <div className="note-box" style={{ marginTop: 8 }}>
-                No settlement-calibrated cross-event hedge qualifies right now, so the honest recommendation is No Action: hold the
-                bet as is, or weigh the exploratory layer below at your own risk. This stays empty until settled-outcome data proves
-                a leg pays more often when your bet fails. It is a designed answer, not a missing result.
+                {conservatism >= 0.8
+                  ? "You are at the strict end of the conservatism slider, which admits only settlement-proven or structurally-certain legs. Lower it to let the engine recommend its current modeled best."
+                  : "Even the engine's current modeled estimate found no positive-sum companion that pays more often when your bet fails — for this bet, genuinely nothing beats simply holding it. The Stacked strategy below is the closest exploratory option."}
               </div>
             )}
             {rh && rh.rejected.length > 0 && (

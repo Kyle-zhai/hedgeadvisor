@@ -153,7 +153,21 @@ describe("robust hedge optimizer", () => {
     const r = optimizeRobustHedge({ ...base, conservatism: 0.7, candidates });
     expect(r.allocations).toHaveLength(1);
     expect(r.allocations[0].candidateId).toBe("stronger-second");
-    expect(r.rejected.some((x) => x.candidateId === "weaker-first" && x.reason.includes("best calibrated"))).toBe(true);
+    expect(r.rejected.some((x) => x.candidateId === "weaker-first" && x.reason.includes("single best soft leg"))).toBe(true);
+  });
+
+  test("recommends a MODELED (current-ability) leg below the strict end, withholds it at the conservative end", () => {
+    // The engine's unproven-but-best estimate: it should BE the recommendation when the user is not in a
+    // strict posture, and step aside (await settlement calibration) only at the conservative end.
+    const modeled: OptimizerCandidate = {
+      id: "mdl", label: "Modeled hedge", venue: "polymarket", side: "yes", price: 0.3,
+      provenance: "MODELED", modeledPayoff: { payGivenFail: 0.6, payGivenWin: 0.1 },
+    };
+    const lenient = optimizeRobustHedge({ ...base, conservatism: 0.4, candidates: [modeled] });
+    expect(lenient.status).toBe("RECOMMEND");
+    expect(lenient.allocations[0].provenance).toBe("MODELED");
+    const strict = optimizeRobustHedge({ ...base, conservatism: 0.85, candidates: [modeled] });
+    expect(strict.status).toBe("NO_ACTION");
   });
 
   test("never allocates both YES and NO alternatives from the same association market", () => {

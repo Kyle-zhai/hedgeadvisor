@@ -104,6 +104,7 @@ function mkLeg(m: NormalizedMarket, side: "YES" | "NO", pWin: number, pFail: num
     side,
     q: side === "YES" ? qYes : Number((1 - qYes).toFixed(4)),
     marginal,
+    venue: "polymarket",
     pWin,
     pFail,
     dimension: "continent",
