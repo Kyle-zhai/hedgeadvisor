@@ -1,15 +1,24 @@
 import { describe, it, expect } from "vitest";
 import { loadCorrectionMap, applyCorrection } from "@/lib/association/relationCorrection";
 
-// Guards the Task-8 wiring invariant: the committed correction snapshot is EMPTY, so the correction
-// applied in discover.ts is a pure no-op in production until the live gold eval populates it.
-describe("relation correction wiring — default no-op", () => {
-  it("loads an empty map from the committed snapshot", () => {
-    expect(loadCorrectionMap().size).toBe(0);
+// The snapshot is now populated from the 100-row gold eval. These guard the MODELED-only invariants that
+// keep the correction safe regardless of its contents.
+describe("relation correction wiring", () => {
+  it("loads the trained correction snapshot (populated)", () => {
+    const map = loadCorrectionMap();
+    expect(map.size).toBeGreaterThan(0);
+    expect(map.has("CAUSAL")).toBe(true); // keys are uppercased mechanismTypes
   });
-  it("applyCorrection with the loaded (empty) map returns the elicitation unchanged", () => {
+  it("nudges a known mechanism toward gold and stays in [0,1]", () => {
+    const map = loadCorrectionMap();
+    const out = applyCorrection({ pGivenAnchorWins: 0.3, pGivenAnchorFails: 0.3 }, "CAUSAL", map);
+    expect(out.pGivenAnchorFails).not.toBe(0.3); // a correction exists for CAUSAL
+    expect(out.pGivenAnchorFails).toBeGreaterThanOrEqual(0);
+    expect(out.pGivenAnchorFails).toBeLessThanOrEqual(1);
+  });
+  it("is a no-op for an UNKNOWN mechanism (so only learned buckets are ever adjusted)", () => {
     const map = loadCorrectionMap();
     const elicited = { pGivenAnchorWins: 0.3, pGivenAnchorFails: 0.7 };
-    expect(applyCorrection(elicited, "CAUSAL", map)).toEqual(elicited);
+    expect(applyCorrection(elicited, "NOT_A_REAL_MECH", map)).toEqual(elicited);
   });
 });
