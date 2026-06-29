@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   for (const p of parsed.pairs) {
     const e = await elicitConditionalWithQwen(p.anchorTitle, p.candidateTitle);
     if (e.status !== "ok" || e.pGivenAnchorWins == null) {
-      results.push({ ...p, status: e.status, failReason: e.failReason ?? null });
+      results.push({ ...p, status: e.status, model: e.model, failReason: e.failReason ?? null });
       continue;
     }
     const pFv = e.pGivenAnchorFails ?? p.pB;
@@ -57,6 +57,7 @@ export async function POST(req: Request) {
       candidateTitle: p.candidateTitle,
       pGivenAnchorWins: e.pGivenAnchorWins,
       pGivenAnchorFails: e.pGivenAnchorFails ?? null,
+      model: e.model,
       llmConfidence: e.confidence ?? null,
       phi: fp.phi,
       pAB: fp.pAB,
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
     });
   }
   return NextResponse.json({
-    model: parsed.pairs.length ? "qwen" : null,
+    model: results.find((r) => typeof r.model === "string")?.model ?? (parsed.pairs.length ? "relation-model" : null),
     signAccuracy: scored ? Number((correct / scored).toFixed(3)) : null,
     scored,
     correct,

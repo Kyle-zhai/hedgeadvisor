@@ -1,6 +1,6 @@
 import type { NormalizedMarket } from "./types";
 import { lexicalSimilarity, metadataCompatible } from "./candidates";
-import { chatCompletionWithFallback, extractJsonContent, relationModelChain, relationThinkingEnabled } from "@/lib/association/modelFallback";
+import { chatCompletionWithFallback, extractJsonContent, relationApiKey, relationBaseUrl, relationModelChain, relationThinkingEnabled, relationTimeoutMs } from "@/lib/association/modelFallback";
 import type { ModelAttempt } from "@/lib/association/modelFallback";
 import { llmCacheKey, loadLlmCache, recordLlmRun, storeLlmCache } from "@/lib/association/llmCache";
 
@@ -32,13 +32,13 @@ export async function recallCandidatesWithQwen(
   options: RecallOptions = {},
 ): Promise<NormalizedMarket[] | null> {
   const startedAt = Date.now();
-  const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY; // || so empty "" falls through
+  const apiKey = relationApiKey(options.apiKey);
   if (!apiKey || limit <= 0) {
     options.onDiagnostics?.({ status: "disabled", cached: false, selected: 0, pool: 0 });
     return null;
   }
-  const models = relationModelChain(options.model, options.models);
-  const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
+  const models = relationModelChain(options.model, options.models, "recall");
+  const baseUrl = relationBaseUrl(options.baseUrl);
   const eligible = universe.filter((candidate) => candidate.liquidityOk && metadataCompatible(anchor, candidate, true));
   const lexical = [...eligible].sort((a, b) => lexicalSimilarity(anchor, b) - lexicalSimilarity(anchor, a));
   const pool: NormalizedMarket[] = lexical.slice(0, 30);
@@ -90,24 +90,29 @@ export async function recallCandidatesWithQwen(
     apiKey,
     baseUrl,
     fetchImpl: options.fetchImpl ?? fetch,
-    timeoutMs: options.timeoutMs ?? 45_000,
+    timeoutMs: relationTimeoutMs(options.timeoutMs ?? 45_000),
     models,
     bodyForModel: (attemptModel) => ({
       model: attemptModel,
       temperature: 0,
-      enable_thinking: relationThinkingEnabled(attemptModel),
-      max_tokens: 2000, // a long candidateIds list for big pools must not truncate (→ invalid JSON)
+      ...(relationThinkingEnabled(attemptModel) ? { enable_thinking: true } : {}),
+      max_tokens: 6000, // headroom: some DeepSeek models spend a long internal pass before emitting any
+                        // content; a tight cap (2000) was consumed before the JSON body → empty "no content".
+                        // 6000 leaves room for that pass PLUS the candidateIds list so a big pool can't truncate.
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: "Shortlist prediction-market contracts that may have a real logical, causal, institutional, behavioral, informational, economic, narrative, temporal, or common-cause mechanism with the anchor. Find non-obvious cross-entity and cross-domain candidates. Exclude mere word/date overlap. Return JSON only, exactly {\"candidateIds\":[\"id\"]}. This is recall only; do not estimate correlation or recommend trades." },
         { role: "user", content: JSON.stringify({
           anchor: { title: anchor.title, marketTitle: anchor.marketTitle, rules: anchor.resolutionCriteria },
           limit,
+          // Recall is a coarse mechanism shortlist; title + marketTitle + category carry the entity and
+          // predicate. The full 240-char resolution rules per candidate (×90) bloated the prompt enough that
+          // some DeepSeek models returned EMPTY content (recall then fell back to lexical-only, losing the
+          // cross-domain picks recall exists to surface). Drop rules here; classify re-reads full rules later.
           candidates: pool.map((candidate) => ({
             id: candidate.id,
             title: candidate.title,
             marketTitle: candidate.marketTitle,
-            rules: candidate.resolutionCriteria.slice(0, 240),
             category: candidate.category,
           })),
         }) },

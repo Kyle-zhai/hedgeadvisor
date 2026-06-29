@@ -41,25 +41,29 @@ the possible mechanism. Neither output can make a trade actionable.
 
 ## Configuration
 
-Qwen is optional and disabled safely when the key is empty:
+DeepSeek is optional and disabled safely when the key is empty:
 
 ```env
-DASHSCOPE_API_KEY=
-QWEN_RELATION_MODELS=MiniMax-M2.5,qwen3.6-flash,qwen3-max-preview
-QWEN_RELATION_MODEL=MiniMax-M2.5
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_RELATION_MODELS=deepseek-v4-pro,deepseek-v4-flash
+DEEPSEEK_RECALL_MODELS=deepseek-v4-flash,deepseek-v4-pro
+DEEPSEEK_CLASSIFY_MODELS=deepseek-v4-pro,deepseek-v4-flash
+DEEPSEEK_ELICIT_MODELS=deepseek-v4-pro,deepseek-v4-flash
+DEEPSEEK_RELATION_MODEL=deepseek-v4-pro
+DEEPSEEK_RELATION_TIMEOUT_MS=45000
 HEDGE_RELATION_JOB_CONCURRENCY=8
 QWEN_EMBED_MODEL=text-embedding-v4
-QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 HEDGE_RELATE_PM_TOP_EVENTS=24
 HEDGE_RELATE_KALSHI_TOP_EVENTS=24
 ```
 
-`QWEN_RELATION_MODELS` is ordered. The engine records the actual successful model and falls through
+`DEEPSEEK_RELATION_MODELS` is ordered. The engine records the actual successful model and falls through
 on exhausted quota, rate limits, unavailable models, timeouts, malformed JSON, or schema-invalid
 output. A shared-key `401` stops immediately because another model cannot repair authentication.
 
 Historical mechanism calibration is enabled per settlement job. `anchorEntities` can restrict an
-expensive Qwen backfill to selected anchor outcomes; omit it to process all resolved outcomes.
+expensive LLM backfill to selected anchor outcomes; omit it to process all resolved outcomes.
 
 ```env
 HEDGE_SETTLE_JOBS_JSON=[{"cluster":"event-2026","category":"sports","anchorSlug":"anchor-event","anchorEntities":["Entity A"],"candidateSlugs":["candidate-event"],"kalshiSeries":["KXSERIES"],"kalshiEventTickers":[],"llmMechanisms":true,"maxLlmPairs":40}]

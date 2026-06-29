@@ -3,8 +3,11 @@ import type { MarketRuleInput, RelationHypothesis } from "./types";
 import {
   chatCompletionWithFallback,
   extractJsonContent,
+  relationApiKey,
+  relationBaseUrl,
   relationModelChain,
   relationThinkingEnabled,
+  relationTimeoutMs,
   type ModelAttempt,
 } from "./modelFallback";
 import { llmCacheKey, loadLlmCache, recordLlmRun, storeLlmCache } from "./llmCache";
@@ -183,18 +186,14 @@ export async function analyzeRelationWithQwen(
   options: QwenRelationOptions = {},
 ): Promise<QwenRelationResult> {
   const startedAt = Date.now();
-  // Use || not ?? so an EMPTY-STRING env var (e.g. a non-existent GitHub secret mapped to "") is
-  // treated as absent and falls through — ?? would keep "" and wrongly disable Qwen.
-  const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY;
-  const models = relationModelChain(options.model, options.models);
-  const model = models[0] ?? "MiniMax-M2.5";
-  if (!apiKey) return { status: "disabled", model, reason: "DASHSCOPE_API_KEY/QWEN_API_KEY is not configured" };
-  const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
+  // Use || in relationApiKey so an EMPTY-STRING env var is treated as absent and falls through.
+  const apiKey = relationApiKey(options.apiKey);
+  const models = relationModelChain(options.model, options.models, "classify");
+  const model = models[0] ?? "deepseek-v4-pro";
+  if (!apiKey) return { status: "disabled", model, reason: "DEEPSEEK_API_KEY/RELATION_API_KEY is not configured" };
+  const baseUrl = relationBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
-  const configuredTimeout = Number(process.env.QWEN_RELATION_TIMEOUT_MS ?? 30_000);
-  const timeoutMs = options.timeoutMs ?? (Number.isFinite(configuredTimeout)
-    ? Math.min(120_000, Math.max(5_000, configuredTimeout))
-    : 30_000);
+  const timeoutMs = relationTimeoutMs(options.timeoutMs);
   const decode = (content: string) => {
     try {
       const decoded = canonicalizeRelationJson(JSON.parse(extractJsonContent(content)) as unknown);
@@ -235,7 +234,7 @@ export async function analyzeRelationWithQwen(
     bodyForModel: (attemptModel) => ({
       model: attemptModel,
       temperature: 0,
-      enable_thinking: relationThinkingEnabled(attemptModel),
+      ...(relationThinkingEnabled(attemptModel) ? { enable_thinking: true } : {}),
       max_tokens: 3000,
       messages: [
         { role: "system", content: systemPrompt },
@@ -261,3 +260,5 @@ export async function analyzeRelationWithQwen(
   if (trackMetrics) await recordLlmRun({ operation: "classification", cacheHit: false, status: "ok", model: completion.model, attempts: completion.attempts, latencyMs: Date.now() - startedAt });
   return { status: "ok", model: completion.model, hypothesis: decoded.parsed.data, attempts: completion.attempts, cached: false };
 }
+
+export const analyzeRelationWithDeepSeek = analyzeRelationWithQwen;

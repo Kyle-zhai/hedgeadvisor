@@ -10,7 +10,7 @@
  * is admitted only to the exploratory layer, never the settlement-calibrated trustworthy layer.
  */
 import { z } from "zod";
-import { chatCompletionWithFallback, extractJsonContent, relationModelChain, relationThinkingEnabled, type ModelAttempt } from "./modelFallback";
+import { chatCompletionWithFallback, extractJsonContent, relationApiKey, relationBaseUrl, relationModelChain, relationThinkingEnabled, relationTimeoutMs, type ModelAttempt } from "./modelFallback";
 import { withFewShot } from "./relationFewShot";
 
 const ElicitSchema = z.object({
@@ -62,15 +62,13 @@ export async function elicitConditionalWithQwen(
   candidateTitle: string,
   options: ElicitOptions = {},
 ): Promise<ConditionalElicitResult> {
-  // || not ?? so an empty-string env var is treated as absent (see qwen.ts).
-  const apiKey = options.apiKey || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY;
-  const models = relationModelChain(options.model, options.models);
-  const model = models[0] ?? "MiniMax-M2.5";
-  if (!apiKey) return { status: "disabled", model, failReason: "DASHSCOPE_API_KEY/QWEN_API_KEY is not configured" };
-  const baseUrl = (options.baseUrl || process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
+  const apiKey = relationApiKey(options.apiKey);
+  const models = relationModelChain(options.model, options.models, "elicit");
+  const model = models[0] ?? "deepseek-v4-pro";
+  if (!apiKey) return { status: "disabled", model, failReason: "DEEPSEEK_API_KEY/RELATION_API_KEY is not configured" };
+  const baseUrl = relationBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
-  const configured = Number(process.env.QWEN_RELATION_TIMEOUT_MS ?? 30_000);
-  const timeoutMs = options.timeoutMs ?? (Number.isFinite(configured) ? Math.min(120_000, Math.max(5_000, configured)) : 30_000);
+  const timeoutMs = relationTimeoutMs(options.timeoutMs);
   const decode = (content: string) => {
     try {
       const parsed = ElicitSchema.safeParse(JSON.parse(extractJsonContent(content)) as unknown);
@@ -90,7 +88,7 @@ export async function elicitConditionalWithQwen(
     bodyForModel: (attemptModel) => ({
       model: attemptModel,
       temperature: 0,
-      enable_thinking: relationThinkingEnabled(attemptModel),
+      ...(relationThinkingEnabled(attemptModel) ? { enable_thinking: true } : {}),
       max_tokens: 800,
       messages: [
         // Flag-gated few-shot anchors (HEDGE_RELATION_FEWSHOT=1); default OFF → SYSTEM unchanged.

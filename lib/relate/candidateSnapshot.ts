@@ -4,6 +4,7 @@ import {
   upsertAssociationRelation,
   type CandidateSnapshotInput,
 } from "@/lib/association";
+import { relationModelChain } from "@/lib/association/modelFallback";
 import type { NormalizedMarket } from "./types";
 import type { ClassifiedCandidate } from "./toOptimizerCandidates";
 import { mechanismSignature, relationKey, relationRole } from "./relationKey";
@@ -52,7 +53,7 @@ export async function persistCandidateSnapshots(
         candidateTemplate: `${graph.candidateEventClass}:${candidate.predicate}:${role}:${signature ?? "instance"}`,
         candidateSide: side,
         hypothesis: cls.hypothesis,
-        llmModel: cls.llmModel ?? process.env.QWEN_RELATION_MODELS?.split(",")[0]?.trim() ?? process.env.QWEN_RELATION_MODEL ?? "MiniMax-M2.5",
+        llmModel: cls.llmModel ?? relationModelChain()[0] ?? "deepseek-v4-pro",
       });
       const price = side === "yes" ? candidate.probYes : 1 - candidate.probYes;
       if (!(price > 0 && price < 1)) continue;

@@ -1,6 +1,7 @@
 import type { ConditionalCounts, MarketRuleInput, OptimizerCandidate, RobustOptimizerInput } from "./types";
 import { calibrateConditionalPayoff } from "./calibration";
 import { analyzeRelationWithQwen, type QwenRelationResult } from "./qwen";
+import { relationModelChain } from "./modelFallback";
 import { optimizeRobustHedge } from "./optimizer";
 
 export interface HybridCandidateInput {
@@ -55,7 +56,7 @@ export async function buildHybridHedgeRecommendation(input: HybridAssociationInp
       )
     : input.candidates.map((candidate) => ({
         candidateId: candidate.id,
-        result: { status: "disabled", model: process.env.QWEN_RELATION_MODELS?.split(",")[0]?.trim() ?? process.env.QWEN_RELATION_MODEL ?? "MiniMax-M2.5", reason: "LLM analysis disabled by request" },
+        result: { status: "disabled", model: relationModelChain()[0] ?? "deepseek-v4-pro", reason: "LLM analysis disabled by request" },
       }));
 
   const optimization = optimizeRobustHedge({
