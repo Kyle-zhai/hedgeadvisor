@@ -29,7 +29,7 @@ describe("relation gold dataset integrity", () => {
     }
   });
   it("covers the taxonomy and has enough rows", () => {
-    expect(RELATION_GOLD.length).toBeGreaterThanOrEqual(160);
+    expect(RELATION_GOLD.length).toBeGreaterThanOrEqual(500);
     const types = new Set(RELATION_GOLD.map((g) => g.relationType));
     for (const t of ["logical-implication","logical-mutex","same-entity-causal","cross-entity","macro-chain","geopolitics-commodity","politics-sector","negative-control"]) {
       expect(types.has(t), `missing relationType ${t}`).toBe(true);
