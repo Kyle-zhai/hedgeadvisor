@@ -588,13 +588,14 @@ export default function HedgePage() {
         Not financial advice. Every hedge here is positive-sum, never a short of your own bet: each leg is a standalone
         positive bet on a different event that tends to pay when your bet does not, so ideally both win and at worst one wins.
         A companion must be negatively correlated to qualify; a positively-correlated SIDE is excluded because it fails
-        together with your bet (the same market can still qualify on its opposite, anti-correlated side). Two layers, read them differently. The OPTIMAL hedge is the trustworthy output: legs priced off
-        the real book (cost), capped by depth (capacity), admitted only when settled-outcome calibration proves the leg pays more
-        often when your bet fails (uncertainty via credible bounds). The EXPLORATORY layer is low confidence by design: cross-event
-        and cross-domain mechanisms are model-inferred and shown without payoff probabilities or position sizes. Only historical
-        settlement calibration can promote one into the optimizer. Every soft leg can still pay $0 in a possible state. The
-        Related-markets table is a DESCRIPTIVE map: φ is the binary correlation from the joint P(A and B), exact for structural
-        relations and a Fréchet-clamped estimate otherwise; price co-movement is never used as φ.
+        together with your bet (the same market can still qualify on its opposite, anti-correlated side). The OPTIMAL hedge is the
+        engine&apos;s best recommendation given what it knows NOW — legs priced off the real book (cost), capped by depth (capacity)
+        — and the tier badge is its CONFIDENCE: ANALYTIC (structurally certain) and CALIBRATED (settlement-proven) are trustworthy,
+        MODELED is the model&apos;s current estimate (no settlement proof yet). Settlement data TRAINS the engine — it raises a leg&apos;s
+        tier over time, it does not decide whether a recommendation appears; raise the conservatism slider to admit proven legs only.
+        Every soft leg can still pay $0 in a possible state, and EV is always ≤ the market (you pay the vig). The Related-markets
+        table is a DESCRIPTIVE map: φ is the binary correlation from the joint P(A and B), exact for structural relations and a
+        Fréchet-clamped estimate otherwise; price co-movement is never used as φ.
       </div>
     </div>
   );
