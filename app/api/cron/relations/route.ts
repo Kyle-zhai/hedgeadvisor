@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { dbEnabled } from "@/lib/data/db";
 import { discoverRelations } from "@/lib/relate";
+import { shouldElicit, dayOfYearUTC } from "@/lib/relate/elicitSampling";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,16 +52,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, jobs: 0, written: 0, note: "HEDGE_RELATION_SNAPSHOT_JOBS_JSON is empty" });
   }
 
-  const runJob = async (job: z.infer<typeof Job>) => {
+  // Sampled elicited-prior capture (#5): ?elicitSample=0.25 runs the (costlier) withStrategies elicitation for
+  // a deterministic ~1-in-4 anchors so a fraction of snapshots freeze p_given_fails/p_given_wins — enough to
+  // later score the MODELED prior's accuracy without paying elicitation on every anchor every hour. Default 0.
+  const elicitSampleRaw = Number(new URL(req.url).searchParams.get("elicitSample") ?? 0);
+  const elicitSample = Number.isFinite(elicitSampleRaw) ? Math.min(1, Math.max(0, elicitSampleRaw)) : 0;
+  const doy = dayOfYearUTC(Date.now());
+
+  const runJob = async (job: z.infer<typeof Job>, elicit: boolean) => {
     try {
-      let result = await discoverRelations({ ...job, stakeUsd: 20, conservatism: 0.5, maxLegs: 1 });
+      let result = await discoverRelations({ ...job, stakeUsd: 20, conservatism: 0.5, maxLegs: 1, withStrategies: elicit });
       // For COLLECTION (not a user surface) auto-disambiguate: cross-domain anchors often resolve to
       // "ambiguous" with a clearly-leading candidate (e.g. "Republican Party" in a which-party market).
       // Re-pin the top candidate to the resolved event so the job freezes a real anchor instead of no-op.
       let disambiguatedTo: string | undefined;
       if (result.status === "ambiguous" && result.candidates?.[0] && result.eventSlug) {
         disambiguatedTo = result.candidates[0].title;
-        result = await discoverRelations({ query: disambiguatedTo, eventSlug: result.eventSlug, stakeUsd: 20, conservatism: 0.5, maxLegs: 1 });
+        result = await discoverRelations({ query: disambiguatedTo, eventSlug: result.eventSlug, stakeUsd: 20, conservatism: 0.5, maxLegs: 1, withStrategies: elicit });
       }
       return {
         query: job.query,
@@ -81,11 +89,13 @@ export async function GET(req: Request) {
   const concurrency = Number.isFinite(configuredConcurrency) ? Math.min(10, Math.max(1, Math.floor(configuredConcurrency))) : 8;
   const results: Awaited<ReturnType<typeof runJob>>[] = [];
   for (let i = 0; i < configured.length; i += concurrency) {
-    results.push(...await Promise.all(configured.slice(i, i + concurrency).map(runJob)));
+    results.push(...await Promise.all(configured.slice(i, i + concurrency).map((job, j) => runJob(job, shouldElicit(elicitSample, i + j, doy)))));
   }
   return NextResponse.json({
     ok: results.every((result) => result.status !== "error"),
     jobs: results.length,
+    elicitSample,
+    elicited: configured.filter((_, i) => shouldElicit(elicitSample, i, doy)).length,
     written: results.reduce((sum, result) => sum + result.written, 0),
     results,
   });
