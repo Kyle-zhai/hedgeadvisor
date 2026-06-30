@@ -25,18 +25,63 @@ async function storeBook(sql: Sql, tokenId: string, book: Book, nowIso: string, 
     ON CONFLICT (token_id, ts) DO NOTHING`;
 }
 
-export interface FrozenBooksResult { frozenMarkets: number; written: number; failed: number; kalshi: number; pm: number }
+export interface BookCoverageStats {
+  eligibleSnapshots: number;   // frozen candidate snapshots carrying a candidate_token_id (can get an exec price)
+  withBook: number;            // … that have a book_snapshot AT/BEFORE observed_at (execution-grade, zero look-ahead)
+  coverage: number;            // withBook / eligibleSnapshots
+  distinctTokens: number;      // distinct candidate tokens in the eligible set
+  tokensWithAnyBook: number;   // … with ANY book_snapshot row (freshness proxy)
+}
 
-/** Capture books for distinct frozen candidate tokens observed in the last `days` (still likely open). */
-export async function captureFrozenBooks(limit = 400, days = 21): Promise<FrozenBooksResult> {
+/**
+ * Execution-grade book coverage telemetry (Block B): of the frozen candidate snapshots that carry a
+ * candidate_token_id, how many have a book_snapshot at/before observed_at — the EXACT condition the
+ * execution-grade backtest joins on. Descriptive only; never sizes/calibrates. Pure SQL, no fetches.
+ */
+export async function bookCoverageStats(relationPrefix?: string): Promise<BookCoverageStats> {
+  const empty: BookCoverageStats = { eligibleSnapshots: 0, withBook: 0, coverage: 0, distinctTokens: 0, tokensWithAnyBook: 0 };
+  const sql = await getSql();
+  if (!sql) return empty;
+  await ensureSchema(sql);
+  // Optional relation_key prefix scopes the population (used by tests for isolation; prod calls it unscoped).
+  const cond = relationPrefix ? "AND s.relation_key LIKE $1" : "";
+  const params = relationPrefix ? [`${relationPrefix}%`] : [];
+  const rows = await sql.unsafe(`
+    SELECT
+      count(*)::int AS eligible,
+      count(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM book_snapshot b WHERE b.token_id = s.candidate_token_id AND b.ts <= s.observed_at))::int AS with_book,
+      count(DISTINCT s.candidate_token_id)::int AS distinct_tokens,
+      count(DISTINCT s.candidate_token_id) FILTER (WHERE EXISTS (
+        SELECT 1 FROM book_snapshot b WHERE b.token_id = s.candidate_token_id))::int AS tokens_with_any_book
+    FROM association_candidate_snapshot s
+    WHERE s.candidate_token_id IS NOT NULL ${cond}`, params) as Array<{ eligible: number; with_book: number; distinct_tokens: number; tokens_with_any_book: number }>;
+  const r = rows[0];
+  const eligibleSnapshots = Number(r?.eligible ?? 0);
+  const withBook = Number(r?.with_book ?? 0);
+  return {
+    eligibleSnapshots, withBook,
+    coverage: eligibleSnapshots ? withBook / eligibleSnapshots : 0,
+    distinctTokens: Number(r?.distinct_tokens ?? 0),
+    tokensWithAnyBook: Number(r?.tokens_with_any_book ?? 0),
+  };
+}
+
+export interface FrozenBooksResult { frozenMarkets: number; written: number; failed: number; kalshi: number; pm: number; coverage?: BookCoverageStats }
+
+/** Capture books for distinct frozen candidate tokens observed in the last `days`, FRESHEST first (so this
+ *  hour's freezes get a book this hour → next hour's re-freeze joins it). Still-likely-open markets only. */
+export async function captureFrozenBooks(limit = 800, days = 21): Promise<FrozenBooksResult> {
   const sql = await getSql();
   if (!sql) return { frozenMarkets: 0, written: 0, failed: 0, kalshi: 0, pm: 0 };
   await ensureSchema(sql);
   const rows = await sql`
-    SELECT DISTINCT candidate_venue AS venue, candidate_event_key AS event_key, candidate_market_id AS market_id
+    SELECT candidate_venue AS venue, candidate_event_key AS event_key, candidate_market_id AS market_id
     FROM association_candidate_snapshot
     WHERE candidate_venue IS NOT NULL AND candidate_market_id IS NOT NULL
       AND observed_at > now() - (${days} * interval '1 day')
+    GROUP BY candidate_venue, candidate_event_key, candidate_market_id
+    ORDER BY max(observed_at) DESC
     LIMIT ${limit}` as Array<{ venue: string; event_key: string | null; market_id: string }>;
   const nowIso = new Date().toISOString();
   let written = 0, failed = 0, kalshi = 0, pm = 0;
@@ -68,5 +113,6 @@ export async function captureFrozenBooks(limit = 400, days = 21): Promise<Frozen
     } catch { failed++; }
   }
 
-  return { frozenMarkets: rows.length, written, failed, kalshi, pm };
+  const coverage = await bookCoverageStats().catch(() => undefined);
+  return { frozenMarkets: rows.length, written, failed, kalshi, pm, coverage };
 }
