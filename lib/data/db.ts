@@ -212,4 +212,40 @@ CREATE TABLE IF NOT EXISTS market_index (
 );
 CREATE INDEX IF NOT EXISTS market_index_event_idx ON market_index (venue, event_key);
 CREATE INDEX IF NOT EXISTS market_index_seen_idx ON market_index (last_seen DESC);
+
+-- Block C joint-combo pipeline: FROZEN multi-leg combos the engine recommends, settled later against real
+-- outcomes to feed backtestCombos + the JOINT-CALIBRATED gate. observed_at is the freeze time (must precede
+-- anchor resolution = walk-forward); resolution columns are filled by settleComboSnapshots only when the anchor
+-- AND every leg have settled. cluster_key (= anchor market) dedups re-freezes of the same episode. Open markets
+-- only at freeze; LLM never writes a settled outcome.
+CREATE TABLE IF NOT EXISTS combo_snapshot (
+  combo_id text PRIMARY KEY,
+  anchor_market_id text NOT NULL,
+  anchor_venue text NOT NULL,
+  anchor_event_key text NOT NULL,
+  observed_at timestamptz NOT NULL,
+  predicted_coverage_lower double precision NOT NULL,
+  premium_usd double precision NOT NULL,
+  tier text NOT NULL,
+  cluster_key text NOT NULL,
+  anchor_resolved_at timestamptz,
+  anchor_pays boolean,
+  combo_payoff_usd double precision,
+  settled_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS combo_snapshot_pending_idx ON combo_snapshot (anchor_resolved_at) WHERE anchor_resolved_at IS NULL;
+CREATE INDEX IF NOT EXISTS combo_snapshot_cluster_idx ON combo_snapshot (cluster_key);
+CREATE TABLE IF NOT EXISTS combo_leg_snapshot (
+  combo_id text NOT NULL,
+  rank int NOT NULL,
+  market_id text NOT NULL,
+  venue text NOT NULL,
+  event_key text NOT NULL,
+  side text NOT NULL,
+  leg_price double precision NOT NULL,
+  cost_usd double precision NOT NULL,
+  scenario_bucket text NOT NULL,
+  paid boolean,
+  PRIMARY KEY (combo_id, rank)
+);
 `;

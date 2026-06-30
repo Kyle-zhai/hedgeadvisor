@@ -25,6 +25,7 @@ import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
 import { buildOptimizerCandidates, priceSide } from "./toOptimizerCandidates";
 import { persistCandidateSnapshots, type ElicitedPrior } from "./candidateSnapshot";
+import { persistComboSnapshots } from "./comboSnapshot";
 import { applyCorrection, loadCorrectionMap } from "@/lib/association/relationCorrection";
 import { recallCandidatesWithQwen, type RecallDiagnostics } from "./llmRecall";
 import { optimizeRobustHedge, type RobustOptimizerResult, type OptimizerCandidate } from "@/lib/association";
@@ -1047,6 +1048,23 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   // can later be calibrated against realized outcomes (leakage-safe). observed_at is minute-bucketed, so
   // running the freeze here rather than earlier does not change idempotency.
   const candidateSnapshotsWritten = await persistCandidateSnapshots(anchor, classified, new Date(), strategyResult?.elicitedPriors).catch(() => 0);
+
+  // Block C joint-combo pipeline: freeze the recommended combos (open markets, pre-resolution) so the settle
+  // cron can later resolve every leg and feed backtestCombos + the JOINT-CALIBRATED gate. Additive + fail-safe.
+  if (combos && combos.length) {
+    const idToEvent = new Map(universe.map((m) => [m.id, m.eventKey]));
+    const toNative = (id: string) => id.replace(/^(polymarket|kalshi):/, "");
+    await persistComboSnapshots(
+      { marketId: toNative(anchor.id), venue: anchor.venue, eventKey: anchor.eventKey },
+      combos.map((c) => ({
+        coverage: c.coverage, totalCostUsd: c.totalCostUsd, tier: c.tier,
+        legs: c.legs.map((l) => ({
+          marketId: toNative(l.marketId), venue: l.venue, eventKey: idToEvent.get(l.marketId) ?? "",
+          side: l.side, legPrice: l.legPrice, costUsd: l.costUsd, scenario: l.scenario || "unrelated_control",
+        })),
+      })),
+    ).catch(() => 0);
+  }
 
   // Phase-1 combo diagnostic: which anchor-failure SCENARIOS the superposition legs cover. A healthy combo
   // spreads across distinct scenarios; many legs in one bucket = duplicate coverage (the Phase-3 overlap

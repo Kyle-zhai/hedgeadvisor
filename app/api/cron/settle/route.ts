@@ -16,6 +16,7 @@ import { dbEnabled } from "@/lib/data/db";
 import { analyzeRelationWithQwen, loadPendingFrozenPairs, upsertAssociationRelation, upsertAssociationObservations, type RelationHypothesis } from "@/lib/association";
 import { eventFamily, mechanismSignature, predicateOf, relationRole, type RelationRole } from "@/lib/relate/relationKey";
 import { buildRelationObservations, observationsForResolvedInstances, frozenResolvedInstance, type ResolvedInstance, type SettledOutcome } from "@/lib/relate/settle";
+import { settleComboSnapshots } from "@/lib/relate/comboSnapshot";
 import { pmOutcome, kalshiOutcome, pairResolvedInstances, type MarketOutcome } from "@/lib/relate/enumerate";
 import { sameEntityStrict } from "@/lib/link";
 
@@ -289,11 +290,15 @@ export async function GET(req: Request) {
   // Snapshot-driven pass: resolve every frozen pair whose markets have now settled — this is what
   // actually feeds the walk-forward backtest, independent of the job config above.
   const frozen = await resolveFrozenSnapshots().catch((err) => ({ pending: 0, resolved: 0, written: 0, relations: [], error: err instanceof Error ? err.message : "frozen resolve failed" }));
+  // Block C: settle frozen COMBOS whose anchor + every leg have now resolved (feeds backtestCombos + the
+  // JOINT-CALIBRATED gate). Independent of the pair settlement above; leakage-safe (settled outcomes only).
+  const combos = await settleComboSnapshots().catch((err) => ({ settled: 0, pending: 0, error: err instanceof Error ? err.message : "combo settle failed" }));
   return NextResponse.json({
     ok: true,
     dbEnabled: dbEnabled(),
     jobs: results,
     frozen,
+    combos,
     written: results.reduce((sum, r) => sum + r.written, 0) + frozen.written,
     note: dbEnabled() ? undefined : "DATABASE_URL unset — counts not persisted",
   });
