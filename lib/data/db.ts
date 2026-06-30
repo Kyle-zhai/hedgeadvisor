@@ -166,6 +166,10 @@ ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS prior_confid
 -- combo-snapshot tables later, not here.
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS scenario_bucket text;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS dimension text;
+-- The candidate's BOOK KEY (PM yes-token id / Kalshi ticker) so the walk-forward backtest can source the
+-- EXECUTABLE ask from book_snapshot at observed_at instead of the frozen de-vigged mid. Nullable (pre-existing
+-- rows have none ⇒ those fall back to the mid). Frozen at capture time, leakage-safe.
+ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS candidate_token_id text;
 
 -- Persistent LLM cache survives stateless GitHub Action/server restarts. Inputs are SHA-256 keys;
 -- prompts and API credentials are never stored. The run table measures latency/fallback/cache health.

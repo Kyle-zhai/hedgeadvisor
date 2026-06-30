@@ -95,6 +95,7 @@ export async function persistCandidateSnapshots(
         priorConfidence: prior?.confidence,
         scenarioBucket,
         dimension,
+        candidateTokenId: candidate.yesTokenId, // book key (PM yes-token / Kalshi ticker) for execution-grade backtest
       });
     }
   }

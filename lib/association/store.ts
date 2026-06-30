@@ -49,6 +49,8 @@ export interface CandidateSnapshotInput {
   /** Frozen combo metadata: anchor-failure scenarioBucket this candidate covers + the orthogonal dimension. */
   scenarioBucket?: string;
   dimension?: string;
+  /** Book key (PM yes-token id / Kalshi ticker) so the backtest can source the executable ask from book_snapshot. */
+  candidateTokenId?: string;
 }
 
 /** A frozen pair awaiting settlement: enough to re-fetch both markets and resolve the outcome. */
@@ -133,7 +135,7 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
          mechanism_signature, hypothesis,
          anchor_event_key, anchor_venue, candidate_event_key, candidate_venue,
          p_given_fails, p_given_wins, elicitor_model, prior_confidence,
-         scenario_bucket, dimension)
+         scenario_bucket, dimension, candidate_token_id)
       VALUES
         (${input.relationKey}, ${input.observedAt}, ${input.anchorMarketId}, ${input.candidateMarketId},
          ${input.candidateSide}, ${input.anchorProbYes}, ${input.candidatePrice},
@@ -144,7 +146,7 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
          ${input.candidateEventKey ?? null}, ${input.candidateVenue ?? null},
          ${input.pGivenFails ?? null}, ${input.pGivenWins ?? null},
          ${input.elicitorModel ?? null}, ${input.priorConfidence ?? null},
-         ${input.scenarioBucket ?? null}, ${input.dimension ?? null})
+         ${input.scenarioBucket ?? null}, ${input.dimension ?? null}, ${input.candidateTokenId ?? null})
       ON CONFLICT (relation_key, observed_at, anchor_market_id, candidate_market_id, candidate_side)
       DO UPDATE SET
         anchor_prob_yes = EXCLUDED.anchor_prob_yes,
@@ -162,7 +164,8 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
         elicitor_model = COALESCE(EXCLUDED.elicitor_model, association_candidate_snapshot.elicitor_model),
         prior_confidence = COALESCE(EXCLUDED.prior_confidence, association_candidate_snapshot.prior_confidence),
         scenario_bucket = COALESCE(EXCLUDED.scenario_bucket, association_candidate_snapshot.scenario_bucket),
-        dimension = COALESCE(EXCLUDED.dimension, association_candidate_snapshot.dimension)
+        dimension = COALESCE(EXCLUDED.dimension, association_candidate_snapshot.dimension),
+        candidate_token_id = COALESCE(EXCLUDED.candidate_token_id, association_candidate_snapshot.candidate_token_id)
       RETURNING relation_key
     `;
     if (rows.length) written++;
@@ -291,13 +294,28 @@ export async function loadAssociationBacktestRows(
       o.candidate_pays,
       o.resolved_at::text,
       s.observed_at::text,
-      s.candidate_price::float8
+      -- EXECUTION-GRADE price (#3): the candidate's executable ASK from the frozen book at observed_at
+      -- (side-adjusted: YES ask, or 1 − YES bid for the NO side), falling back to the de-vigged mid when no
+      -- book exists or the ask is out of (0,1). Leakage-safe — the book row predates resolution by construction.
+      COALESCE(
+        CASE
+          WHEN s.candidate_side = 'yes' AND b.best_ask > 0 AND b.best_ask < 1 THEN b.best_ask
+          WHEN s.candidate_side = 'no'  AND (1 - b.best_bid) > 0 AND (1 - b.best_bid) < 1 THEN 1 - b.best_bid
+          ELSE NULL
+        END,
+        s.candidate_price
+      )::float8 AS candidate_price
     FROM association_observation o
     JOIN association_candidate_snapshot s
       ON s.relation_key = o.relation_key
      AND s.anchor_market_id = o.anchor_market_id
      AND s.candidate_market_id = o.candidate_market_id
      AND s.observed_at <= o.resolved_at - (${lead} * interval '1 hour')
+    LEFT JOIN LATERAL (
+      SELECT bs.best_bid, bs.best_ask FROM book_snapshot bs
+      WHERE bs.token_id = s.candidate_token_id AND bs.ts <= s.observed_at
+      ORDER BY bs.ts DESC LIMIT 1
+    ) b ON true
     WHERE o.resolved_at IS NOT NULL
     ORDER BY o.relation_key, o.sample_key, s.observed_at DESC
     LIMIT ${limit}
