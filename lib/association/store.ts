@@ -46,6 +46,9 @@ export interface CandidateSnapshotInput {
   pGivenWins?: number;
   elicitorModel?: string;
   priorConfidence?: number;
+  /** Frozen combo metadata: anchor-failure scenarioBucket this candidate covers + the orthogonal dimension. */
+  scenarioBucket?: string;
+  dimension?: string;
 }
 
 /** A frozen pair awaiting settlement: enough to re-fetch both markets and resolve the outcome. */
@@ -129,7 +132,8 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
          anchor_prob_yes, candidate_price, classification_method, relation_direction,
          mechanism_signature, hypothesis,
          anchor_event_key, anchor_venue, candidate_event_key, candidate_venue,
-         p_given_fails, p_given_wins, elicitor_model, prior_confidence)
+         p_given_fails, p_given_wins, elicitor_model, prior_confidence,
+         scenario_bucket, dimension)
       VALUES
         (${input.relationKey}, ${input.observedAt}, ${input.anchorMarketId}, ${input.candidateMarketId},
          ${input.candidateSide}, ${input.anchorProbYes}, ${input.candidatePrice},
@@ -139,7 +143,8 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
          ${input.anchorEventKey ?? null}, ${input.anchorVenue ?? null},
          ${input.candidateEventKey ?? null}, ${input.candidateVenue ?? null},
          ${input.pGivenFails ?? null}, ${input.pGivenWins ?? null},
-         ${input.elicitorModel ?? null}, ${input.priorConfidence ?? null})
+         ${input.elicitorModel ?? null}, ${input.priorConfidence ?? null},
+         ${input.scenarioBucket ?? null}, ${input.dimension ?? null})
       ON CONFLICT (relation_key, observed_at, anchor_market_id, candidate_market_id, candidate_side)
       DO UPDATE SET
         anchor_prob_yes = EXCLUDED.anchor_prob_yes,
@@ -155,7 +160,9 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
         p_given_fails = COALESCE(EXCLUDED.p_given_fails, association_candidate_snapshot.p_given_fails),
         p_given_wins = COALESCE(EXCLUDED.p_given_wins, association_candidate_snapshot.p_given_wins),
         elicitor_model = COALESCE(EXCLUDED.elicitor_model, association_candidate_snapshot.elicitor_model),
-        prior_confidence = COALESCE(EXCLUDED.prior_confidence, association_candidate_snapshot.prior_confidence)
+        prior_confidence = COALESCE(EXCLUDED.prior_confidence, association_candidate_snapshot.prior_confidence),
+        scenario_bucket = COALESCE(EXCLUDED.scenario_bucket, association_candidate_snapshot.scenario_bucket),
+        dimension = COALESCE(EXCLUDED.dimension, association_candidate_snapshot.dimension)
       RETURNING relation_key
     `;
     if (rows.length) written++;

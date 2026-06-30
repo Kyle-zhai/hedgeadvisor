@@ -158,6 +158,13 @@ ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS p_given_fail
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS p_given_wins double precision;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS elicitor_model text;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS prior_confidence double precision;
+-- Frozen combo metadata: scenario_bucket = which anchor-FAILURE PATH this candidate covers (the overlap key
+-- for Phase 2/3 joint-combo calibration); dimension = the orthogonal facet. Frozen here so future pairwise-
+-- overlap / joint-combo backtests have the failure-path dimension on HISTORICAL evidence. Nullable (pre-existing
+-- + structural auto-backfill rows have none). association_group is a combo-LEG concept → added with the
+-- combo-snapshot tables later, not here.
+ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS scenario_bucket text;
+ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS dimension text;
 
 -- Persistent LLM cache survives stateless GitHub Action/server restarts. Inputs are SHA-256 keys;
 -- prompts and API credentials are never stored. The run table measures latency/fallback/cache health.

@@ -7,7 +7,8 @@ import {
 import { relationModelChain } from "@/lib/association/modelFallback";
 import type { NormalizedMarket } from "./types";
 import type { ClassifiedCandidate } from "./toOptimizerCandidates";
-import { mechanismSignature, relationKey, relationRole } from "./relationKey";
+import { marketDimension, mechanismSignature, relationKey, relationRole } from "./relationKey";
+import { classifyScenarioBucket } from "./scenarioBucket";
 
 const nativeMarketId = (id: string) => id.replace(/^(polymarket|kalshi):/, "");
 
@@ -43,6 +44,19 @@ export async function persistCandidateSnapshots(
     });
     if (role === "unrelated" || role === "rival") continue;
     const signature = mechanismSignature(graph, cls.hypothesis?.direction);
+    // Freeze combo metadata (#4): which anchor-failure PATH this candidate covers + its orthogonal facet, so
+    // future pairwise-overlap / joint-combo backtests have these dimensions on historical evidence. Candidate-
+    // level (same for both sides). Descriptive only — never sizes/calibrates.
+    const scenarioBucket = classifyScenarioBucket({
+      anchorTitle: anchor.title,
+      candidateTitle: candidate.title,
+      candidateMarketTitle: candidate.marketTitle,
+      relation: cls.hypothesis?.relation,
+      scope: graph.scope,
+      direction: cls.hypothesis?.direction,
+      reason: cls.hypothesis?.mechanism,
+    });
+    const dimension = marketDimension(candidate.marketTitle, candidate.category ?? "");
     // The elicited prior is for the candidate's YES side; the NO side is its complement (1 − p).
     const prior = priors?.get(candidate.id);
     for (const side of ["yes", "no"] as const) {
@@ -79,6 +93,8 @@ export async function persistCandidateSnapshots(
         pGivenWins: prior ? (side === "yes" ? prior.pGivenWins : 1 - prior.pGivenWins) : undefined,
         elicitorModel: prior?.model,
         priorConfidence: prior?.confidence,
+        scenarioBucket,
+        dimension,
       });
     }
   }
