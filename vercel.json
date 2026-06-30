@@ -10,8 +10,16 @@
       "schedule": "17 * * * *"
     },
     {
-      "path": "/api/cron/relations",
+      "path": "/api/cron/relations?indexAnchors=12&elicitSample=0.1",
       "schedule": "7 * * * *"
+    },
+    {
+      "path": "/api/cron/books",
+      "schedule": "27 * * * *"
+    },
+    {
+      "path": "/api/cron/index?pmPages=40&pmStartPage=0&kalshiLimit=1000",
+      "schedule": "0 6 * * *"
     }
   ]
 }

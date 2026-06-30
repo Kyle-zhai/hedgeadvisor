@@ -109,15 +109,17 @@ jobs:
             sleep 2
           done
 
-      - name: Trigger closed-loop crons (relations -> settle -> snapshot)
+      - name: Trigger closed-loop crons (relations -> settle -> snapshot -> books)
         run: |
           set -uo pipefail
           fail=0
-          for path in relations settle snapshot; do
+          for path in relations settle snapshot books; do
             qs=""
-            # Block A full-market radar: enumerate 12 extra anchors from market_index each run (rotated by
-            # day-of-year ⇒ a moving full-universe sweep, diversified across topics, on top of the config jobs).
-            [ "$path" = "relations" ] && qs="?indexAnchors=12"
+            # Block A full-market radar: enumerate index anchors each run (cursor strides PER HOUR ⇒ each run
+            # sweeps a NEW slice; rotated across topics on top of the config jobs). elicitSample freezes priors
+            # on a fraction of anchors. /api/cron/books captures frozen-candidate execution-grade books hourly
+            # (decoupled from the every-minute snapshot price curve).
+            [ "$path" = "relations" ] && qs="?indexAnchors=12&elicitSample=0.1"
             echo "::group::/api/cron/$path"
             code=$(curl -s -o /tmp/out.json -w '%{http_code}' --max-time 600 \
               -H "authorization: Bearer ${CRON_SECRET}" \

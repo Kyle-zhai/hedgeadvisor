@@ -12,7 +12,6 @@ import { NextResponse } from "next/server";
 import { fetchEventBundle, fetchBooks } from "@/lib/polymarket";
 import { getSql, dbEnabled, ensureSchema } from "@/lib/data/db";
 import { notionalDepth } from "@/lib/types";
-import { captureFrozenBooks } from "@/lib/relate/frozenBooks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,8 +73,7 @@ export async function GET(req: Request) {
       failed++; // skip the bad row, keep sweeping
     }
   }
-  // #3 first slice: also capture execution-grade books for the FROZEN candidate set (both venues), beyond
-  // just the default event. Non-fatal — the default-event sweep above already succeeded.
-  const frozen = await captureFrozenBooks().catch(() => ({ frozenMarkets: 0, written: 0, failed: 0, kalshi: 0, pm: 0 }));
-  return NextResponse.json({ ok: true, persisted: true, written, failed, frozen, ts: nowIso });
+  // Frozen-candidate book capture is DECOUPLED into /api/cron/books (hourly) — running 800 fetches inside this
+  // every-minute, 60s route would never finish. This route stays the light per-minute price curve.
+  return NextResponse.json({ ok: true, persisted: true, written, failed, ts: nowIso });
 }

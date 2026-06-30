@@ -58,14 +58,19 @@ export async function GET(req: Request) {
   // a deterministic ~1-in-4 anchors so a fraction of snapshots freeze p_given_fails/p_given_wins — enough to
   // later score the MODELED prior's accuracy without paying elicitation on every anchor every hour. Default 0.
   const params = new URL(req.url).searchParams;
-  const elicitSampleRaw = Number(params.get("elicitSample") ?? 0);
+  // Query string OR env fallback (HEDGE_*), so the Vercel/GitHub cron works whether or not the platform passes
+  // the query string through — the operator can drive it purely from env vars instead.
+  const elicitSampleRaw = Number(params.get("elicitSample") ?? process.env.HEDGE_ELICIT_SAMPLE ?? 0);
   const elicitSample = Number.isFinite(elicitSampleRaw) ? Math.min(1, Math.max(0, elicitSampleRaw)) : 0;
   const doy = dayOfYearUTC(Date.now());
 
   // Block A full-market radar: ?indexAnchors=N enumerates up to N anchors from the FULL market_index (rotated by
   // day-of-year for a moving sweep, diversified across categories, deduped vs configured), so discovery is no
   // longer limited to the configured anchors. Bounded (clamp 0..40); each runs through the same freeze path.
-  const indexAnchorsRaw = Number(params.get("indexAnchors") ?? 0);
+  // Default 12 (radar ON) because Vercel's cron dispatcher STRIPS the query string before the handler runs — so
+  // a vercel.json `?indexAnchors=12` would otherwise be lost and the radar would silently never run. Set
+  // HEDGE_INDEX_ANCHORS=0 to disable, or any N to tune. The query param still wins where it is delivered.
+  const indexAnchorsRaw = Number(params.get("indexAnchors") ?? process.env.HEDGE_INDEX_ANCHORS ?? 12);
   const indexAnchorsN = Number.isFinite(indexAnchorsRaw) ? Math.min(40, Math.max(0, Math.floor(indexAnchorsRaw))) : 0;
   let enumerated: z.infer<typeof Job>[] = [];
   if (indexAnchorsN > 0) {

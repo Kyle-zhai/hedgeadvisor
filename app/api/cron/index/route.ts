@@ -18,9 +18,11 @@ export async function GET(req: Request) {
   if (!process.env.DATABASE_URL) return NextResponse.json({ ok: true, note: "DATABASE_URL not set; nothing to persist" });
   try {
     const url = new URL(req.url);
-    const pmPages = Number(url.searchParams.get("pmPages") ?? 10);
-    const pmStartPage = Number(url.searchParams.get("pmStartPage") ?? 0);
-    const kalshiLimit = Number(url.searchParams.get("kalshiLimit") ?? 800);
+    // Query string OR env fallback OR a full-scan default — so a param-less cron call (or a platform that strips
+    // the query string) still catalogs the whole volume-ranked universe instead of only the top 10 pages.
+    const pmPages = Number(url.searchParams.get("pmPages") ?? process.env.HEDGE_INDEX_PM_PAGES ?? 40);
+    const pmStartPage = Number(url.searchParams.get("pmStartPage") ?? process.env.HEDGE_INDEX_PM_START_PAGE ?? 0);
+    const kalshiLimit = Number(url.searchParams.get("kalshiLimit") ?? process.env.HEDGE_INDEX_KALSHI_LIMIT ?? 1000);
     const r = await runMarketIndex({ pmPages, pmStartPage, kalshiLimit });
     return NextResponse.json({ ok: r.errors === 0, ...r });
   } catch (error) {
