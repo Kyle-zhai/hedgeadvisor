@@ -71,7 +71,10 @@ export async function GET(req: Request) {
   if (indexAnchorsN > 0) {
     const rows = await loadIndexAnchorRows().catch(() => []);
     const configuredSlugs = new Set(configured.map((j) => j.eventSlug).filter(Boolean));
-    enumerated = selectIndexAnchors(rows, { limit: indexAnchorsN, offset: doy }).filter((j) => !configuredSlugs.has(j.eventSlug));
+    // Advance the sweep cursor PER HOUR (not per day) striding by N, so each hourly run covers a NEW slice
+    // instead of re-enumerating the same N anchors all day — ~24× the index coverage at the same per-run cost.
+    const offset = (doy * 24 + new Date().getUTCHours()) * indexAnchorsN;
+    enumerated = selectIndexAnchors(rows, { limit: indexAnchorsN, offset }).filter((j) => !configuredSlugs.has(j.eventSlug));
   }
   const allJobs = [...configured, ...enumerated];
 

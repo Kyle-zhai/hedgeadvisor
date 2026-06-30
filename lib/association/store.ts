@@ -101,10 +101,11 @@ export async function upsertAssociationObservations(relationKey: string, observa
   for (const o of observations) {
     const rows = await sql`
       INSERT INTO association_observation
-        (relation_key, sample_key, cluster_key, anchor_pays, candidate_pays, weight, anchor_market_id, candidate_market_id, resolved_at)
+        (relation_key, sample_key, cluster_key, anchor_pays, candidate_pays, weight, anchor_market_id, candidate_market_id, resolved_at, candidate_side)
       VALUES
         (${relationKey}, ${o.sampleKey}, ${o.clusterKey ?? null}, ${o.anchorPays}, ${o.candidatePays}, ${o.weight ?? 1},
-         ${o.anchorMarketId ?? null}, ${o.candidateMarketId ?? null}, ${o.resolvedAt ?? null})
+         ${o.anchorMarketId ?? null}, ${o.candidateMarketId ?? null}, ${o.resolvedAt ?? null},
+         (SELECT candidate_side FROM association_relation WHERE relation_key = ${relationKey}))
       ON CONFLICT (relation_key, sample_key) DO UPDATE SET
         cluster_key = EXCLUDED.cluster_key,
         anchor_pays = EXCLUDED.anchor_pays,
@@ -112,7 +113,8 @@ export async function upsertAssociationObservations(relationKey: string, observa
         weight = EXCLUDED.weight,
         anchor_market_id = EXCLUDED.anchor_market_id,
         candidate_market_id = EXCLUDED.candidate_market_id,
-        resolved_at = EXCLUDED.resolved_at
+        resolved_at = EXCLUDED.resolved_at,
+        candidate_side = EXCLUDED.candidate_side
       RETURNING sample_key
     `;
     if (rows.length) written++;
@@ -219,7 +221,9 @@ export async function loadPendingFrozenPairs(limit = 1000): Promise<PendingFroze
         SELECT 1 FROM association_observation o
         WHERE o.relation_key = s.relation_key
           AND o.anchor_market_id = s.anchor_market_id
-          AND o.candidate_market_id = s.candidate_market_id)
+          AND o.candidate_market_id = s.candidate_market_id
+          -- side-explicit so a future relation_key/side change can't drop one side; legacy NULL rows match either
+          AND (o.candidate_side IS NULL OR o.candidate_side = s.candidate_side))
     ORDER BY s.relation_key, s.candidate_side, s.anchor_market_id, s.candidate_market_id, s.observed_at ASC
     LIMIT ${cap}
   ` as Array<{

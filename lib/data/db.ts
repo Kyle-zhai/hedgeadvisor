@@ -118,6 +118,11 @@ CREATE TABLE IF NOT EXISTS association_observation (
   PRIMARY KEY (relation_key, sample_key)
 );
 ALTER TABLE association_observation ADD COLUMN IF NOT EXISTS cluster_key text;
+-- Explicit settled SIDE (yes/no) of the candidate. Today the side is already encoded in relation_key (YES and
+-- NO are distinct keys), so this is belt-and-suspenders: it lets the pending-pairs dedup match on side directly,
+-- so a future relation_key/side structure change can never silently drop one side's settlement. Nullable —
+-- legacy rows (written before this column) stay NULL and are matched leniently.
+ALTER TABLE association_observation ADD COLUMN IF NOT EXISTS candidate_side text;
 CREATE INDEX IF NOT EXISTS association_observation_relation_idx
   ON association_observation (relation_key);
 CREATE INDEX IF NOT EXISTS association_observation_cluster_idx

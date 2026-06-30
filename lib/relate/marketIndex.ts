@@ -111,7 +111,7 @@ export async function queryMarketIndex(tokens: string[], limit = 200): Promise<M
  * Block A radar: PM open rows for ANCHOR enumeration, deterministic order (event_key) for stable rotation.
  * Kalshi excluded (can't anchor today). Returns [] when the DB is absent (fail-safe).
  */
-export async function loadIndexAnchorRows(limit = 2000): Promise<Array<{ venue: string; eventKey: string; title: string; marketTitle: string; category: string }>> {
+export async function loadIndexAnchorRows(limit = 10000): Promise<Array<{ venue: string; eventKey: string; title: string; marketTitle: string; category: string }>> {
   const sql = await getSql();
   if (!sql) return [];
   await ensureSchema(sql);

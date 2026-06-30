@@ -48,6 +48,16 @@ describe("selectIndexAnchors (Block A radar)", () => {
     expect(b[0].eventSlug).toBe("e2");
   });
 
+  it("sweeps distinct slices across many single-event topic buckets (full-index case)", () => {
+    // 30 distinct topics, one event each — within-bucket rotation is a no-op, so the sweep must come from
+    // rotating the bucket VISIT order by the offset.
+    const rows: IndexAnchorRow[] = Array.from({ length: 30 }, (_, i) => row(`topic${i}-ev`, ""));
+    const a = selectIndexAnchors(rows, { limit: 5, offset: 0 });
+    const b = selectIndexAnchors(rows, { limit: 5, offset: 5 });
+    const overlap = a.filter((x) => b.some((y) => y.eventSlug === x.eventSlug)).length;
+    expect(overlap).toBe(0); // disjoint slice ⇒ real coverage movement
+  });
+
   it("is bounded by limit and safe on empty / zero", () => {
     expect(selectIndexAnchors([], { limit: 5 })).toEqual([]);
     expect(selectIndexAnchors([row("e1", "a")], { limit: 0 })).toEqual([]);

@@ -56,6 +56,12 @@ export function selectIndexAnchors(rows: IndexAnchorRow[], opts: { limit: number
     const k = g.length ? off % g.length : 0;
     groups.set(cat, [...g.slice(k), ...g.slice(0, k)]);
   }
+  // ALSO rotate the bucket VISIT order by the cursor. With the full index there are hundreds of tiny
+  // single-event topic buckets, so within-bucket rotation alone is a no-op and the round-robin would always
+  // pick the same leading buckets — every hourly run would return the same anchors. Rotating the visit order
+  // makes each run sweep a different set of topics (the actual full-market sweep).
+  const bo = order.length ? off % order.length : 0;
+  const visit = [...order.slice(bo), ...order.slice(0, bo)];
 
   // Round-robin across categories until `limit` (or every group is exhausted).
   const out: AnchorJob[] = [];
@@ -63,7 +69,7 @@ export function selectIndexAnchors(rows: IndexAnchorRow[], opts: { limit: number
   let progressed = true;
   while (out.length < lim && progressed) {
     progressed = false;
-    for (const cat of order) {
+    for (const cat of visit) {
       if (out.length >= lim) break;
       const g = groups.get(cat)!;
       const i = idx.get(cat)!;
