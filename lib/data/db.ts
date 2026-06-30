@@ -12,7 +12,8 @@
 /** Minimal structural type for the `postgres` tagged-template client we actually use. */
 export type Sql = {
   (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]>;
-  unsafe: (query: string) => Promise<unknown>;
+  /** Parameterized raw query (postgres.js): values are bound as $1..$n, never string-interpolated. */
+  unsafe: (query: string, params?: unknown[]) => Promise<unknown[]>;
 };
 
 let _sql: Sql | null = null;
@@ -190,4 +191,21 @@ CREATE TABLE IF NOT EXISTS llm_relation_run (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS llm_relation_run_created_idx ON llm_relation_run (created_at DESC);
+
+-- Full-market index (#2 first slice): a continuously-refreshed catalog of OPEN markets across both venues,
+-- so relation discovery can later recall candidates from the WHOLE universe instead of a fixed top-N sample.
+-- Open markets only — this never holds settlement evidence; PK (venue, market_id), last_seen tracks freshness.
+CREATE TABLE IF NOT EXISTS market_index (
+  venue text NOT NULL,
+  market_id text NOT NULL,
+  event_key text NOT NULL,
+  title text,
+  market_title text,
+  category text,
+  status text,
+  last_seen timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (venue, market_id)
+);
+CREATE INDEX IF NOT EXISTS market_index_event_idx ON market_index (venue, event_key);
+CREATE INDEX IF NOT EXISTS market_index_seen_idx ON market_index (last_seen DESC);
 `;

@@ -157,6 +157,18 @@ jobs:
           # Kalshi is low-yield (sparse settled history) — a non-200 should NOT fail the whole run.
           [ "$code" = "200" ] || echo "::warning::kalshi backfill returned ${code} (non-fatal)"
 
+      - name: Full-market index (daily + manual) — catalog ALL open PM+Kalshi markets (#2 first slice)
+        if: (github.event_name == 'schedule' && github.event.schedule == '0 6 * * *') || (github.event_name == 'workflow_dispatch' && inputs.run_auto_backfill)
+        run: |
+          # Rotate pmStartPage 0/10 by day-of-year to page deeper into the open-market universe over days.
+          SP=$(( ($(date -u +%-j) % 2) * 10 ))
+          code=$(curl -s -o /tmp/index.json -w '%{http_code}' --max-time 290 \
+            -H "authorization: Bearer ${CRON_SECRET}" \
+            "http://localhost:3000/api/cron/index?pmPages=10&pmStartPage=${SP}&kalshiLimit=800")
+          cat /tmp/index.json 2>/dev/null; echo
+          echo "pmStartPage=${SP}"
+          [ "$code" = "200" ] || echo "::warning::market index returned ${code} (non-fatal)"
+
       - name: Qwen-in-CI probe (manual runs only)
         if: github.event_name == 'workflow_dispatch'
         run: |
