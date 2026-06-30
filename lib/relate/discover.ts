@@ -18,6 +18,7 @@ import { loadTuningProfile, lookupBucket, type BucketStat } from "./tuningProfil
 import { buildSuperposition, type SuperposeLeg, type SuperposeAnchor, type Superposition } from "./superpose";
 import { deriveStructuralCompanions } from "./structuralCompanions";
 import { classifyScenarioBucket, scenarioDistribution, type ScenarioBucket } from "./scenarioBucket";
+import { marginalCoverageGain, type OverlapLeg } from "./comboOverlap";
 import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
@@ -220,6 +221,7 @@ export interface HedgeComboLeg {
   scope: "same-event" | "cross-event"; // collateral on the anchor's own event, or a different event
   tier: "CALIBRATED" | "MODELED"; // settlement-proven posterior vs LLM-elicited prior
   samples: number;      // settlement observations backing this leg (0 = cold-start / no DB)
+  scenario: ScenarioBucket; // which anchor-failure path this leg covers (combo-overlap metadata; Phase 1)
 }
 
 /** A COMBO = a basket of 1–4 complementary legs. Each leg covers a different way your bet can fail, so
@@ -731,11 +733,17 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
   // Allocate the budget across distinct-aspect legs in priority order: each leg gets up to enough to pay
   // the stake if it hits (stake*legPrice), highest-priority first, until the budget or 4 legs run out. So
   // the total cost never exceeds the budget and kept-if-win stays positive.
+  const toOverlap = (s: HedgeStrategy): OverlapLeg => ({ marketId: s.marketId, marketTitle: s.marketTitle, scenario: s.scenario, scope: s.scope, pGivenFails: s.pGivenFails });
   const assemble = (ordered: HedgeStrategy[], capPerLeg = Infinity): HedgeCombo => {
     let remaining = budget;
     const picks: { s: HedgeStrategy; cost: number }[] = [];
     for (const s of ordered) {
       if (picks.length >= 4 || remaining <= 0.05) break;
+      // Phase 3 (joint-combo roadmap): don't add a leg that re-hedges an already-covered failure path. Skip
+      // when its conservative marginal coverage gain over the picked legs is negligible (same market or same
+      // scenarioBucket ⇒ ~0), so a combo spreads across DISTINCT scenarios instead of stacking redundant legs.
+      // The first leg always passes (no baseline). Coverage penalties never inflate — only gate selection.
+      if (picks.length && marginalCoverageGain(toOverlap(s), picks.map((p) => toOverlap(p.s))) < 0.02) continue;
       const cost = Math.min(stakeUsd * s.legPrice, capPerLeg, remaining);
       if (cost <= 0.05) continue;
       picks.push({ s, cost });
@@ -767,7 +775,7 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
       legs: picks.map(({ s, cost }) => ({
         marketId: s.marketId, venue: s.venue, title: s.title, marketTitle: s.marketTitle, url: s.url,
         side: s.side, legPrice: s.legPrice, pGivenFails: s.pGivenFails, costUsd: Number(cost.toFixed(2)),
-        mechanism: s.mechanism, dimension: s.dimension, scope: s.scope, tier: s.tier, samples: s.samples,
+        mechanism: s.mechanism, dimension: s.dimension, scope: s.scope, tier: s.tier, samples: s.samples, scenario: s.scenario,
       })),
       coverage: Number(coverage.toFixed(3)),
       totalCostUsd: Number(totalCost.toFixed(2)),
@@ -793,10 +801,19 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
   // cross-event first, then same-event collateral; within each, best cut first (so the fallback is ordered too)
   const crossFirst = [...distinct].sort((a, b) =>
     (a.scope === "cross-event" ? 0 : 1) - (b.scope === "cross-event" ? 0 : 1) || b.expectedReductionUsd - a.expectedReductionUsd);
+  // SCENARIO-SPREAD ordering (Phase 3): lead with the single best leg of EACH distinct anchor-failure
+  // scenario, then the rest by cut. Combined with the marginal-gain skip in assemble, this yields a combo
+  // that covers different failure paths (rival_wins + injury_absence + macro_regime …) rather than one path.
+  const byScenario = (() => {
+    const best = new Map<string, HedgeStrategy>();
+    for (const s of byCut) if (!best.has(s.scenario)) best.set(s.scenario, s);
+    const lead = [...best.values()];
+    return [...lead, ...byCut.filter((s) => !lead.includes(s))];
+  })();
   const spreadCap = budget / Math.min(4, Math.max(1, distinct.length)); // even split across up to 4 facets
   const seen = new Set<string>();
   const combos: HedgeCombo[] = [];
-  for (const c of [assemble(byCut), assemble(byCut, spreadCap), assemble(crossFirst, spreadCap), assemble(byCoverage), assemble(byCut.slice(0, 1))]) {
+  for (const c of [assemble(byCut), assemble(byScenario, spreadCap), assemble(byCut, spreadCap), assemble(crossFirst, spreadCap), assemble(byCoverage), assemble(byCut.slice(0, 1))]) {
     if (!c.legs.length) continue;
     const key = c.legs.map((l) => l.marketId).sort().join("|");
     if (seen.has(key)) continue;
