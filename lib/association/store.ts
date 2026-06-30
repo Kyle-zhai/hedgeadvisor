@@ -240,15 +240,27 @@ export async function loadBucketBranchRows(): Promise<BucketBranchRow[]> {
   const sql = await getSql();
   if (!sql) return [];
   await ensureSchema(sql);
+  // HONESTY GATE (mirror of loadAssociationBacktestRows): the LIVE tuning profile / CALIBRATED promotion may
+  // only read observations that had a candidate snapshot FROZEN before resolution. Without this EXISTS check a
+  // settle-time-constructed pair (no pre-settlement snapshot, e.g. the settle runJob path) could leak into the
+  // served calibration even though it can never enter the backtest. Live is now a strict SUBSET of frozen
+  // evidence — never looser than the backtest. Same join keys as the backtest (relation+anchor+candidate market).
   const rows = await sql`
-    SELECT relation_key AS "relationKey",
-      COALESCE(cluster_key, sample_key) AS cluster,
-      anchor_pays AS "anchorPays",
-      count(*) FILTER (WHERE candidate_pays)::int AS pay,
+    SELECT o.relation_key AS "relationKey",
+      COALESCE(o.cluster_key, o.sample_key) AS cluster,
+      o.anchor_pays AS "anchorPays",
+      count(*) FILTER (WHERE o.candidate_pays)::int AS pay,
       count(*)::int AS total
-    FROM association_observation
-    WHERE relation_key IS NOT NULL
-    GROUP BY relation_key, COALESCE(cluster_key, sample_key), anchor_pays
+    FROM association_observation o
+    WHERE o.relation_key IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM association_candidate_snapshot s
+        WHERE s.relation_key = o.relation_key
+          AND s.anchor_market_id = o.anchor_market_id
+          AND s.candidate_market_id = o.candidate_market_id
+          AND s.observed_at <= o.resolved_at
+      )
+    GROUP BY o.relation_key, COALESCE(o.cluster_key, o.sample_key), o.anchor_pays
   ` as Array<{ relationKey: string; cluster: string; anchorPays: boolean; pay: number; total: number }>;
   return rows.map((r) => ({ relationKey: r.relationKey, cluster: r.cluster, anchorPays: r.anchorPays, pay: Number(r.pay), total: Number(r.total) }));
 }
