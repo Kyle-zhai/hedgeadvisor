@@ -53,7 +53,7 @@ export async function persistCandidateSnapshots(
         candidateTemplate: `${graph.candidateEventClass}:${candidate.predicate}:${role}:${signature ?? "instance"}`,
         candidateSide: side,
         hypothesis: cls.hypothesis,
-        llmModel: cls.llmModel ?? relationModelChain()[0] ?? "deepseek-v4-pro",
+        llmModel: cls.llmModel ?? relationModelChain()[0] ?? "MiniMax-M2.5",
       });
       const price = side === "yes" ? candidate.probYes : 1 - candidate.probYes;
       if (!(price > 0 && price < 1)) continue;

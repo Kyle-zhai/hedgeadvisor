@@ -1,12 +1,18 @@
 // Ordered fallback chain: each model is tried in order, and quota / rate-limit / error responses fall
-// through to the NEXT model (see chatCompletionWithFallback). DeepSeek is the primary provider; the
-// legacy QWEN_* env vars remain supported only so older deployments do not fail on boot.
+// through to the NEXT model (see chatCompletionWithFallback). Qwen/DashScope is the primary provider.
 export const DEFAULT_RELATION_MODEL_CHAIN = [
-  "deepseek-v4-pro",
-  "deepseek-v4-flash",
+  "qwen3-max-2025-09-23",
+  "qwen-plus-2025-12-01",
+  "qwen-long-latest",
+  "qwen3.5-27b",
+  "glm-4.5-air",
+  "deepseek-r1-distill-qwen-14b",
+  "qwen-plus-1220",
+  "qwen3.5-flash-2026-02-23",
+  "qwen-flash-2025-07-28",
 ] as const;
 
-export const DEFAULT_RELATION_BASE_URL = "https://api.deepseek.com";
+export const DEFAULT_RELATION_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
 
 export interface ModelAttempt {
   model: string;
@@ -37,15 +43,15 @@ export interface ChatFallbackResult {
 const unique = (models: string[]) => [...new Set(models.map((model) => model.trim()).filter(Boolean))];
 
 export function relationApiKey(explicit?: string): string | undefined {
-  return explicit || process.env.DEEPSEEK_API_KEY || process.env.RELATION_API_KEY || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY;
+  return explicit || process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || process.env.RELATION_API_KEY;
 }
 
 export function relationBaseUrl(explicit?: string): string {
-  return (explicit || process.env.DEEPSEEK_BASE_URL || process.env.RELATION_BASE_URL || process.env.QWEN_BASE_URL || DEFAULT_RELATION_BASE_URL).replace(/\/$/, "");
+  return (explicit || process.env.QWEN_BASE_URL || process.env.RELATION_BASE_URL || DEFAULT_RELATION_BASE_URL).replace(/\/$/, "");
 }
 
 export function relationTimeoutMs(explicit?: number): number {
-  const configured = Number(process.env.DEEPSEEK_RELATION_TIMEOUT_MS ?? process.env.RELATION_TIMEOUT_MS ?? process.env.QWEN_RELATION_TIMEOUT_MS ?? 30_000);
+  const configured = Number(process.env.QWEN_RELATION_TIMEOUT_MS ?? process.env.RELATION_TIMEOUT_MS ?? 30_000);
   return explicit ?? (Number.isFinite(configured) ? Math.min(120_000, Math.max(5_000, configured)) : 30_000);
 }
 
@@ -55,17 +61,17 @@ export function relationModelChain(explicitModel?: string, explicitModels?: stri
   if (explicitModels?.length) return unique(explicitModels);
   if (explicitModel?.trim()) return [explicitModel.trim()];
   const roleSpecific =
-    role === "recall" ? process.env.DEEPSEEK_RECALL_MODELS ?? process.env.HEDGE_RECALL_MODELS
-      : role === "classify" ? process.env.DEEPSEEK_CLASSIFY_MODELS ?? process.env.HEDGE_CLASSIFY_MODELS
-        : role === "elicit" ? process.env.DEEPSEEK_ELICIT_MODELS ?? process.env.HEDGE_ELICIT_MODELS
+    role === "recall" ? process.env.QWEN_RECALL_MODELS ?? process.env.HEDGE_RECALL_MODELS
+      : role === "classify" ? process.env.QWEN_CLASSIFY_MODELS ?? process.env.HEDGE_CLASSIFY_MODELS
+        : role === "elicit" ? process.env.QWEN_ELICIT_MODELS ?? process.env.HEDGE_ELICIT_MODELS
           : undefined;
-  const configured = (roleSpecific ?? process.env.DEEPSEEK_RELATION_MODELS ?? process.env.RELATION_MODELS ?? process.env.QWEN_RELATION_MODELS)?.split(",") ?? [];
+  const configured = (roleSpecific ?? process.env.QWEN_RELATION_MODELS ?? process.env.RELATION_MODELS)?.split(",") ?? [];
   if (configured.some((model) => model.trim())) return unique(configured);
-  const legacyPrimary = (process.env.DEEPSEEK_RELATION_MODEL ?? process.env.RELATION_MODEL ?? process.env.QWEN_RELATION_MODEL)?.trim();
+  const legacyPrimary = (process.env.QWEN_RELATION_MODEL ?? process.env.RELATION_MODEL)?.trim();
   return unique([legacyPrimary ?? "", ...DEFAULT_RELATION_MODEL_CHAIN]);
 }
 
-/** Legacy providers may require thinking=true; DeepSeek JSON tasks stay deterministic and concise. */
+/** Bailian's MiniMax endpoint requires thinking=true; Qwen hybrids stay deterministic and concise. */
 export function relationThinkingEnabled(model: string): boolean {
   return /^minimax[-/]/i.test(model);
 }

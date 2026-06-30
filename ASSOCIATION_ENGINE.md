@@ -41,29 +41,25 @@ the possible mechanism. Neither output can make a trade actionable.
 
 ## Configuration
 
-DeepSeek is optional and disabled safely when the key is empty:
+Qwen is optional and disabled safely when the key is empty:
 
 ```env
-DEEPSEEK_API_KEY=
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_RELATION_MODELS=deepseek-v4-pro,deepseek-v4-flash
-DEEPSEEK_RECALL_MODELS=deepseek-v4-flash,deepseek-v4-pro
-DEEPSEEK_CLASSIFY_MODELS=deepseek-v4-pro,deepseek-v4-flash
-DEEPSEEK_ELICIT_MODELS=deepseek-v4-pro,deepseek-v4-flash
-DEEPSEEK_RELATION_MODEL=deepseek-v4-pro
-DEEPSEEK_RELATION_TIMEOUT_MS=45000
+DASHSCOPE_API_KEY=
+QWEN_RELATION_MODELS=qwen3-max-2025-09-23,qwen-plus-2025-12-01,qwen-long-latest,qwen3.5-27b,glm-4.5-air,deepseek-r1-distill-qwen-14b,qwen-plus-1220,qwen3.5-flash-2026-02-23,qwen-flash-2025-07-28
+QWEN_RELATION_MODEL=qwen3-max-2025-09-23
 HEDGE_RELATION_JOB_CONCURRENCY=8
 QWEN_EMBED_MODEL=text-embedding-v4
+QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 HEDGE_RELATE_PM_TOP_EVENTS=24
 HEDGE_RELATE_KALSHI_TOP_EVENTS=24
 ```
 
-`DEEPSEEK_RELATION_MODELS` is ordered. The engine records the actual successful model and falls through
+`QWEN_RELATION_MODELS` is ordered. The engine records the actual successful model and falls through
 on exhausted quota, rate limits, unavailable models, timeouts, malformed JSON, or schema-invalid
 output. A shared-key `401` stops immediately because another model cannot repair authentication.
 
 Historical mechanism calibration is enabled per settlement job. `anchorEntities` can restrict an
-expensive LLM backfill to selected anchor outcomes; omit it to process all resolved outcomes.
+expensive Qwen backfill to selected anchor outcomes; omit it to process all resolved outcomes.
 
 ```env
 HEDGE_SETTLE_JOBS_JSON=[{"cluster":"event-2026","category":"sports","anchorSlug":"anchor-event","anchorEntities":["Entity A"],"candidateSlugs":["candidate-event"],"kalshiSeries":["KXSERIES"],"kalshiEventTickers":[],"llmMechanisms":true,"maxLlmPairs":40}]
@@ -171,3 +167,6 @@ specificity, `cross_domain|yes` → −0.40 — the engine learning that cross-d
 **Confidence ladder + combos.** Each recommended leg, and each multi-leg combo (≤4 legs, one per orthogonal
 dimension via `eventDimension`), is tagged `ANALYTIC` / `CALIBRATED` / `MODELED`; a combo's tier is its
 weakest leg. The ladder and the rule-learning degrade to MODELED with zero cost when `DATABASE_URL` is unset.
+
+For the next settlement-proven moat layer and the plan for reliable multi-leg joint calibration, see
+[`docs/settlement-moat-and-joint-combo-calibration.md`](docs/settlement-moat-and-joint-combo-calibration.md).

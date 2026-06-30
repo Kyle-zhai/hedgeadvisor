@@ -189,8 +189,8 @@ export async function analyzeRelationWithQwen(
   // Use || in relationApiKey so an EMPTY-STRING env var is treated as absent and falls through.
   const apiKey = relationApiKey(options.apiKey);
   const models = relationModelChain(options.model, options.models, "classify");
-  const model = models[0] ?? "deepseek-v4-pro";
-  if (!apiKey) return { status: "disabled", model, reason: "DEEPSEEK_API_KEY/RELATION_API_KEY is not configured" };
+  const model = models[0] ?? "MiniMax-M2.5";
+  if (!apiKey) return { status: "disabled", model, reason: "DASHSCOPE_API_KEY/QWEN_API_KEY is not configured" };
   const baseUrl = relationBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = relationTimeoutMs(options.timeoutMs);

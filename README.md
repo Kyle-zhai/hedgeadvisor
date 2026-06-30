@@ -88,7 +88,9 @@ but fail-closed for recommendations: semantic hypotheses are simply ineligible u
 Repeated LLM recall/classification inputs are cached for seven days by default, including across
 stateless GitHub Action runs when `DATABASE_URL` is configured. `/api/diag/stats` reports cache hits,
 model fallback/latency health, pending frozen pairs, and 100/300/500/1000 independent-cluster
-calibration milestones. Neither cache metadata nor metrics store prompts, API keys, or credentials.
+calibration milestones. The next settlement-proven moat and reliable multi-leg combo roadmap is in
+[`docs/settlement-moat-and-joint-combo-calibration.md`](docs/settlement-moat-and-joint-combo-calibration.md).
+Neither cache metadata nor metrics store prompts, API keys, or credentials.
 
 `lib/types.ts` is the single contract; the fee function and the go/no-go verdict each
 live in exactly one place. See the tech spec for the full design and the verification

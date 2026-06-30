@@ -56,7 +56,7 @@ export async function buildHybridHedgeRecommendation(input: HybridAssociationInp
       )
     : input.candidates.map((candidate) => ({
         candidateId: candidate.id,
-        result: { status: "disabled", model: relationModelChain()[0] ?? "deepseek-v4-pro", reason: "LLM analysis disabled by request" },
+        result: { status: "disabled", model: relationModelChain()[0] ?? "MiniMax-M2.5", reason: "LLM analysis disabled by request" },
       }));
 
   const optimization = optimizeRobustHedge({
