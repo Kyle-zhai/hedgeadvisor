@@ -21,6 +21,7 @@ import type { NormalizedMarket } from "./types";
 import { confederationOf, type Confederation } from "@/lib/data/seed/wc2026-structure";
 import { norm } from "@/lib/polymarket/text";
 import type { SuperposeLeg } from "./superpose";
+import type { ScenarioBucket } from "./scenarioBucket";
 
 /** Confederation → the continent-market outcome label fragment(s) it appears under. */
 const CONF_CONTINENT: Record<Confederation, string[]> = {
@@ -80,17 +81,17 @@ export function deriveStructuralCompanions(
     const isMine = myFrags.some((frag) => label.includes(frag));
     if (isMine) {
       // A ⊆ B (own continent). YES = amplifier; NO = hedge (a non-own-continent champion ⇒ A failed).
-      legs.push(mkLeg(m, "YES", 1, clamp01((pB - pA) / denom), `${anchor.title} winning the World Cup means ${m.title} wins it (a champion from ${anchor.title} is in ${m.title}). This YES pays for certain when ${anchor.title} wins.`));
-      legs.push(mkLeg(m, "NO", 0, clamp01((1 - pB) / denom), `If ${anchor.title} wins, ${m.title} wins, so NO loses. NO pays only when the champion comes from outside ${m.title} — i.e. ${anchor.title} did not win.`));
+      legs.push(mkLeg(m, "YES", 1, clamp01((pB - pA) / denom), `${anchor.title} winning the World Cup means ${m.title} wins it (a champion from ${anchor.title} is in ${m.title}). This YES pays for certain when ${anchor.title} wins.`, "logical_subset"));
+      legs.push(mkLeg(m, "NO", 0, clamp01((1 - pB) / denom), `If ${anchor.title} wins, ${m.title} wins, so NO loses. NO pays only when the champion comes from outside ${m.title} — i.e. ${anchor.title} did not win.`, "rival_wins"));
     } else if (label) {
       // A ⟂ B (a different continent). YES pays only when A fails.
-      legs.push(mkLeg(m, "YES", 0, clamp01(pB / denom), `${m.title} winning the World Cup is mutually exclusive with ${anchor.title} winning — it can only pay when ${anchor.title} fails.`));
+      legs.push(mkLeg(m, "YES", 0, clamp01(pB / denom), `${m.title} winning the World Cup is mutually exclusive with ${anchor.title} winning — it can only pay when ${anchor.title} fails.`, "rival_wins"));
     }
   }
   return legs;
 }
 
-function mkLeg(m: NormalizedMarket, side: "YES" | "NO", pWin: number, pFail: number, mechanism: string): SuperposeLeg {
+function mkLeg(m: NormalizedMarket, side: "YES" | "NO", pWin: number, pFail: number, mechanism: string, scenario: ScenarioBucket): SuperposeLeg {
   const qYes = Math.min(0.98, Math.max(0.02, m.probYes));
   // UN-floored de-vigged pay-prob of the bought side = the honest unconditional marginal. q above is
   // floored at 0.02 for sizing sanity, but the marginal must NOT be floored: a sub-2% longshot's true
@@ -109,6 +110,7 @@ function mkLeg(m: NormalizedMarket, side: "YES" | "NO", pWin: number, pFail: num
     pFail,
     dimension: "continent",
     mechanism,
+    scenario,
     tier: "ANALYTIC",
     marketId: m.id,
   };

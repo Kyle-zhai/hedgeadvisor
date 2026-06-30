@@ -19,6 +19,8 @@
 
 export type Direction = number; // 0 = fully conservative … 1 = fully aggressive
 /** Confidence tier of a leg: structurally certain → settlement-proven → LLM prior. */
+import type { ScenarioBucket } from "./scenarioBucket";
+
 export type Tier = "ANALYTIC" | "CALIBRATED" | "MODELED";
 
 export interface SuperposeAnchor {
@@ -57,6 +59,9 @@ export interface SuperposeLeg {
   /** De-vigged MARKET pay-probability of the bought side (the honest unconditional rate). Set when q is
    *  re-priced to the executable book: marginal ≤ q (q carries the vig), so the leg can only LOWER EV. */
   marginal?: number;
+  /** Which anchor-FAILURE PATH this leg covers (Phase-1 combo-overlap metadata). Descriptive only — never
+   *  sizes, never calibrates, never promotes a tier. See docs/settlement-moat-and-joint-combo-calibration.md. */
+  scenario?: ScenarioBucket;
 }
 
 export interface PlacedLeg {
@@ -82,6 +87,8 @@ export interface PlacedLeg {
   marginal?: number;
   /** Source venue (carried through for downstream recommendation labels). */
   venue?: "polymarket" | "kalshi";
+  /** Which anchor-failure path this leg covers (carried from the source leg; combo-overlap metadata only). */
+  scenario?: ScenarioBucket;
 }
 
 export interface Superposition {
@@ -218,7 +225,7 @@ export function buildSuperposition(
         id: e.c.id, marketTitle: e.c.marketTitle, title: e.c.title, side: e.c.side,
         q: e.q, pWin: e.a, pFail: e.f, dimension: e.c.dimension, mechanism: e.c.mechanism, mechType: e.c.mechType,
         costUsd: c, shares: Number((c / e.q).toFixed(2)), edgeWin: e.edgeWin, edgeFail: e.edgeFail, tier: e.tier,
-        marginal: e.c.marginal, venue: e.c.venue,
+        marginal: e.c.marginal, venue: e.c.venue, scenario: e.c.scenario,
       };
     });
 

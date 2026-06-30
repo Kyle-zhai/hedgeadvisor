@@ -17,6 +17,7 @@ import { marketDimension, eventFamily, relationRole, mechanismSignature } from "
 import { loadTuningProfile, lookupBucket, type BucketStat } from "./tuningProfile";
 import { buildSuperposition, type SuperposeLeg, type SuperposeAnchor, type Superposition } from "./superpose";
 import { deriveStructuralCompanions } from "./structuralCompanions";
+import { classifyScenarioBucket, scenarioDistribution, type ScenarioBucket } from "./scenarioBucket";
 import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
@@ -200,6 +201,7 @@ export interface HedgeStrategy {
   dimension: string; // the orthogonal facet (scoreline/narrative/election/macro-policy/asset-price/…)
   tier: "CALIBRATED" | "MODELED"; // settlement-proven posterior vs LLM-elicited prior
   samples: number; // settlement observations backing this leg's relation template (0 = cold-start / no DB)
+  scenario: ScenarioBucket; // which anchor-failure PATH this leg covers (combo-overlap metadata; Phase 1)
 }
 
 /** One leg inside a combo: a single bet you place, fully described. */
@@ -264,6 +266,9 @@ export interface DiscoverResult {
   pricedAt?: string;
   /** Point-in-time relation rows persisted before settlement (zero when DATABASE_URL is unset). */
   candidateSnapshotsWritten?: number;
+  /** Phase-1 combo diagnostic: count of superposition legs per anchor-failure scenarioBucket. Descriptive
+   *  only (never sizing/calibration); the Phase-3 overlap policy keys off same-vs-different scenario. */
+  scenarioCoverage?: Record<string, number>;
   /** Operational telemetry only; never enters correlation, calibration, or sizing. */
   llm?: {
     recall?: RecallDiagnostics;
@@ -574,6 +579,7 @@ async function buildCrossEventStrategies(
       keptIfWinUsd: Number((baseWinnings - costUsd).toFixed(2)), mechanism: reason.slice(0, 160), scope,
       dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
       tier, samples,
+      scenario: classifyScenarioBucket({ anchorTitle: anchor.title, candidateTitle: r.market.title, candidateMarketTitle: r.market.marketTitle, relation: r.hypothesis?.relation, scope: r.mechanismGraph?.scope, direction: r.hypothesis?.direction, reason }),
     });
   }
   // ── SUPERPOSITION: the AGGRESSIVE↔CONSERVATIVE direction knob, built from the SAME elicited conditionals
@@ -617,6 +623,7 @@ async function buildCrossEventStrategies(
         dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
         mechanism: reason.slice(0, 160),
         mechType, // carried so a MODELED leg can get its gold-residual conservative interval downstream
+        scenario: classifyScenarioBucket({ anchorTitle: anchor.title, candidateTitle: r.market.title, candidateMarketTitle: r.market.marketTitle, relation: r.hypothesis?.relation, scope: r.mechanismGraph?.scope, direction: r.hypothesis?.direction, reason }),
       });
     }
     return legs;
@@ -975,6 +982,12 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   // running the freeze here rather than earlier does not change idempotency.
   const candidateSnapshotsWritten = await persistCandidateSnapshots(anchor, classified, new Date(), strategyResult?.elicitedPriors).catch(() => 0);
 
+  // Phase-1 combo diagnostic: which anchor-failure SCENARIOS the superposition legs cover. A healthy combo
+  // spreads across distinct scenarios; many legs in one bucket = duplicate coverage (the Phase-3 overlap
+  // policy will key off this). Descriptive only — never sizes or calibrates.
+  const comboLegs = [...(directional?.aggressive?.legs ?? []), ...(directional?.conservative?.legs ?? [])];
+  const scenarioCoverage = scenarioDistribution(comboLegs.map((l) => l.scenario).filter((s): s is ScenarioBucket => Boolean(s)));
+
   return {
     status: "ok",
     strategies,
@@ -987,6 +1000,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     semanticRecall: Boolean(semanticScore),
     pricedAt: new Date().toISOString(),
     candidateSnapshotsWritten,
+    scenarioCoverage,
     llm: { recall: recallDiagnostics, classification: classificationDiagnostics },
   };
 }
