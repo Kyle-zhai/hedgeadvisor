@@ -246,15 +246,16 @@ export async function loadPendingFrozenPairs(limit = 1000): Promise<PendingFroze
 export interface BucketBranchRow { relationKey: string; cluster: string; anchorPays: boolean; pay: number; total: number }
 
 /** Per (relation_key, episode-cluster, anchor-branch) candidate-pay tallies. Empty without a DB. */
-export async function loadBucketBranchRows(): Promise<BucketBranchRow[]> {
+export async function loadBucketBranchRows(minLeadHours = 24): Promise<BucketBranchRow[]> {
   const sql = await getSql();
   if (!sql) return [];
   await ensureSchema(sql);
+  const lead = Math.min(24 * 365, Math.max(0, Number(minLeadHours) || 0));
   // HONESTY GATE (mirror of loadAssociationBacktestRows): the LIVE tuning profile / CALIBRATED promotion may
-  // only read observations that had a candidate snapshot FROZEN before resolution. Without this EXISTS check a
-  // settle-time-constructed pair (no pre-settlement snapshot, e.g. the settle runJob path) could leak into the
-  // served calibration even though it can never enter the backtest. Live is now a strict SUBSET of frozen
-  // evidence — never looser than the backtest. Same join keys as the backtest (relation+anchor+candidate market).
+  // only read observations that had a candidate snapshot FROZEN at least `minLeadHours` (default 24h) BEFORE
+  // resolution — the SAME lead the backtest requires. Without it a settle-time-constructed pair (no snapshot)
+  // OR one frozen minutes before settlement (near-zero look-ahead protection) could leak into served
+  // calibration. Live is now a strict SUBSET of the backtest's frozen evidence. Same join keys + lead.
   const rows = await sql`
     SELECT o.relation_key AS "relationKey",
       COALESCE(o.cluster_key, o.sample_key) AS cluster,
@@ -268,7 +269,7 @@ export async function loadBucketBranchRows(): Promise<BucketBranchRow[]> {
         WHERE s.relation_key = o.relation_key
           AND s.anchor_market_id = o.anchor_market_id
           AND s.candidate_market_id = o.candidate_market_id
-          AND s.observed_at <= o.resolved_at
+          AND s.observed_at <= o.resolved_at - (${lead} * interval '1 hour')
       )
     GROUP BY o.relation_key, COALESCE(o.cluster_key, o.sample_key), o.anchor_pays
   ` as Array<{ relationKey: string; cluster: string; anchorPays: boolean; pay: number; total: number }>;
