@@ -20,7 +20,8 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const pages = Number(url.searchParams.get("pages") ?? 8);
     const maxJobs = Number(url.searchParams.get("maxJobs") ?? 200);
-    const r = await runAutoBackfill({ pages, maxJobs });
+    const startPage = Number(url.searchParams.get("startPage") ?? 0); // page deeper into lower-volume settled events
+    const r = await runAutoBackfill({ pages, maxJobs, startPage });
     return NextResponse.json({
       ok: r.errors === 0,
       scannedEvents: r.scannedEvents,

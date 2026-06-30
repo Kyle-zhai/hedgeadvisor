@@ -114,12 +114,16 @@ export interface AutoBackfillResult {
 }
 
 /** Scan settled Polymarket events across pages, derive structural jobs, and ingest them idempotently. */
-export async function runAutoBackfill(opts: { pages?: number; pageSize?: number; maxJobs?: number } = {}): Promise<AutoBackfillResult> {
-  const pages = Math.min(20, Math.max(1, opts.pages ?? 8));
+export async function runAutoBackfill(opts: { pages?: number; pageSize?: number; maxJobs?: number; startPage?: number } = {}): Promise<AutoBackfillResult> {
+  // Caps raised so an unbounded (non-route) caller can MAXIMIZE the daily pull; the 300s cron route keeps its
+  // conservative defaults (8/200). startPage lets successive runs page DEEPER (offset = (startPage+p)*pageSize)
+  // into lower-volume settled events instead of re-scanning the same top-of-book each time.
+  const pages = Math.min(60, Math.max(1, opts.pages ?? 8));
   const pageSize = Math.min(100, Math.max(10, opts.pageSize ?? 50));
-  const maxJobs = Math.min(280, Math.max(1, opts.maxJobs ?? 200));
+  const maxJobs = Math.min(5000, Math.max(1, opts.maxJobs ?? 200));
+  const startPage = Math.max(0, Math.floor(opts.startPage ?? 0));
   const all: PmEvent[] = [];
-  for (let p = 0; p < pages; p++) {
+  for (let p = startPage; p < startPage + pages; p++) {
     const negRisk = p % 2 === 0; // alternate negRisk (rivals) and non-negRisk (threshold ladders) pages
     const events = await gammaGet<PmEvent[]>(
       `/events?closed=true&negRisk=${negRisk}&limit=${pageSize}&offset=${p * pageSize}&order=volume&ascending=false`,
