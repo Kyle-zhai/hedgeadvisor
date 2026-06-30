@@ -6,7 +6,14 @@
 # Required repo config (Settings -> Secrets and variables -> Actions):
 #   Secrets:  DATABASE_URL, CRON_SECRET, DASHSCOPE_API_KEY (or QWEN_API_KEY), AI_GATEWAY_API_KEY (optional)
 #   Variables: HEDGE_RELATION_SNAPSHOT_JOBS_JSON  (required, else /relations freezes nothing)
-#              plus any HEDGE_*/QWEN_* config you keep in .env.local (all optional, sane defaults exist)
+#              QWEN_BASE_URL  — MUST match your key's region: a mainland DashScope key needs
+#                 https://dashscope.aliyuncs.com/compatible-mode/v1  (the -intl endpoint 401s a mainland key).
+#              QWEN_RELATION_MODEL(S)  (e.g. qwen3-max-2025-09-23) + any other HEDGE_*/QWEN_* from .env.local.
+#
+# Schedules: hourly = forward flywheel (relations->settle->snapshot; new observations as frozen pairs SETTLE).
+#            daily 06:00 = structural backfill (autobackfill startPage-rotated + kalshibackfill).
+# ACTIVATION: GitHub only runs `schedule:` from the DEFAULT branch — merge this to main, set the vars/secrets
+# above, and push/commit within 60 days to keep the schedule from auto-disabling.
 #
 # NOTE: GitHub may delay scheduled runs under load, and it auto-DISABLES schedules after 60 days with
 # no repo commits — push occasionally (or run "Run workflow" manually) to keep it alive.
@@ -19,8 +26,10 @@ on:
     # GitHub's floor is every 5 min, but build caching below keeps each run ~1-2 min so hourly fits the
     # private-repo 2000 min/mo budget (~720 runs). Dial down (e.g. "0 */6 * * *") to save minutes.
     - cron: "0 * * * *"
-    # Weekly: self-sustaining auto-discovery backfill (scans settled multi-outcome events, no manual manifest).
-    - cron: "0 6 * * 1"
+    # Daily 06:00 UTC: self-sustaining structural backfill (Polymarket auto + Kalshi). Catches events that
+    # SETTLED in the last day (the volume-ranked window shifts as new events close) + rotates startPage to
+    # cover the tail. Forward growth still comes mainly from the hourly settle of frozen forward pairs.
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       run_historical_backfill:
@@ -125,14 +134,28 @@ jobs:
           cat /tmp/historical.json 2>/dev/null; echo
           [ "$code" = "200" ] || { echo "::error::historical backfill returned ${code}"; exit 1; }
 
-      - name: Auto-discovery backfill (weekly + manual) — self-sustaining, no manifest
-        if: (github.event_name == 'schedule' && github.event.schedule == '0 6 * * 1') || (github.event_name == 'workflow_dispatch' && inputs.run_auto_backfill)
+      - name: Auto-discovery backfill (daily + manual) — Polymarket structural, no manifest
+        if: (github.event_name == 'schedule' && github.event.schedule == '0 6 * * *') || (github.event_name == 'workflow_dispatch' && inputs.run_auto_backfill)
         run: |
-          code=$(curl -s -o /tmp/auto.json -w '%{http_code}' --max-time 780 \
+          # Rotate startPage 0/20 by day-of-year so two days cover the full ~2100-event volume-ranked window
+          # (Polymarket order=volume is tapped beyond that). `date` only — no untrusted interpolation.
+          SP=$(( ($(date -u +%-j) % 2) * 20 ))
+          code=$(curl -s -o /tmp/auto.json -w '%{http_code}' --max-time 290 \
             -H "authorization: Bearer ${CRON_SECRET}" \
-            "http://localhost:3000/api/cron/autobackfill")
+            "http://localhost:3000/api/cron/autobackfill?pages=20&maxJobs=280&startPage=${SP}")
           cat /tmp/auto.json 2>/dev/null; echo
+          echo "startPage=${SP}"
           [ "$code" = "200" ] || { echo "::error::auto backfill returned ${code}"; exit 1; }
+
+      - name: Kalshi structural backfill (daily + manual) — second venue, no manifest
+        if: (github.event_name == 'schedule' && github.event.schedule == '0 6 * * *') || (github.event_name == 'workflow_dispatch' && inputs.run_auto_backfill)
+        run: |
+          code=$(curl -s -o /tmp/kalshi.json -w '%{http_code}' --max-time 290 \
+            -H "authorization: Bearer ${CRON_SECRET}" \
+            "http://localhost:3000/api/cron/kalshibackfill?limit=1000&maxJobs=1500")
+          cat /tmp/kalshi.json 2>/dev/null; echo
+          # Kalshi is low-yield (sparse settled history) — a non-200 should NOT fail the whole run.
+          [ "$code" = "200" ] || echo "::warning::kalshi backfill returned ${code} (non-fatal)"
 
       - name: Qwen-in-CI probe (manual runs only)
         if: github.event_name == 'workflow_dispatch'
