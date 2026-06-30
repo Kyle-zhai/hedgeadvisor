@@ -3,6 +3,8 @@ import { z } from "zod";
 import { dbEnabled } from "@/lib/data/db";
 import { discoverRelations } from "@/lib/relate";
 import { shouldElicit, dayOfYearUTC } from "@/lib/relate/elicitSampling";
+import { loadIndexAnchorRows } from "@/lib/relate/marketIndex";
+import { selectIndexAnchors } from "@/lib/relate/anchorEnumeration";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,9 +57,23 @@ export async function GET(req: Request) {
   // Sampled elicited-prior capture (#5): ?elicitSample=0.25 runs the (costlier) withStrategies elicitation for
   // a deterministic ~1-in-4 anchors so a fraction of snapshots freeze p_given_fails/p_given_wins — enough to
   // later score the MODELED prior's accuracy without paying elicitation on every anchor every hour. Default 0.
-  const elicitSampleRaw = Number(new URL(req.url).searchParams.get("elicitSample") ?? 0);
+  const params = new URL(req.url).searchParams;
+  const elicitSampleRaw = Number(params.get("elicitSample") ?? 0);
   const elicitSample = Number.isFinite(elicitSampleRaw) ? Math.min(1, Math.max(0, elicitSampleRaw)) : 0;
   const doy = dayOfYearUTC(Date.now());
+
+  // Block A full-market radar: ?indexAnchors=N enumerates up to N anchors from the FULL market_index (rotated by
+  // day-of-year for a moving sweep, diversified across categories, deduped vs configured), so discovery is no
+  // longer limited to the configured anchors. Bounded (clamp 0..40); each runs through the same freeze path.
+  const indexAnchorsRaw = Number(params.get("indexAnchors") ?? 0);
+  const indexAnchorsN = Number.isFinite(indexAnchorsRaw) ? Math.min(40, Math.max(0, Math.floor(indexAnchorsRaw))) : 0;
+  let enumerated: z.infer<typeof Job>[] = [];
+  if (indexAnchorsN > 0) {
+    const rows = await loadIndexAnchorRows().catch(() => []);
+    const configuredSlugs = new Set(configured.map((j) => j.eventSlug).filter(Boolean));
+    enumerated = selectIndexAnchors(rows, { limit: indexAnchorsN, offset: doy }).filter((j) => !configuredSlugs.has(j.eventSlug));
+  }
+  const allJobs = [...configured, ...enumerated];
 
   const runJob = async (job: z.infer<typeof Job>, elicit: boolean) => {
     try {
@@ -88,14 +104,15 @@ export async function GET(req: Request) {
   const configuredConcurrency = Number(process.env.HEDGE_RELATION_JOB_CONCURRENCY ?? 8);
   const concurrency = Number.isFinite(configuredConcurrency) ? Math.min(10, Math.max(1, Math.floor(configuredConcurrency))) : 8;
   const results: Awaited<ReturnType<typeof runJob>>[] = [];
-  for (let i = 0; i < configured.length; i += concurrency) {
-    results.push(...await Promise.all(configured.slice(i, i + concurrency).map((job, j) => runJob(job, shouldElicit(elicitSample, i + j, doy)))));
+  for (let i = 0; i < allJobs.length; i += concurrency) {
+    results.push(...await Promise.all(allJobs.slice(i, i + concurrency).map((job, j) => runJob(job, shouldElicit(elicitSample, i + j, doy)))));
   }
   return NextResponse.json({
     ok: results.every((result) => result.status !== "error"),
     jobs: results.length,
+    indexAnchors: enumerated.length,
     elicitSample,
-    elicited: configured.filter((_, i) => shouldElicit(elicitSample, i, doy)).length,
+    elicited: allJobs.filter((_, i) => shouldElicit(elicitSample, i, doy)).length,
     written: results.reduce((sum, result) => sum + result.written, 0),
     results,
   });

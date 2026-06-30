@@ -114,10 +114,14 @@ jobs:
           set -uo pipefail
           fail=0
           for path in relations settle snapshot; do
+            qs=""
+            # Block A full-market radar: enumerate 12 extra anchors from market_index each run (rotated by
+            # day-of-year ⇒ a moving full-universe sweep, diversified across topics, on top of the config jobs).
+            [ "$path" = "relations" ] && qs="?indexAnchors=12"
             echo "::group::/api/cron/$path"
             code=$(curl -s -o /tmp/out.json -w '%{http_code}' --max-time 600 \
               -H "authorization: Bearer ${CRON_SECRET}" \
-              "http://localhost:3000/api/cron/${path}")
+              "http://localhost:3000/api/cron/${path}${qs}")
             cat /tmp/out.json 2>/dev/null; echo
             echo "HTTP ${code}"
             [ "$code" = "200" ] || { echo "::error::/api/cron/${path} returned ${code}"; fail=1; }

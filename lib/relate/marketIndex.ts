@@ -107,6 +107,23 @@ export async function queryMarketIndex(tokens: string[], limit = 200): Promise<M
     .map((r) => ({ venue: r.venue, marketId: r.market_id, eventKey: r.event_key, title: r.title, marketTitle: r.market_title, category: r.category, status: r.status }));
 }
 
+/**
+ * Block A radar: PM open rows for ANCHOR enumeration, deterministic order (event_key) for stable rotation.
+ * Kalshi excluded (can't anchor today). Returns [] when the DB is absent (fail-safe).
+ */
+export async function loadIndexAnchorRows(limit = 2000): Promise<Array<{ venue: string; eventKey: string; title: string; marketTitle: string; category: string }>> {
+  const sql = await getSql();
+  if (!sql) return [];
+  await ensureSchema(sql);
+  const rows = await sql.unsafe(
+    `SELECT venue, event_key, title, market_title, category FROM market_index
+     WHERE venue='polymarket' AND status='open' ORDER BY event_key
+     LIMIT ${Math.min(20000, Math.max(1, Math.floor(limit)))}`,
+  ).catch(() => [] as unknown[]);
+  return (rows as Array<{ venue: string; event_key: string; title: string; market_title: string; category: string }>)
+    .map((r) => ({ venue: r.venue, eventKey: r.event_key, title: r.title, marketTitle: r.market_title, category: r.category }));
+}
+
 export interface MarketIndexResult { pmEvents: number; kalshiEvents: number; rows: number; written: number; errors: number }
 
 async function mapPool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
