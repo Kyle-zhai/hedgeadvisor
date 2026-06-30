@@ -11,3 +11,5 @@ coverage/
 next-env.d.ts
 .playwright-mcp/
 .claude/scheduled_tasks.lock
+# Local-only consolidated docs + project screenshots (not published to GitHub)
+project-summary/

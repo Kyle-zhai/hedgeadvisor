@@ -1,5 +1,9 @@
 # Production-Grade Moat — Master Orchestration Plan
 
+> **STATUS (2026-06-30): COMPLETE.** All three blocks (A radar `31c2efc`, C joint-combo `fbeeab1`, B coverage
+> `3394531`) + the global test (7/7) + real-sweep/side fixes (`bd9e31c`) + cron wiring (`6c139b1`) are merged to
+> `main` and run on a schedule. 327 tests green. Single-leg + joint CALIBRATION still accrue over real settlement.
+
 > **For agentic workers:** This is the MASTER plan. Each block below gets its OWN spec
 > (`docs/superpowers/specs/YYYY-MM-DD-<block>-design.md`) and OWN implementation plan
 > (`docs/superpowers/plans/YYYY-MM-DD-<block>.md`) before coding, is implemented TDD task-by-task, and is
