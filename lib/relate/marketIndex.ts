@@ -86,6 +86,27 @@ export async function upsertMarketIndex(rows: MarketIndexRow[]): Promise<number>
   return written;
 }
 
+/**
+ * Recall over the index: rows whose title/market_title contain ANY of the anchor tokens (cheap prefilter,
+ * no price fetch). Caller lexically re-ranks + fetches/normalizes the top events. Open markets only.
+ * Parameterized ILIKE ($1..$n); LIMIT is a bounded int. Returns [] when DB/tokens are empty (fail-safe).
+ */
+export async function queryMarketIndex(tokens: string[], limit = 200): Promise<MarketIndexRow[]> {
+  const toks = tokens.map((t) => t.trim()).filter((t) => t.length >= 4).slice(0, 8);
+  const sql = await getSql();
+  if (!sql || !toks.length) return [];
+  await ensureSchema(sql);
+  const where = toks.map((_, i) => `(title ILIKE $${i + 1} OR market_title ILIKE $${i + 1})`).join(" OR ");
+  const params = toks.map((t) => `%${t}%`);
+  const rows = await sql.unsafe(
+    `SELECT venue, market_id, event_key, title, market_title, category, status
+     FROM market_index WHERE (${where}) ORDER BY last_seen DESC LIMIT ${Math.min(1000, Math.max(1, Math.floor(limit)))}`,
+    params,
+  ).catch(() => [] as unknown[]);
+  return (rows as Array<{ venue: "polymarket" | "kalshi"; market_id: string; event_key: string; title: string; market_title: string; category: string; status: string }>)
+    .map((r) => ({ venue: r.venue, marketId: r.market_id, eventKey: r.event_key, title: r.title, marketTitle: r.market_title, category: r.category, status: r.status }));
+}
+
 export interface MarketIndexResult { pmEvents: number; kalshiEvents: number; rows: number; written: number; errors: number }
 
 async function mapPool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {

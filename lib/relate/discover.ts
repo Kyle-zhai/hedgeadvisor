@@ -19,6 +19,7 @@ import { buildSuperposition, type SuperposeLeg, type SuperposeAnchor, type Super
 import { deriveStructuralCompanions } from "./structuralCompanions";
 import { classifyScenarioBucket, scenarioDistribution, type ScenarioBucket } from "./scenarioBucket";
 import { marginalCoverageGain, type OverlapLeg } from "./comboOverlap";
+import { queryMarketIndex, type MarketIndexRow } from "./marketIndex";
 import { selectRecallCandidates } from "./candidates";
 import { buildSemanticScorer } from "./embed";
 import { classifyPair } from "./classify";
@@ -131,6 +132,47 @@ async function sharedUniverse(): Promise<NormalizedMarket[]> {
   const markets = [...byId.values()];
   sharedCache = { at: Date.now(), markets };
   return markets;
+}
+
+const STOP = new Set(["the", "and", "for", "will", "wins", "win", "above", "below", "than", "with", "from", "into", "2024", "2025", "2026", "2027"]);
+const anchorTokens = (title: string): string[] => [...new Set(norm(title).split(/[^a-z0-9]+/).filter((t) => t.length >= 4 && !STOP.has(t)))];
+
+/**
+ * #2 recall-from-index: pull ANCHOR-RELEVANT candidates from the full market_index (cross-event, cross-domain)
+ * that the fixed sharedUniverse misses. Cheap token prefilter in SQL, lexical re-rank in JS, then fetch +
+ * normalize the top distinct events. Bounded + fail-safe (DB error ⇒ []). ADDITIVE — only widens the universe.
+ */
+async function indexRecallCandidates(anchorTitle: string, maxEvents = 12): Promise<NormalizedMarket[]> {
+  const tokens = anchorTokens(anchorTitle);
+  if (!tokens.length) return [];
+  const hits = await queryMarketIndex(tokens, 250).catch(() => []);
+  const tokSet = new Set(tokens);
+  const scored = hits
+    .map((h) => ({ h, score: norm(`${h.title} ${h.marketTitle}`).split(/[^a-z0-9]+/).filter((w) => tokSet.has(w)).length }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const events: MarketIndexRow[] = [];
+  const seen = new Set<string>();
+  for (const { h } of scored) {
+    const k = `${h.venue}:${h.eventKey}`;
+    if (seen.has(k) || !h.eventKey) continue;
+    seen.add(k);
+    events.push(h);
+    if (events.length >= maxEvents) break;
+  }
+  const out: NormalizedMarket[] = [];
+  for (const ev of events) {
+    try {
+      if (ev.venue === "polymarket") {
+        const b = await freshPmBundle(ev.eventKey);
+        if (b) out.push(...normalizePolymarketEvent(b, categoryOf(b)));
+      } else {
+        const markets = await fetchKalshiMarkets(ev.eventKey);
+        if (markets.length) out.push(...normalizeKalshiEvent(markets, ev.title || ev.eventKey, `topic:${(ev.category || "other").toLowerCase()}`, true, 1));
+      }
+    } catch { /* skip a bad event, keep widening */ }
+  }
+  return out;
 }
 
 // Candidates that can never be a POSITIVE-SUM cross-event hedge for a team/nation anchor, so they
@@ -880,6 +922,13 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const anchorId = `polymarket:${anchorRef.conditionId}`;
   const anchor = universe.find((m) => m.id === anchorId);
   if (!anchor) return { status: "not_found", suggestions: [] };
+
+  // #2 recall-from-index: widen the universe with anchor-relevant candidates from the FULL market_index
+  // (cross-event/cross-domain markets the fixed sharedUniverse misses). Additive + fail-safe; the φ + classify
+  // gates downstream reject anything irrelevant, so this can only improve coverage, never break a result.
+  const indexMarkets = await indexRecallCandidates(anchor.title).catch(() => [] as NormalizedMarket[]);
+  const known = new Set(universe.map((m) => m.id));
+  for (const m of indexMarkets) if (!known.has(m.id)) { universe.push(m); known.add(m.id); }
 
   // Stage 1: embeddings when explicitly enabled; otherwise cached batched LLM recall, with lexical
   // recall as the final network-free fallback.
