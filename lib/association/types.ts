@@ -139,6 +139,10 @@ export interface RobustOptimizerInput {
   maxLegs?: number;
   /** Until a joint settlement model exists, default to at most one probabilistic soft leg. */
   maxCalibratedSoftLegs?: number;
+  /** Ranking weights (defaults 0.2 specificity / 0.15 uncertainty, pinned by a regression test). Change
+   *  ONLY from an out-of-sample fit (lib/relate/weightFit.ts) — never hand-tuned. Reorders candidates
+   *  within the admitted set; never bypasses an admission/honesty gate. */
+  rankWeights?: { specificity: number; uncertainty: number };
 }
 
 export interface RobustAllocation {

@@ -164,7 +164,14 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
     const reductionPerDollar = pFail / price - 1;
     const specificity = pFail - pWin;
     // Uncertainty and payout-in-win are ranking penalties, never substitutes for the actual fail payoff.
-    const score = reductionPerDollar + 0.2 * specificity - 0.15 * c * uncertainty;
+    // Ranking weights are CONFIGURABLE (rankWeights) with the historical defaults pinned by a regression
+    // test. §18 audit: 0.2/0.15 are underived; the honest path to changing them is an out-of-sample fit
+    // (lib/relate/weightFit.ts) over ENOUGH actionable walk-forward episodes — the fitter refuses to
+    // recommend below its minimum-episode floor, so the defaults stand until real evidence accrues.
+    // Weights only reorder candidates WITHIN the admitted set; every honesty gate above is unaffected.
+    const wSpec = input.rankWeights?.specificity ?? 0.2;
+    const wUnc = input.rankWeights?.uncertainty ?? 0.15;
+    const score = reductionPerDollar + wSpec * specificity - wUnc * c * uncertainty;
     if (reductionPerDollar <= 1e-9) {
       rejected.push({ candidateId: candidate.id, reason: "worst-adjusted expected payout does not offset its executable cost" });
       continue;
