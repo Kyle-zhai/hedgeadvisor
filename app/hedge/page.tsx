@@ -44,7 +44,7 @@ interface RobustAllocation {
   shares: number;
   effectivePayGivenFail: number;
   modeledLossReductionUsd: number;
-  provenance: "ANALYTIC" | "CALIBRATED" | "MODELED" | "HYPOTHESIS";
+  provenance: "ANALYTIC" | "CALIBRATED" | "REFERENCE_CLASS" | "MODELED" | "HYPOTHESIS";
 }
 interface RobustHedge {
   status: "RECOMMEND" | "NO_ACTION";
@@ -223,7 +223,7 @@ export default function HedgePage() {
   // The optimizer's admitted legs ARE the recommendation: structural/calibrated (high confidence) AND the
   // engine's MODELED current-ability legs (lower confidence, clearly tiered). The moat raises a leg's tier
   // over time; it does not gate whether the engine recommends.
-  const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED" || a.provenance === "MODELED"), [data]);
+  const optimalLegs = useMemo(() => (data?.robustHedge?.allocations ?? []).filter((a) => a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED" || a.provenance === "REFERENCE_CLASS" || a.provenance === "MODELED"), [data]);
   const structuralRels = useMemo(() => (data?.relations ?? []).filter((r) => r.classifyMethod !== "llm"), [data]);
   const rh = data?.robustHedge;
   const hasHedge = optimalLegs.length > 0; // calibrated, trustworthy legs drive the OPTIMAL verdict
@@ -389,7 +389,7 @@ export default function HedgePage() {
                   <tbody>{optimalLegs.map((a) => (
                     <tr key={a.candidateId}>
                       <td><strong>{a.side.toUpperCase()}</strong> {a.label} <VenueTag venue={a.venue} short /></td>
-                      <td><span className={`badge ${a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED" ? "GO" : "PARTIAL"}`} title={a.provenance === "ANALYTIC" ? "structurally certain" : a.provenance === "CALIBRATED" ? "settlement-proven" : "the model's current estimate — not yet settlement-proven; confidence rises as the moat learns"}>{a.provenance}</span></td>
+                      <td><span className={`badge ${a.provenance === "ANALYTIC" || a.provenance === "CALIBRATED" ? "GO" : "PARTIAL"}`} title={a.provenance === "ANALYTIC" ? "structurally certain" : a.provenance === "CALIBRATED" ? "settlement-proven" : a.provenance === "REFERENCE_CLASS" ? "grounded in external real-world base rates — NOT settlement-proven; below CALIBRATED by design" : "the model's current estimate — not yet settlement-proven; confidence rises as the moat learns"}>{a.provenance}</span></td>
                       <td style={{ textAlign: "right" }}>${a.spendUsd.toFixed(2)}</td>
                       <td style={{ textAlign: "right" }}>{Math.round(a.effectivePayGivenFail * 100)}%</td>
                       <td style={{ textAlign: "right" }} className="pnl-pos">${a.modeledLossReductionUsd.toFixed(2)}</td>

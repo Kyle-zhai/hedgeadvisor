@@ -79,7 +79,9 @@ export interface ConditionalCalibration {
   sufficientEvidence: boolean;
 }
 
-export type AssociationProvenance = "ANALYTIC" | "CALIBRATED" | "MODELED" | "HYPOTHESIS";
+/** REFERENCE_CLASS (§19 ③): external real-world base-rate evidence + shrinkage — genuinely outcome-adjacent,
+ *  strictly BELOW CALIBRATED (transported from a different population; never settlement proof). */
+export type AssociationProvenance = "ANALYTIC" | "CALIBRATED" | "REFERENCE_CLASS" | "MODELED" | "HYPOTHESIS";
 
 export interface OptimizerCandidate {
   id: string;
@@ -117,6 +119,13 @@ export interface OptimizerCandidate {
    *  — it only lets the optimizer apply continuous conservatism (shading payGivenFail DOWN, toward this
    *  bound) instead of a flat uncertainty constant. The leg stays MODELED. */
   modeledPayoff?: { payGivenFail: number; payGivenWin: number; failLower?: number };
+  /** EXTERNAL reference-class prior (historical real-world base rates + empirical-Bayes shrinkage), for
+   *  provenance REFERENCE_CLASS only. THE WALL (§19 ③, non-negotiable): this lives in its OWN field —
+   *  it must NEVER be written into `calibration` / ConditionalCounts, never feed sufficientEvidence or the
+   *  20-per-branch settlement gate, and a candidate carrying it can never be CALIBRATED (the optimizer
+   *  rejects that combination outright). pseudoSamples scales the conservatism shading; `source` is the
+   *  auditable provenance of the base rate (dataset / reference-class description). */
+  referencePrior?: { payGivenFail: number; payGivenWin: number; pseudoSamples: number; source: string };
 }
 
 export interface RobustOptimizerInput {

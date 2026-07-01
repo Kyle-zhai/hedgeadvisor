@@ -62,6 +62,12 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
       pFail = clamp01(candidate.structuralPayoff.payGivenFail);
       pWin = clamp01(candidate.structuralPayoff.payGivenWin);
     } else if (candidate.provenance === "CALIBRATED" && candidate.calibration) {
+      // THE WALL (§19 ③): any external reference-class contribution disqualifies CALIBRATED outright —
+      // external pseudo-evidence must never render as settlement-proven, whatever the calibration slot says.
+      if (candidate.referencePrior) {
+        rejected.push({ candidateId: candidate.id, reason: "carries an external reference-class contribution — can never be CALIBRATED (settlement evidence only)" });
+        continue;
+      }
       if (c >= 0.98) {
         rejected.push({ candidateId: candidate.id, reason: "strictest posture accepts verified structural coverage only" });
         continue;
@@ -94,6 +100,31 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
         rejected.push({ candidateId: candidate.id, reason: "credible intervals do not prove the leg pays more often when the anchor fails" });
         continue;
       }
+    } else if (candidate.provenance === "REFERENCE_CLASS" && candidate.referencePrior) {
+      // EXTERNAL reference-class evidence (real-world base rates + shrinkage) — outcome-adjacent but
+      // TRANSPORTED from a different population, so it survives a more conservative posture than MODELED
+      // yet never the near-strict end (that stays settlement/structure only). The wall is structural: the
+      // prior lives in its OWN field, the CALIBRATED branch can never read it, and the combination is
+      // rejected outright above.
+      if (c >= 0.9) {
+        rejected.push({ candidateId: candidate.id, reason: "reference-class prior withheld at near-strict posture — external evidence is not settlement-proven" });
+        continue;
+      }
+      const rp = candidate.referencePrior;
+      pFail = clamp01(rp.payGivenFail);
+      pWin = clamp01(rp.payGivenWin);
+      // Shade pFail down by the prior's own standard error (pseudo-sample-scaled): thin external evidence
+      // shades harder and carries a bigger ranking penalty. Only ever LOWERS pFail.
+      const n = Math.max(1, rp.pseudoSamples);
+      const se = Math.sqrt(Math.max(0.05, pFail * (1 - pFail)) / n);
+      pFail = Math.max(0, pFail - c * Math.min(pFail, 2 * se));
+      // Ranking penalty sits BETWEEN calibrated (real CI width, typically <0.3) and MODELED (≥0.6 floor),
+      // so the tier ordering CALIBRATED > REFERENCE_CLASS > MODELED holds in the ranking too.
+      uncertainty = Math.min(0.55, Math.max(0.3, 4 * se));
+      const marginalBound = typeof candidate.marginal === "number" && candidate.marginal <= price ? candidate.marginal : price;
+      const anchorFailP = Math.max(0.02, 1 - primaryPrice);
+      pFail = Math.min(pFail, Math.min(1, marginalBound / anchorFailP)); // Fréchet feasibility, same as the other branches
+      pWin = Math.max(pWin, Math.max(0, (marginalBound - anchorFailP) / Math.max(0.02, primaryPrice)));
     } else if (candidate.provenance === "MODELED" && candidate.modeledPayoff) {
       // The engine's CURRENT-ability estimate (LLM-elicited conditional, Fréchet-feasible, optionally
       // shrunk toward the moat). UNPROVEN, so it is admitted as the recommendation only BELOW the strict
@@ -165,7 +196,7 @@ export function optimizeRobustHedge(input: RobustOptimizerInput): RobustOptimize
     // bound is max_i(reduction_i), i.e. a second correlated soft leg can add ZERO guaranteed reduction. So an
     // additive multi-soft-leg accounting cannot be made Fréchet-safe without risking a sizing overstatement;
     // we keep the single best soft leg until a real settlement-calibrated joint model exists (never ρ).
-    const isSoft = r.candidate.provenance === "CALIBRATED" || r.candidate.provenance === "MODELED";
+    const isSoft = r.candidate.provenance === "CALIBRATED" || r.candidate.provenance === "MODELED" || r.candidate.provenance === "REFERENCE_CLASS";
     if (isSoft && calibratedSoftLegs >= maxSoftLegs) {
       rejected.push({ candidateId: r.candidate.id, reason: "joint soft-leg model unavailable; only the single best soft leg is admitted (additive reduction is not Fréchet-safe for ≥2 correlated soft legs)" });
       continue;
