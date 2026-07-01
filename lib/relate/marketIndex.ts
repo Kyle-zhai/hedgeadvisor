@@ -87,20 +87,62 @@ export async function upsertMarketIndex(rows: MarketIndexRow[]): Promise<number>
 }
 
 /**
- * Recall over the index: rows whose title/market_title contain ANY of the anchor tokens (cheap prefilter,
+ * Common short anchors (normalized) → the long form actually written in market titles. Bare short tokens
+ * are otherwise dropped as noise — this map is what lets "Fed"/"UK"/"EU"/"AI" anchors recall from the index
+ * (the richest cross-domain veins: Fed↔crypto, election↔recession) instead of silently returning [].
+ */
+const SHORT_TOKEN_EXPANSION: Record<string, string> = {
+  us: "united states", usa: "united states", uk: "united kingdom", eu: "european union",
+  un: "united nations", ai: "artificial intelligence", ev: "electric vehicle",
+  fed: "federal reserve", ecb: "european central bank", boe: "bank of england", boj: "bank of japan",
+  btc: "bitcoin", eth: "ethereum",
+};
+
+/**
+ * Pure: split anchor tokens into query terms. `sub` = substring terms (≥4 chars → `ILIKE '%t%'`, trigram-
+ * indexed); `word` = 3-char tokens matched at WORD BOUNDARIES (`~* '\mfed\M'`) so "fed" never matches
+ * "federer". Known short anchors also expand to their long form. Longer (more specific) terms win the cap.
+ */
+export function buildIndexQueryTerms(tokens: string[]): { sub: string[]; word: string[] } {
+  const raw = [...new Set(tokens.map((t) => t.trim().toLowerCase()).filter(Boolean))];
+  const subs: string[] = [];
+  const words: string[] = [];
+  for (const t of raw) {
+    const exp = SHORT_TOKEN_EXPANSION[t];
+    if (exp && exp !== t) subs.push(exp);
+    if (t.length >= 4) subs.push(t);
+    else if (t.length === 3) words.push(t.replace(/[^a-z0-9]/g, ""));
+  }
+  return {
+    sub: [...new Set(subs)].sort((a, b) => b.length - a.length).slice(0, 8),
+    word: [...new Set(words.filter(Boolean))].slice(0, 4),
+  };
+}
+
+/**
+ * Recall over the index: rows whose title/market_title contain ANY of the anchor terms (cheap prefilter,
  * no price fetch). Caller lexically re-ranks + fetches/normalizes the top events. Open markets only.
- * Parameterized ILIKE ($1..$n); LIMIT is a bounded int. Returns [] when DB/tokens are empty (fail-safe).
+ * Parameterized ILIKE/~* ($1..$n), served by the pg_trgm GIN indexes (db.ts TRGM_SQL); LIMIT is a bounded
+ * int. Returns [] when DB/terms are empty (fail-safe).
  */
 export async function queryMarketIndex(tokens: string[], limit = 200): Promise<MarketIndexRow[]> {
-  const toks = tokens.map((t) => t.trim()).filter((t) => t.length >= 4).slice(0, 8);
+  const { sub, word } = buildIndexQueryTerms(tokens);
   const sql = await getSql();
-  if (!sql || !toks.length) return [];
+  if (!sql || (!sub.length && !word.length)) return [];
   await ensureSchema(sql);
-  const where = toks.map((_, i) => `(title ILIKE $${i + 1} OR market_title ILIKE $${i + 1})`).join(" OR ");
-  const params = toks.map((t) => `%${t}%`);
+  const clauses: string[] = [];
+  const params: string[] = [];
+  for (const t of sub) {
+    params.push(`%${t}%`);
+    clauses.push(`(title ILIKE $${params.length} OR market_title ILIKE $${params.length})`);
+  }
+  for (const t of word) {
+    params.push(`\\m${t}\\M`); // Postgres regex word boundaries; bound param, never interpolated
+    clauses.push(`(title ~* $${params.length} OR market_title ~* $${params.length})`);
+  }
   const rows = await sql.unsafe(
     `SELECT venue, market_id, event_key, title, market_title, category, status
-     FROM market_index WHERE (${where}) ORDER BY last_seen DESC LIMIT ${Math.min(1000, Math.max(1, Math.floor(limit)))}`,
+     FROM market_index WHERE (${clauses.join(" OR ")}) ORDER BY last_seen DESC LIMIT ${Math.min(1000, Math.max(1, Math.floor(limit)))}`,
     params,
   ).catch(() => [] as unknown[]);
   return (rows as Array<{ venue: "polymarket" | "kalshi"; market_id: string; event_key: string; title: string; market_title: string; category: string; status: string }>)

@@ -22,6 +22,7 @@ import { fetchKalshiBook } from "@/lib/kalshi";
 import { walkBookBuyBudgetCapped, bandDepthUsd, kalshiTakerFeeUsd, takerFeeUsd } from "@/lib/netcost";
 import { calibrateConditionalPayoff, type OptimizerCandidate } from "@/lib/association";
 import { mechanismSignature, relationKey, relationRole } from "./relationKey";
+import { graphVeto } from "./graphGuards";
 import { bucketKeys, loadBucketCounts } from "./tuningProfile";
 import type { CandidatePair, NormalizedMarket, PairClassification } from "./types";
 import { norm } from "@/lib/polymarket/text";
@@ -123,6 +124,10 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
     // and anything unrelated. A hedge leg must resolve on a DIFFERENT event from the anchor.
     if (role === "unrelated" || role === "rival" || role === "same_entity" || m.eventKey === anchor.eventKey || sharesAnchorEntity(m)) continue;
     const graph = cls.hypothesis?.mechanismGraph;
+    // N3 shared-resolution-source / P3 collider: deterministic graph veto (Gate 4). A candidate that
+    // settles off the anchor's own feed is a correlated-failure trap, not a hedge; a pure collider's
+    // association is Berkson noise. Veto-only — this can never admit or promote a leg.
+    if (graphVeto(graph)) continue;
     const mechanism = mechanismSignature(graph, cls.hypothesis?.direction);
     const reusableCohort = !graph || graph.portability !== "INSTANCE_ONLY";
     const anchorFamily = graph?.anchorEventClass ?? anchor.eventFamily;

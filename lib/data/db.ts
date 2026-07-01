@@ -50,12 +50,23 @@ export async function ensureSchema(sql: Sql): Promise<void> {
   if (_schemaPromise) return _schemaPromise;
   _schemaPromise = (async () => {
     await sql.unsafe(SCHEMA_SQL);
+    // Trigram GIN indexes make queryMarketIndex's `ILIKE '%tok%'` / `~*` recall index-backed instead of a
+    // full seq scan of the whole open-market catalog (the catalog is DESIGNED to grow, so the scan cost is
+    // unbounded without this). Separate fail-safe block: CREATE EXTENSION needs owner rights on some hosts,
+    // and a locked-down DB must not break the rest of the schema — recall then just stays a seq scan.
+    await sql.unsafe(TRGM_SQL).catch(() => {});
     _schemaEnsured = true;
   })().finally(() => {
     if (!_schemaEnsured) _schemaPromise = null;
   });
   return _schemaPromise;
 }
+
+export const TRGM_SQL = `
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS market_index_title_trgm_idx ON market_index USING GIN (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS market_index_mtitle_trgm_idx ON market_index USING GIN (market_title gin_trgm_ops);
+`;
 
 export const SCHEMA_SQL = `
 -- Catalog (working index keyed to Polymarket ids; refreshed on demand, not mirrored).

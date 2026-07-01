@@ -17,6 +17,7 @@ import { marketDimension, eventFamily, relationRole, mechanismSignature } from "
 import { loadTuningProfile, lookupBucket, type BucketStat } from "./tuningProfile";
 import { buildSuperposition, type SuperposeLeg, type SuperposeAnchor, type Superposition } from "./superpose";
 import { deriveStructuralCompanions } from "./structuralCompanions";
+import { graphVeto, tallyOperators } from "./graphGuards";
 import { classifyScenarioBucket, scenarioDistribution, type ScenarioBucket } from "./scenarioBucket";
 import { marginalCoverageGain, type OverlapLeg } from "./comboOverlap";
 import { queryMarketIndex, type MarketIndexRow } from "./marketIndex";
@@ -135,8 +136,11 @@ async function sharedUniverse(): Promise<NormalizedMarket[]> {
   return markets;
 }
 
-const STOP = new Set(["the", "and", "for", "will", "wins", "win", "above", "below", "than", "with", "from", "into", "2024", "2025", "2026", "2027"]);
-const anchorTokens = (title: string): string[] => [...new Set(norm(title).split(/[^a-z0-9]+/).filter((t) => t.length >= 4 && !STOP.has(t)))];
+const STOP = new Set(["the", "and", "for", "will", "wins", "win", "above", "below", "than", "with", "from", "into", "who", "can", "not", "its", "has", "get", "out", "new", "top", "end", "2024", "2025", "2026", "2027"]);
+// Floor 3 (was 4): Fed/GDP/CPI/SEC-style anchors are the richest cross-domain veins and were silently
+// recalling NOTHING. 3-char tokens stay precise because buildIndexQueryTerms matches them at word
+// boundaries (and expands known short anchors like uk/eu/ai to their written-out forms).
+const anchorTokens = (title: string): string[] => [...new Set(norm(title).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !STOP.has(t)))];
 
 /**
  * #2 recall-from-index: pull ANCHOR-RELEVANT candidates from the full market_index (cross-event, cross-domain)
@@ -148,8 +152,16 @@ async function indexRecallCandidates(anchorTitle: string, maxEvents = 12): Promi
   if (!tokens.length) return [];
   const hits = await queryMarketIndex(tokens, 250).catch(() => []);
   const tokSet = new Set(tokens);
+  // Jaccard-normalized re-rank (§18 audit fix): raw overlap COUNT favors long titles; normalizing by the
+  // union makes a tight 2-of-3 match outrank a sprawling 3-of-30 one (same idea as lexicalSimilarity).
   const scored = hits
-    .map((h) => ({ h, score: norm(`${h.title} ${h.marketTitle}`).split(/[^a-z0-9]+/).filter((w) => tokSet.has(w)).length }))
+    .map((h) => {
+      const ws = new Set(norm(`${h.title} ${h.marketTitle}`).split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
+      let inter = 0;
+      for (const w of ws) if (tokSet.has(w)) inter++;
+      const union = ws.size + tokSet.size - inter;
+      return { h, score: union > 0 ? inter / union : 0 };
+    })
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score);
   const events: MarketIndexRow[] = [];
@@ -314,6 +326,9 @@ export interface DiscoverResult {
   /** Phase-1 combo diagnostic: count of superposition legs per anchor-failure scenarioBucket. Descriptive
    *  only (never sizing/calibration); the Phase-3 overlap policy keys off same-vs-different scenario. */
   scenarioCoverage?: Record<string, number>;
+  /** §13 operator-ontology coverage (Gate 4): classified relations per operator row + the EMPTY rows as an
+   *  explicit uncovered vector. Descriptive only — never sizes, never calibrates, never gates. */
+  operatorCoverage?: { operators: Record<string, number>; uncovered: string[] };
   /** Operational telemetry only; never enters correlation, calibration, or sizing. */
   llm?: {
     recall?: RecallDiagnostics;
@@ -525,11 +540,19 @@ async function buildCrossEventStrategies(
   const diverse = eligible.filter((r) => r.recall === "diversity").slice(0, 10);
   const similar = eligible.filter((r) => r.recall !== "diversity").slice(0, 16);
   const cands = [...new Map([...similar, ...diverse].map((r) => [r.market.id, r])).values()].slice(0, 24);
+  // Anchor identity for the domain-general structural paths (single-winner siblings / threshold ladders):
+  // find the anchor's own universe row so VENUE METADATA (mutuallyExclusiveEvent) can prove the structure.
+  const anchorSelf = universe.find((m) => m.eventKey === anchor.eventKey && norm(m.title) === norm(anchor.title));
+  const structuralAnchor = (p: number) => ({
+    title: anchor.title, probYes: p, id: anchorSelf?.id, eventKey: anchor.eventKey,
+    mutuallyExclusiveEvent: anchorSelf?.mutuallyExclusiveEvent,
+  });
   if (cands.length === 0) {
-    // No LLM candidates — but logically-certain structural companions (continent basket) still apply.
+    // No LLM candidates — but logically-certain structural companions still apply (single-winner siblings,
+    // threshold ladders, continent overlay).
     const superAnchor = { winProb: Math.min(0.999, Math.max(0.001, anchor.probYes)), stakeUsd, entryPrice };
     const superBudget = Math.min(0.5 * baseWinnings, stakeUsd);
-    const structural = deriveStructuralCompanions({ title: anchor.title, probYes: superAnchor.winProb }, universe);
+    const structural = deriveStructuralCompanions(structuralAnchor(superAnchor.winProb), universe);
     return { strategies: [], directional: await buildDirectionalSuperposition(superAnchor, superBudget, universeById, structural, structural), elicitedPriors: new Map() };
   }
   const anchorTitle = `${anchor.title} (${anchor.marketTitle})`;
@@ -571,6 +594,8 @@ async function buildCrossEventStrategies(
     const confMin = r.recall === "diversity" ? DIVERSITY_CONF_MIN : CONF_MIN;
     if (Math.abs(phi) < phiMin || conf < confMin) continue;
     if (isIndependentReason(reason)) continue;
+    // N3 shared-resolution-source / P3 collider: deterministic graph veto (was prompt-only until Gate 4).
+    if (graphVeto(r.mechanismGraph)) continue;
     const buyYes = phi < 0; // anti-correlated → the candidate's YES pays when your bet fails
     const qSide = Math.min(0.98, Math.max(0.02, buyYes ? r.market.probYes : 1 - r.market.probYes));
     const pWsideModeled = buyYes ? pW : 1 - pW; // P(bought side pays | anchor wins), before calibration
@@ -638,6 +663,7 @@ async function buildCrossEventStrategies(
       if (!x || x.conf < CONF_MIN) continue;
       const { r, pW, pF, reason } = x;
       if (isIndependentReason(reason)) continue; // never ladder a leg the elicitor called independent
+      if (graphVeto(r.mechanismGraph)) continue; // N3 shared source / P3 collider: same deterministic veto
       const qYes = Math.min(0.98, Math.max(0.02, r.market.probYes));
       // Map to the structural bucket (same role × mechanism as the hedge path) and CALIBRATE BOTH sides:
       // the win-branch shrinks toward the bucket's amplifier signal, the fail-branch toward its hedge
@@ -677,9 +703,9 @@ async function buildCrossEventStrategies(
   // Companion budget = min(half the potential winnings, the stake) — a longshot's winnings are huge, so the
   // stake cap keeps the companion spend sane (you never risk more on companions than the bet itself).
   const superBudget = Math.min(0.5 * baseWinnings, stakeUsd);
-  // ANALYTIC structural companions (continent basket: anchor ⊆ own continent = amplifier, ⟂ others = hedge)
-  // are deterministic and appear EVERY run, ahead of the per-draw MODELED elicited legs.
-  const structural = deriveStructuralCompanions({ title: anchor.title, probYes: ap }, universe);
+  // ANALYTIC structural companions (single-winner siblings, threshold ladders, continent overlay) are
+  // deterministic and appear EVERY run, ahead of the per-draw MODELED elicited legs.
+  const structural = deriveStructuralCompanions(structuralAnchor(ap), universe);
   const directional = await buildDirectionalSuperposition(
     superAnchor, superBudget, universeById,
     [...structural, ...toSuperposeLegs(1)], [...structural, ...toSuperposeLegs(0)],
@@ -1072,6 +1098,13 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   const comboLegs = [...(directional?.aggressive?.legs ?? []), ...(directional?.conservative?.legs ?? [])];
   const scenarioCoverage = scenarioDistribution(comboLegs.map((l) => l.scenario).filter((s): s is ScenarioBucket => Boolean(s)));
 
+  // §13 operator coverage (Gate 4): which relation-operator rows this anchor's classified candidates hit,
+  // and which stayed EMPTY — an explicit uncovered vector instead of a silent gap. Descriptive only.
+  const operatorCoverage = tallyOperators(relations.map((r) => ({
+    relation: r.hypothesis?.relation, direction: r.hypothesis?.direction,
+    mechanismType: r.mechanismGraph?.mechanismType, graph: r.mechanismGraph,
+  })));
+
   return {
     status: "ok",
     strategies,
@@ -1085,6 +1118,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
     pricedAt: new Date().toISOString(),
     candidateSnapshotsWritten,
     scenarioCoverage,
+    operatorCoverage,
     llm: { recall: recallDiagnostics, classification: classificationDiagnostics },
   };
 }
