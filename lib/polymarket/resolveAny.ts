@@ -70,6 +70,57 @@ function rankEvents(query: string, evs: EvLite[]): Scored[] {
 
 export type AnyResolveResult = ResolveResult & { eventSlug?: string };
 
+// ── §19 resolution-from-index (the Gate-0 finding) ───────────────────────────────────────────────────────
+// The live probe showed the binding constraint is ANCHOR RESOLUTION: public-search + top-100-volume have
+// poor recall, and rankEvents keeps ONLY negRisk single-winner events — so binary/threshold anchors
+// ("US recession in 2026", "Bitcoin above $150k", company markets) were invisible here even when the
+// market exists. The market_index catalogs ALL open markets (GIN-indexed, acronym-capable) — fall back to
+// it when the search paths fail. PM rows only (a resolved position is a PM position today).
+
+const IDX_STOP = new Set(["the", "and", "for", "will", "with", "from", "into", "that", "this"]);
+const indexQueryTokens = (q: string): string[] =>
+  [...new Set(norm(q).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !IDX_STOP.has(t)))];
+
+/** Pure: rank index hits into distinct candidate event slugs by Jaccard(query, title+marketTitle). */
+export function rankIndexEvents(
+  queryToks: string[],
+  hits: Array<{ eventKey: string; title: string; marketTitle: string }>,
+  maxEvents = 4,
+): string[] {
+  const q = new Set(queryToks);
+  const best = new Map<string, number>();
+  for (const h of hits) {
+    const ws = new Set(norm(`${h.title} ${h.marketTitle}`).split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
+    let inter = 0;
+    for (const w of ws) if (q.has(w)) inter++;
+    const union = ws.size + q.size - inter;
+    const score = union > 0 ? inter / union : 0;
+    if (score <= 0) continue;
+    if (score > (best.get(h.eventKey) ?? 0)) best.set(h.eventKey, score);
+  }
+  return [...best.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxEvents).map(([k]) => k);
+}
+
+/** Resolve via the full-market index; null when nothing decisive (no DB / no hits ⇒ exactly as before). */
+async function resolveFromIndex(query: string): Promise<AnyResolveResult | null> {
+  try {
+    // Lazy import: lib/relate/marketIndex pulls the DB layer; keep it off this module's static graph.
+    const { queryMarketIndex } = await import("@/lib/relate/marketIndex");
+    const toks = indexQueryTokens(query);
+    if (!toks.length) return null;
+    const hits = (await queryMarketIndex(toks, 250)).filter((h) => h.venue === "polymarket" && h.eventKey);
+    let ambiguous: AnyResolveResult | null = null;
+    for (const slug of rankIndexEvents(toks, hits)) {
+      const res = await resolvePosition(query, slug).catch(() => null);
+      if (res?.kind === "resolved") return { ...res, eventSlug: slug };
+      if (res?.kind === "ambiguous" && !ambiguous) ambiguous = { ...res, eventSlug: slug };
+    }
+    return ambiguous;
+  } catch {
+    return null; // fail-safe: index unavailable ⇒ resolution behaves exactly as before
+  }
+}
+
 // Structural WC events whose ENTITY lives in the OUTCOMES, not the event title — so title-ranking
 // can't find them ("Europe" / "France to reach the final" / "Mbappé golden boot"). We probe these
 // by slug as a last resort, matching the query against their outcomes. Extend per season.
@@ -106,6 +157,13 @@ export async function resolveAnyPosition(query: string): Promise<AnyResolveResul
   for (const hit of results) {
     if (hit && hit.r.kind === "resolved") return { ...hit.r, eventSlug: hit.slug };
   }
+
+  // Search + structural slugs found no clean outcome → the full-market index (not limited to negRisk,
+  // so binary/threshold anchors resolve too). A decisive index resolve beats an earlier event-level
+  // ambiguous, consistent with the preference above.
+  const idx = await resolveFromIndex(query);
+  if (idx?.kind === "resolved") return idx;
+  if (idx && !fallback) fallback = idx;
 
   // No clean resolve anywhere → offer the best event-level disambiguation we did find.
   if (fallback) return fallback;
