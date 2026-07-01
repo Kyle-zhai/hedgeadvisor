@@ -23,6 +23,7 @@ import { walkBookBuyBudgetCapped, bandDepthUsd, kalshiTakerFeeUsd, takerFeeUsd }
 import { calibrateConditionalPayoff, type OptimizerCandidate } from "@/lib/association";
 import { mechanismSignature, relationKey, relationRole } from "./relationKey";
 import { graphVeto } from "./graphGuards";
+import { loadReferencePriors } from "./referencePriors";
 import { bucketKeys, loadBucketCounts } from "./tuningProfile";
 import type { CandidatePair, NormalizedMarket, PairClassification } from "./types";
 import { norm } from "@/lib/polymarket/text";
@@ -95,6 +96,8 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
   // does not match the pair against its own history), and buckets cross the evidence threshold far sooner than
   // any single template. Empty without a DB ⇒ no CALIBRATED legs (HYPOTHESIS-only), exactly as before.
   const bucketCounts = await loadBucketCounts().catch(() => new Map());
+  // Curated external base rates (REFERENCE_CLASS layer). Empty until priors are curated — a no-op then.
+  const referencePriors = loadReferencePriors();
 
   // Most-liquid candidate first so the per-relation_key dedup keeps the best one (pre-price proxy).
   const ordered = [...classified].sort((a, b) => Number(b.pair.b.liquidityOk) - Number(a.pair.b.liquidityOk) || b.pair.b.probYes - a.pair.b.probYes);
@@ -175,6 +178,33 @@ export async function buildOptimizerCandidates(anchor: NormalizedMarket, classif
       });
     }
     if (foundCalibrated) continue;
+    // §19 item 3: curated EXTERNAL reference-class prior for the LEAF bucket (role|mech|direction|side).
+    // Strictly BELOW CALIBRATED (checked only when no settlement bucket sufficed); the optimizer wall keeps
+    // it out of the calibration slot entirely. LEAF-only lookup — transportability is judged per exact
+    // bucket, never inherited from a coarser rung (§5 guard 2). Empty priors table ⇒ this is a no-op.
+    let foundReference = false;
+    for (const side of sides) {
+      if (!reusableCohort) break; // INSTANCE_ONLY mechanisms never pool — same rule as calibration
+      const leaf = bucketKeys(role, mechType, direction, side)[0];
+      const rp = referencePriors.get(leaf);
+      if (!rp) continue;
+      const priced = await priceSide(m, side, pricingBudgetUsd);
+      if (!priced) continue;
+      foundReference = true;
+      out.push({
+        id: `ref:${leaf}:${m.id}`,
+        label: `${side === "no" ? "NOT " : ""}${m.title} · ${m.venue}`,
+        venue: m.venue,
+        side,
+        price: priced.price,
+        marginal: priced.marginal,
+        maxSpendUsd: priced.capacityUsd,
+        provenance: "REFERENCE_CLASS",
+        referencePrior: rp,
+        associationGroup: `soft-market:${m.id}`,
+      });
+    }
+    if (foundReference) continue;
     if (preferredSide && hypothesisCount < MAX_HYPOTHESIS) {
       hypothesisCount++;
       const side = preferredSide;
