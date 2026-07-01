@@ -64,9 +64,9 @@ TWO CRITICAL CASES — apply BEFORE the independence default:
 1) LOGICAL ENTAILMENT (the strongest POSITIVE — do NOT shade it toward the base rate). If the anchor outcome by DEFINITION guarantees the candidate, set pGivenAnchorWins = 0.99. This covers: nested numeric thresholds for the SAME subject (a team that wins 14+ games necessarily won 12+; a price above $150 is above $120; 5,000+ yards is 4,500+); later tournament/playoff stages implying every earlier one (reaching the final implies the semifinal and quarterfinal); and a broader event containing a narrower one. Then pGivenAnchorFails is the candidate's rate among the cases where the anchor did NOT happen — clearly above 0 and below pGivenAnchorWins. If instead the anchor guarantees the candidate CANNOT happen, set pGivenAnchorWins = 0.01.
 2) TRUE INDEPENDENCE (be strict — most candidate pairs are independent). Before you move the two conditionals apart, NAME the concrete mechanism (a–e) in one phrase. If you cannot, the outcomes are INDEPENDENT: set pGivenAnchorWins = pGivenAnchorFails (the candidate's base rate) with LOW confidence. Outcomes in DIFFERENT unrelated domains — a sports result vs a crypto price vs a box-office number vs an unrelated country's election — are independent even when both are uncertain or both are "in the news"; never infer a link from shared timing, general risk-on/off sentiment, or vague thematic overlap.`;
 
-/** Elicit P(candidate | anchor wins) and P(candidate | anchor fails) from the LLM. Disabled safely
- *  (status "disabled") when no key is configured, exactly like analyzeRelationWithQwen. */
-export async function elicitConditionalWithQwen(
+/** Shared elicitation core: identical contract/decoding/guards for every FRAMING of the system prompt. */
+async function elicitWithSystem(
+  system: string,
   anchorTitle: string,
   candidateTitle: string,
   options: ElicitOptions = {},
@@ -100,9 +100,8 @@ export async function elicitConditionalWithQwen(
       ...(relationThinkingEnabled(attemptModel) ? { enable_thinking: true } : {}),
       max_tokens: 2000, // headroom: a reasoning model spends an internal pass before content; 800 risked empty
       messages: [
-        // Flag-gated few-shot anchors (HEDGE_RELATION_FEWSHOT=1); default OFF → SYSTEM unchanged.
-        // Flag-gated V2 prompt (HEDGE_RELATION_PROMPT_V2=1) reinforces entailment + independence; default OFF.
-        { role: "system", content: withFewShot(process.env.HEDGE_RELATION_PROMPT_V2 === "1" ? SYSTEM + SYSTEM_V2 : SYSTEM) },
+        // Flag-gated few-shot anchors (HEDGE_RELATION_FEWSHOT=1); default OFF → system unchanged.
+        { role: "system", content: withFewShot(system) },
         { role: "user", content: `ANCHOR outcome: ${anchorTitle}\nCANDIDATE outcome: ${candidateTitle}\nReturn JSON only.` },
       ],
       response_format: { type: "json_object" },
@@ -125,4 +124,60 @@ export async function elicitConditionalWithQwen(
   const mid = (data.pGivenAnchorWins + data.pGivenAnchorFails) / 2;
   const guarded = independent ? { ...data, pGivenAnchorWins: mid, pGivenAnchorFails: mid } : data;
   return { status: "ok", model: completion.model, ...guarded, attempts: completion.attempts };
+}
+
+/** Elicit P(candidate | anchor wins) and P(candidate | anchor fails) from the LLM. Disabled safely
+ *  (status "disabled") when no key is configured, exactly like analyzeRelationWithQwen.
+ *  Flag-gated V2 prompt (HEDGE_RELATION_PROMPT_V2=1) reinforces entailment + independence; default OFF. */
+export async function elicitConditionalWithQwen(
+  anchorTitle: string,
+  candidateTitle: string,
+  options: ElicitOptions = {},
+): Promise<ConditionalElicitResult> {
+  return elicitWithSystem(process.env.HEDGE_RELATION_PROMPT_V2 === "1" ? SYSTEM + SYSTEM_V2 : SYSTEM, anchorTitle, candidateTitle, options);
+}
+
+/** §19 anti-sycophancy, the ADVERSARIAL FRAMING: same contract, temp 0, but the system prompt ARGUES
+ *  AGAINST the link — the pair earns divergent conditionals only if independence cannot honestly be
+ *  defended. SycEval measured 46–95% agreement-flips when a stated belief leaks into the prompt; the
+ *  fabricated-plausible-mechanism case is exactly what the single confession-regex guard misses. */
+const ADVERSARIAL_SYSTEM = `You are a SKEPTICAL auditor. Your job is to REFUTE a claimed dependence between two prediction-market outcomes on DIFFERENT events. Start from the position that they are INDEPENDENT. Concede a dependence ONLY if you cannot honestly defend independence — i.e. a specific, concrete, NAMED mechanism undeniably links them: (a) shared contributor (same team/player/party/region drives both); (b) mutual exclusivity (cannot both be true); (c) prerequisite (one requires or excludes the other); (d) shared market or environment (same asset class; same partisan/macro regime); (e) same-event collateral (resolves on the anchor's own match/event/broadcast). Vague thematic overlap, a shared news cycle, "risk sentiment", or the mere plausibility of a story are NOT mechanisms — hold the line at independence for those.
+Estimate for the CANDIDATE outcome:
+- pGivenAnchorWins = P(candidate pays | the anchor outcome HAPPENS)
+- pGivenAnchorFails = P(candidate pays | the anchor outcome does NOT happen)
+If you maintain independence, set both EQUAL to the candidate's base rate and say "independent, no concrete mechanism".
+Return JSON only with keys pGivenAnchorWins, pGivenAnchorFails, confidence (0-1), reason (one short sentence).`;
+
+export async function elicitConditionalAdversarial(
+  anchorTitle: string,
+  candidateTitle: string,
+  options: ElicitOptions = {},
+): Promise<ConditionalElicitResult> {
+  return elicitWithSystem(ADVERSARIAL_SYSTEM, anchorTitle, candidateTitle, options);
+}
+
+export interface SignVetoInput { pGivenAnchorWins: number; pGivenAnchorFails: number }
+
+/** §19 anti-sycophancy combiner (pure, unit-tested). A leg keeps its divergent conditionals ONLY when the
+ *  divergence SURVIVES being argued against: the adversarial pass must itself return a materially
+ *  divergent, SAME-SIGN estimate. Otherwise the conditionals are EQUALIZED (φ→0 ⇒ the leg drops through
+ *  the existing gates). Veto-only — it can never widen a divergence or admit a leg. Fail-OPEN on missing/
+ *  errored adversarial evidence (a provider blip must not silently kill every leg); the veto fires only on
+ *  an ACTIVE failure to reproduce the sign. Both passes are temperature-0 and differ by FRAMING, not RNG,
+ *  so a replay reproduces the same decision (the freeze-path requirement). */
+export function adversarialSignVeto(
+  primary: SignVetoInput,
+  adversarial: (Partial<SignVetoInput> & { status?: string }) | null | undefined,
+  tolerance = 0.02,
+): SignVetoInput & { vetoed: boolean } {
+  const dP = primary.pGivenAnchorFails - primary.pGivenAnchorWins;
+  if (Math.abs(dP) <= tolerance) return { ...primary, vetoed: false }; // already ~independent — nothing to defend
+  if (!adversarial || adversarial.status !== "ok" || adversarial.pGivenAnchorWins == null || adversarial.pGivenAnchorFails == null) {
+    return { ...primary, vetoed: false }; // fail-open: no adversarial evidence
+  }
+  const dA = adversarial.pGivenAnchorFails - adversarial.pGivenAnchorWins;
+  const survives = Math.abs(dA) > tolerance && Math.sign(dA) === Math.sign(dP);
+  if (survives) return { ...primary, vetoed: false };
+  const mid = (primary.pGivenAnchorWins + primary.pGivenAnchorFails) / 2;
+  return { pGivenAnchorWins: mid, pGivenAnchorFails: mid, vetoed: true };
 }

@@ -64,6 +64,9 @@ jobs:
       HEDGE_HISTORICAL_BACKFILL_JOBS_JSON_2: ${{ vars.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON_2 }}
       HEDGE_HISTORICAL_BACKFILL_JOBS_JSON_3: ${{ vars.HEDGE_HISTORICAL_BACKFILL_JOBS_JSON_3 }}
       QWEN_BASE_URL: ${{ vars.QWEN_BASE_URL }}
+      # §19 anti-sycophancy: on the CRON freeze path only, a second temp-0 adversarial-framing pass must
+      # fail to refute each elicited link or its conditionals equalize (veto-only, fail-open on errors).
+      HEDGE_ADVERSARIAL_ELICIT: "1"
       QWEN_RELATION_MODEL: ${{ vars.QWEN_RELATION_MODEL }}
       QWEN_RELATION_MODELS: ${{ vars.QWEN_RELATION_MODELS }}
       QWEN_EMBED_MODEL: ${{ vars.QWEN_EMBED_MODEL }}

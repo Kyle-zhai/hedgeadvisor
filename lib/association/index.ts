@@ -2,7 +2,7 @@ export * from "./types";
 export { countConditionalObservations, calibrateConditionalPayoff, regularizedBeta, betaQuantile } from "./calibration";
 export { analyzeRelationWithQwen, analyzeRelationWithDeepSeek, type QwenRelationOptions, type QwenRelationResult } from "./qwen";
 export { DEFAULT_RELATION_MODEL_CHAIN, DEFAULT_RELATION_BASE_URL, relationApiKey, relationBaseUrl, relationModelChain, relationThinkingEnabled, relationTimeoutMs, type ModelAttempt } from "./modelFallback";
-export { elicitConditionalWithQwen, type ConditionalElicitResult, type ElicitOptions } from "./elicit";
+export { elicitConditionalWithQwen, elicitConditionalAdversarial, adversarialSignVeto, type ConditionalElicitResult, type ElicitOptions, type SignVetoInput } from "./elicit";
 export { optimizeRobustHedge } from "./optimizer";
 export {
   validateHistoricalAssociationSamples,

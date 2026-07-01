@@ -10,7 +10,7 @@ import { resolveAnyPosition, resolvePosition, fetchEventBundle, fetchMidpoints, 
 import { gammaGet } from "@/lib/polymarket/client";
 import { listKalshiEvents, fetchKalshiMarkets } from "@/lib/kalshi";
 import { buildEventRelation, frechetProjectedPhi, type EventRelation } from "@/lib/correlation";
-import { elicitConditionalWithQwen } from "@/lib/association";
+import { elicitConditionalWithQwen, elicitConditionalAdversarial, adversarialSignVeto } from "@/lib/association";
 import { normalizePolymarketEvent, normalizeKalshiEvent } from "./normalize";
 import { norm } from "@/lib/polymarket/text";
 import { marketDimension, eventFamily, relationRole, mechanismSignature } from "./relationKey";
@@ -566,11 +566,22 @@ async function buildCrossEventStrategies(
   // The LEARNED tuning profile: realized conditional payoff per structural bucket (role × mechanism × side),
   // pooled across ALL templates. This is the generalizable rule, applied to every leg including unseen ones.
   const tuning = await loadTuningProfile();
+  // §19 anti-sycophancy (flag-gated, intended for the cron FREEZE path where the elicited prior is frozen
+  // for settlement scoring): a SECOND temp-0 pass argues AGAINST each link; the leg keeps its divergence
+  // only if the sign survives (adversarialSignVeto — veto-only, fail-open on provider errors). The passes
+  // differ by FRAMING not RNG, so replays reproduce the same decision. Default OFF (one call per pair).
+  const adversarialOn = process.env.HEDGE_ADVERSARIAL_ELICIT === "1";
   const elicited = await mapPool(cands, 8, async (r) => {
     const e = await elicitConditionalWithQwen(anchorTitle, `${r.market.title} (${r.market.marketTitle})`).catch(() => null);
     if (!e || e.status !== "ok" || e.pGivenAnchorWins == null) return null;
-    const pW = e.pGivenAnchorWins;
-    const pF = e.pGivenAnchorFails ?? r.market.probYes;
+    let pW = e.pGivenAnchorWins;
+    let pF = e.pGivenAnchorFails ?? r.market.probYes;
+    if (adversarialOn) {
+      const adv = await elicitConditionalAdversarial(anchorTitle, `${r.market.title} (${r.market.marketTitle})`).catch(() => null);
+      const v = adversarialSignVeto({ pGivenAnchorWins: pW, pGivenAnchorFails: pF }, adv ?? null);
+      pW = v.pGivenAnchorWins;
+      pF = v.pGivenAnchorFails;
+    }
     // φ from the model's OWN two conditionals (via its implied marginal), so equal conditionals ⇒ φ=0
     // regardless of any level mismatch with the market price. The real price is used only for pricing.
     const qB = ap * pW + (1 - ap) * pF;
