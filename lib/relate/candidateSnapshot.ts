@@ -26,6 +26,7 @@ export async function persistCandidateSnapshots(
   classified: ClassifiedCandidate[],
   at = new Date(),
   priors?: Map<string, ElicitedPrior>,
+  discoverySource: "cron-radar" | "live-api" = "live-api",
 ): Promise<number> {
   if (!dbEnabled()) return 0;
   // Minute buckets make repeated UI refreshes idempotent without erasing the price time series.
@@ -72,6 +73,7 @@ export async function persistCandidateSnapshots(
       const price = side === "yes" ? candidate.probYes : 1 - candidate.probYes;
       if (!(price > 0 && price < 1)) continue;
       snapshots.push({
+        discoverySource,
         relationKey: key,
         observedAt,
         anchorMarketId: nativeMarketId(anchor.id),

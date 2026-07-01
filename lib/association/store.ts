@@ -49,6 +49,8 @@ export interface CandidateSnapshotInput {
   /** Frozen combo metadata: anchor-failure scenarioBucket this candidate covers + the orthogonal dimension. */
   scenarioBucket?: string;
   dimension?: string;
+  /** Which path froze this row: 'cron-radar' (reproducible enrichment) vs 'live-api' (one-shot). */
+  discoverySource?: string;
   /** Book key (PM yes-token id / Kalshi ticker) so the backtest can source the executable ask from book_snapshot. */
   candidateTokenId?: string;
 }
@@ -137,7 +139,7 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
          mechanism_signature, hypothesis,
          anchor_event_key, anchor_venue, candidate_event_key, candidate_venue,
          p_given_fails, p_given_wins, elicitor_model, prior_confidence,
-         scenario_bucket, dimension, candidate_token_id)
+         scenario_bucket, dimension, candidate_token_id, discovery_source)
       VALUES
         (${input.relationKey}, ${input.observedAt}, ${input.anchorMarketId}, ${input.candidateMarketId},
          ${input.candidateSide}, ${input.anchorProbYes}, ${input.candidatePrice},
@@ -148,7 +150,7 @@ export async function upsertAssociationCandidateSnapshots(inputs: CandidateSnaps
          ${input.candidateEventKey ?? null}, ${input.candidateVenue ?? null},
          ${input.pGivenFails ?? null}, ${input.pGivenWins ?? null},
          ${input.elicitorModel ?? null}, ${input.priorConfidence ?? null},
-         ${input.scenarioBucket ?? null}, ${input.dimension ?? null}, ${input.candidateTokenId ?? null})
+         ${input.scenarioBucket ?? null}, ${input.dimension ?? null}, ${input.candidateTokenId ?? null}, ${input.discoverySource ?? null})
       ON CONFLICT (relation_key, observed_at, anchor_market_id, candidate_market_id, candidate_side)
       DO UPDATE SET
         anchor_prob_yes = EXCLUDED.anchor_prob_yes,

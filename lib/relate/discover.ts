@@ -347,6 +347,9 @@ export interface DiscoverResult {
 
 export interface DiscoverRequest {
   query: string;
+  /** §19 provenance: which path is running discovery — the reproducible cron radar or a one-shot live
+   *  query. Frozen onto every candidate snapshot so the moat can tell replayable evidence from live rows. */
+  source?: "cron-radar" | "live-api";
   eventSlug?: string;
   topK?: number;
   stakeUsd?: number;
@@ -1092,7 +1095,7 @@ export async function discoverRelations(req: DiscoverRequest): Promise<DiscoverR
   // withStrategies/user path; the cron freeze leaves it null). Captured pre-settlement, so the MODELED prior
   // can later be calibrated against realized outcomes (leakage-safe). observed_at is minute-bucketed, so
   // running the freeze here rather than earlier does not change idempotency.
-  const candidateSnapshotsWritten = await persistCandidateSnapshots(anchor, classified, new Date(), strategyResult?.elicitedPriors).catch(() => 0);
+  const candidateSnapshotsWritten = await persistCandidateSnapshots(anchor, classified, new Date(), strategyResult?.elicitedPriors, req.source ?? "live-api").catch(() => 0);
 
   // Block C joint-combo pipeline: freeze the recommended combos (open markets, pre-resolution) so the settle
   // cron can later resolve every leg and feed backtestCombos + the JOINT-CALIBRATED gate. Additive + fail-safe.

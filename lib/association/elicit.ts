@@ -11,6 +11,7 @@
  */
 import { z } from "zod";
 import { chatCompletionWithFallback, extractJsonContent, relationApiKey, relationBaseUrl, relationModelChain, relationThinkingEnabled, relationTimeoutMs, type ModelAttempt } from "./modelFallback";
+import { llmCacheKey, loadLlmCache, storeLlmCache } from "./llmCache";
 import { withFewShot } from "./relationFewShot";
 
 const ElicitSchema = z.object({
@@ -78,6 +79,16 @@ async function elicitWithSystem(
   const baseUrl = relationBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = relationTimeoutMs(options.timeoutMs);
+  // §19 whole-anchor enrichment, per-call slice: elicitation was the ONLY uncached LLM layer (classify and
+  // recall already cache), so every live query re-paid the radar's most expensive work. The key includes
+  // the FINAL system text (prompt version / V2 flag / few-shot / adversarial framing) AND the model chain,
+  // so a model swap or prompt change invalidates instead of silently serving a stale generation — the §18
+  // versioned-cache guard. Radar (cron) fills it; a live query within the TTL replays the SAME frozen
+  // elicitation deterministically. Prices are never cached anywhere near this layer.
+  const finalSystem = withFewShot(system);
+  const cacheKey = llmCacheKey("elicit", "elicit-v1", { system: finalSystem, anchorTitle, candidateTitle, models });
+  const cached = await loadLlmCache<{ pGivenAnchorWins: number; pGivenAnchorFails: number; confidence: number; reason: string }>(cacheKey).catch(() => null);
+  if (cached) return { status: "ok", model: cached.model, ...cached.value };
   const decode = (content: string) => {
     try {
       const parsed = ElicitSchema.safeParse(JSON.parse(extractJsonContent(content)) as unknown);
@@ -101,7 +112,7 @@ async function elicitWithSystem(
       max_tokens: 2000, // headroom: a reasoning model spends an internal pass before content; 800 risked empty
       messages: [
         // Flag-gated few-shot anchors (HEDGE_RELATION_FEWSHOT=1); default OFF → system unchanged.
-        { role: "system", content: withFewShot(system) },
+        { role: "system", content: finalSystem },
         { role: "user", content: `ANCHOR outcome: ${anchorTitle}\nCANDIDATE outcome: ${candidateTitle}\nReturn JSON only.` },
       ],
       response_format: { type: "json_object" },
@@ -123,6 +134,8 @@ async function elicitWithSystem(
   const independent = /\bno concrete mechanism\b/i.test(data.reason) || /^\s*independent\b/i.test(data.reason);
   const mid = (data.pGivenAnchorWins + data.pGivenAnchorFails) / 2;
   const guarded = independent ? { ...data, pGivenAnchorWins: mid, pGivenAnchorFails: mid } : data;
+  // Cache the GUARDED value (post independence-equalization) so a replay reproduces the same decision.
+  await storeLlmCache(cacheKey, "elicit", guarded, completion.model).catch(() => {});
   return { status: "ok", model: completion.model, ...guarded, attempts: completion.attempts };
 }
 

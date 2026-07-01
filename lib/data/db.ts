@@ -173,6 +173,10 @@ ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS candidate_ve
 -- rows and non-elicited (structural/auto-backfill) pairs have none.
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS p_given_fails double precision;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS p_given_wins double precision;
+-- §19 whole-anchor enrichment provenance: which path produced this frozen row — the reproducible
+-- cron radar ('cron-radar') or a one-shot interactive query ('live-api') — so the moat can distinguish
+-- replayable evidence from live rows (the §18 auditability gap).
+ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS discovery_source text;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS elicitor_model text;
 ALTER TABLE association_candidate_snapshot ADD COLUMN IF NOT EXISTS prior_confidence double precision;
 -- Frozen combo metadata: scenario_bucket = which anchor-FAILURE PATH this candidate covers (the overlap key
