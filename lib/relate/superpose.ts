@@ -49,6 +49,9 @@ export interface SuperposeLeg {
   /** Mechanism TYPE (the bucket key, e.g. "CROSS_ENTITY"), carried so a MODELED leg can be given a
    *  gold-residual conservative interval downstream. Not the human-readable `mechanism` text. */
   mechType?: string;
+  /** Leaf-rung settled samples behind this leg's bucket shrink (0/absent = no settled evidence). Lets the
+   *  optimizer WIDEN a thin-bucket MODELED leg's conservative interval; it never promotes anything. */
+  bucketSamples?: number;
   /** Confidence tier. ANALYTIC legs carry EXACT conditionals (a structural certainty like A ⊆ B) and
    *  bypass the noise margin; default MODELED (LLM-elicited). */
   tier?: Tier;
@@ -76,6 +79,8 @@ export interface PlacedLeg {
   mechanism?: string;
   /** Mechanism TYPE (bucket key), carried from the source leg for the MODELED gold-residual interval. */
   mechType?: string;
+  /** Leaf-rung settled samples behind the bucket shrink (see SuperposeLeg.bucketSamples). */
+  bucketSamples?: number;
   costUsd: number;
   shares: number;
   /** a/q − 1: per-dollar return when the anchor WINS. */
@@ -224,6 +229,7 @@ export function buildSuperposition(
       return {
         id: e.c.id, marketTitle: e.c.marketTitle, title: e.c.title, side: e.c.side,
         q: e.q, pWin: e.a, pFail: e.f, dimension: e.c.dimension, mechanism: e.c.mechanism, mechType: e.c.mechType,
+        bucketSamples: e.c.bucketSamples,
         costUsd: c, shares: Number((c / e.q).toFixed(2)), edgeWin: e.edgeWin, edgeFail: e.edgeFail, tier: e.tier,
         marginal: e.c.marginal, venue: e.c.venue, scenario: e.c.scenario,
       };

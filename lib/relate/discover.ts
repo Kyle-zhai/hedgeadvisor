@@ -677,8 +677,8 @@ async function buildCrossEventStrategies(
       const yesCal = calibrateLeg(lookupBucket(tuning, role, mechType, payoffDir, "yes", BUCKET_MIN_SAMPLES), pW, pF, qYes, ap);
       const noCal = calibrateLeg(lookupBucket(tuning, role, mechType, payoffDir, "no", BUCKET_MIN_SAMPLES), 1 - pW, 1 - pF, 1 - qYes, ap);
       const sides = [
-        { side: "YES" as const, q: qYes, win: yesCal.pWside, fail: yesCal.pFside, tier: yesCal.tier },
-        { side: "NO" as const, q: 1 - qYes, win: noCal.pWside, fail: noCal.pFside, tier: noCal.tier },
+        { side: "YES" as const, q: qYes, win: yesCal.pWside, fail: yesCal.pFside, tier: yesCal.tier, samples: yesCal.samples },
+        { side: "NO" as const, q: 1 - qYes, win: noCal.pWside, fail: noCal.pFside, tier: noCal.tier, samples: noCal.samples },
       ];
       // aggressive (λ≥.5) wants the side that leans WIN; conservative wants the side that leans FAIL.
       const lean = (s: typeof sides[number]) => (direction >= 0.5 ? s.win - s.fail : s.fail - s.win);
@@ -694,6 +694,7 @@ async function buildCrossEventStrategies(
         dimension: hedgeDimension({ title: r.market.title, marketTitle: r.market.marketTitle, category: r.market.category }),
         mechanism: reason.slice(0, 160),
         mechType, // carried so a MODELED leg can get its gold-residual conservative interval downstream
+        bucketSamples: pick.samples, // Gate 5a: thin-bucket legs get a WIDER conservative interval downstream
         scenario: classifyScenarioBucket({ anchorTitle: anchor.title, candidateTitle: r.market.title, candidateMarketTitle: r.market.marketTitle, relation: r.hypothesis?.relation, scope: r.mechanismGraph?.scope, direction: r.hypothesis?.direction, reason }),
       });
     }
@@ -896,7 +897,7 @@ function buildCombos(legs: HedgeStrategy[], stakeUsd: number, baseWinnings: numb
  *  robust optimizer can recommend the best the engine believes NOW — not only settlement-CALIBRATED legs.
  *  The legs are already executably priced (re-priced to the book) and Fréchet-clamped. CALIBRATED legs are
  *  skipped (the bucket path feeds those); ANALYTIC structural legs keep their EXACT conditional payoff. */
-function toOptimizerModeledLegs(sup: Superposition): OptimizerCandidate[] {
+export function toOptimizerModeledLegs(sup: Superposition): OptimizerCandidate[] {
   return sup.legs
     .filter((l) => l.tier !== "CALIBRATED" && l.pFail > l.pWin) // hedge-leaning, non-calibrated
     .map((l): OptimizerCandidate => {
@@ -924,9 +925,16 @@ function toOptimizerModeledLegs(sup: Superposition): OptimizerCandidate[] {
         payGivenFail: l.pFail,
         payGivenWin: l.pWin,
       };
-      if (typeof sdFail === "number" && sdFail > 0) {
-        modeledPayoff.failLower = Math.min(1, Math.max(0, l.pFail - k * sdFail));
-      }
+      // Gate 5a (§18): widen the conservative interval by BUCKET THINNESS too — a leg whose structural
+      // bucket has little/no settled evidence is more uncertain than one shrunk by a well-fed bucket.
+      // Standard-error-style term on the shrunk estimate (κ=12 pseudo-samples of LLM prior, matching
+      // calibrateLeg's BUCKET_PRIOR_STRENGTH). sd = MAX(gold residual, bucket thinness), so the interval
+      // can only WIDEN (failLower only drops): pFail is never raised, no tier is set, and the optimizer's
+      // ≥0.6 MODELED ranking floor still holds — thin evidence just shades pFail down harder.
+      const mEv = l.bucketSamples ?? 0;
+      const seBucket = Math.sqrt(Math.max(0.05, l.pFail * (1 - l.pFail)) / (mEv + 12));
+      const sd = Math.max(typeof sdFail === "number" && sdFail > 0 ? sdFail : 0, seBucket);
+      modeledPayoff.failLower = Math.min(1, Math.max(0, l.pFail - k * sd));
       return { ...base, provenance: "MODELED", modeledPayoff };
     });
 }
